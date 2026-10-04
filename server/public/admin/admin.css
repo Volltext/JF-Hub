@@ -1,0 +1,136 @@
+/* Gleiche Farben, Radien und Schrift wie die App – damit sich Web-App und Verwaltung wie eine Anwendung anfühlen. */
+:root {
+  --bg: #f5f5f7;
+  --surface: #ffffff;
+  --surface-2: #ededf0;
+  --border: rgba(0, 0, 0, 0.1);
+  --text: #16181d;
+  --muted: #5f6672;
+  --primary: #d42a22;
+  --primary-press: #b4221b;
+  --on-primary: #ffffff;
+  --ok: #1b8a52;
+  --danger: #c93028;
+  --r-md: 14px;
+  --r-lg: 20px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e0f12;
+    --surface: #16181d;
+    --surface-2: #1e2127;
+    --border: rgba(255, 255, 255, 0.09);
+    --text: #f4f4f6;
+    --muted: #9aa0ab;
+    --primary: #e5372e;
+    --primary-press: #c92c24;
+    --ok: #34c27a;
+    --danger: #ff5d55;
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, 'Segoe UI', Roboto, sans-serif; }
+h1 { font-size: 1.6rem; margin: 0; line-height: 1.2; }
+h2 { font-size: 1rem; margin: 0 0 12px; }
+a { color: var(--primary); }
+.muted { color: var(--muted); }
+.small { font-size: 13px; }
+:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+/* ---- Gerüst: schmal = Kopf + Reiter, breit = Seitenleiste ---- */
+.layout { min-height: 100vh; display: flex; flex-direction: column; }
+.side { background: var(--surface); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 5; }
+.side__top { display: flex; align-items: center; gap: 12px; padding: 12px 16px; }
+.brand { display: flex; align-items: center; gap: 12px; font-weight: 800; font-size: 1.1rem; flex: 1; }
+.logo { width: 34px; height: 34px; display: block; }
+.brand small { display: block; color: var(--muted); font-weight: 500; font-size: 12px; line-height: 1.1; }
+.nav { display: flex; gap: 4px; padding: 0 12px 8px; overflow-x: auto; scrollbar-width: none; }
+.nav::-webkit-scrollbar { display: none; }
+.nav__label { display: none; }
+.nav__group { display: contents; }
+.nav button, .side__link {
+  display: flex; align-items: center; gap: 12px; min-height: 40px; padding: 0 12px; border: 0; border-radius: var(--r-md);
+  background: transparent; color: var(--muted); font: inherit; font-weight: 600; white-space: nowrap; cursor: pointer; text-decoration: none; text-align: left;
+}
+.nav button:hover, .side__link:hover { background: var(--surface-2); color: var(--text); }
+.nav button[aria-current='page'] { background: var(--surface-2); color: var(--text); }
+.nav button svg, .side__link svg { width: 19px; height: 19px; flex-shrink: 0; }
+.nav button[aria-current='page'] svg { color: var(--primary); }
+.side__foot { display: none; }
+.content { flex: 1; min-width: 0; padding: 20px 16px 60px; }
+.page { max-width: 860px; margin: 0 auto; display: grid; gap: 16px; }
+.page__head p { margin: 4px 0 0; color: var(--muted); }
+
+@media (min-width: 900px) {
+  .layout { flex-direction: row; }
+  .side { width: 244px; flex-shrink: 0; height: 100vh; border-bottom: 0; border-right: 1px solid var(--border); display: flex; flex-direction: column; padding: 16px 12px; }
+  .side__top { padding: 0 12px 16px; }
+  .side__top .btn--out { display: none; }
+  .nav { flex-direction: column; gap: 16px; padding: 0; overflow-y: auto; flex: 1; }
+  .nav__group { display: flex; flex-direction: column; gap: 2px; }
+  .nav__label { display: block; padding: 0 12px 4px; color: var(--muted); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; }
+  .nav button { width: 100%; }
+  .side__foot { display: flex; flex-direction: column; gap: 2px; padding-top: 12px; border-top: 1px solid var(--border); }
+  .side__foot .side__link { width: 100%; border: 0; }
+  .content { padding: 32px 32px 60px; overflow-y: auto; height: 100vh; }
+}
+
+/* ---- Bausteine ---- */
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); padding: 18px; }
+.center { max-width: 400px; margin: 12vh auto 0; padding: 0 16px; }
+.center h1 { margin-bottom: 16px; font-size: 1.4rem; }
+label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); margin-bottom: 12px; }
+input[type='text'], input[type='password'], input[type='number'], input[type='search'], select {
+  width: 100%; min-height: 44px; padding: 0 12px; font: inherit; color: var(--text);
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-md);
+}
+input[type='color'] { height: 44px; width: 64px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-2); padding: 2px; }
+.btn {
+  font: inherit; font-weight: 600; min-height: 44px; padding: 0 18px; border-radius: var(--r-md); border: 1px solid var(--border);
+  background: var(--surface-2); color: var(--text); cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+}
+.btn:hover { border-color: var(--muted); }
+.btn.primary { background: var(--primary); border-color: transparent; color: var(--on-primary); }
+.btn.primary:hover { background: var(--primary-press); }
+.btn.danger { color: var(--danger); }
+.btn.solid-danger { background: var(--danger); border-color: transparent; color: #fff; }
+.btn.small { min-height: 36px; padding: 0 12px; font-size: 14px; }
+.btn:disabled { opacity: 0.5; cursor: default; }
+.row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+.stat { background: var(--surface-2); border-radius: var(--r-md); padding: 14px 16px; }
+.stat b { display: block; font-size: 1.5rem; line-height: 1.2; }
+.stat span { color: var(--muted); font-size: 13px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.tile { display: flex; flex-direction: column; gap: 4px; padding: 16px; border-radius: var(--r-md); background: var(--surface); border: 1px solid var(--border); color: var(--text); text-decoration: none; font: inherit; text-align: left; cursor: pointer; }
+.tile:hover { border-color: var(--muted); }
+.tile b { display: flex; align-items: center; gap: 8px; }
+.tile b svg { width: 19px; height: 19px; color: var(--primary); }
+.tile span { color: var(--muted); font-size: 13px; }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+tr:last-child td { border-bottom: 0; }
+th { font-size: 12px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
+td.act { text-align: right; white-space: nowrap; }
+.scroll { overflow-x: auto; }
+.msg { padding: 10px 12px; border-radius: 10px; font-size: 14px; margin-top: 10px; }
+.msg.ok { background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); }
+.msg.err { background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger); }
+.tag { font-size: 12px; padding: 2px 8px; border-radius: 99px; background: var(--surface-2); color: var(--muted); }
+.logo-prev { max-height: 48px; max-width: 160px; display: block; margin-bottom: 8px; background: #fff; border: 1px solid var(--border); border-radius: 6px; padding: 4px; }
+.empty { text-align: center; padding: 28px 12px; color: var(--muted); }
+.toolbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+.toolbar input { flex: 1; min-width: 180px; }
+.filters { display: flex; background: var(--surface-2); border-radius: var(--r-md); padding: 3px; }
+.filters button { border: 0; background: transparent; color: var(--muted); font: inherit; font-weight: 600; min-height: 38px; padding: 0 14px; border-radius: 11px; cursor: pointer; }
+.filters button[aria-pressed='true'] { background: var(--surface); color: var(--text); }
+.hint { margin: 0 0 14px; }
+
+/* Eigene Bestätigung statt Browser-Dialog */
+dialog { border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface); color: var(--text); padding: 22px; max-width: 380px; width: calc(100% - 32px); box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5); }
+dialog::backdrop { background: rgba(0, 0, 0, 0.6); }
+dialog h2 { font-size: 1.15rem; }
+dialog p { margin: 0 0 18px; color: var(--muted); }
+dialog .row { justify-content: flex-end; }

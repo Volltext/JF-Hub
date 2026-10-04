@@ -1,0 +1,123 @@
+# Installation
+
+JF Hub läuft als **ein Docker-Container** (Server, Web-App und Admin-Oberfläche) mit **einer SQLite-Datei** als Datenbank. Es gibt Images für Intel/AMD (`amd64`) und ARM (`arm64`, z. B. Raspberry Pi 4/5).
+
+## Voraussetzungen
+
+- Docker mit Compose v2.24 oder neuer (`docker compose version`)
+- Ein Rechner, der dauerhaft läuft (NAS, Raspberry Pi, Heimserver, kleiner Cloud-Server)
+- Für Zugriff von unterwegs und für **App-Installation und Benachrichtigungen**: eine https-Adresse → [Cloudflare Tunnel](cloudflare-tunnel.md) (empfohlen) oder [Alternativen](https-alternativen.md)
+
+## Variante A: Aus dem Repository (empfohlen)
+
+```bash
+git clone https://github.com/amgiparker/open-jf-hub.git
+cd open-jf-hub
+cp .env.example .env        # optional, Werte siehe unten
+docker compose up -d
+```
+
+Das Image wird von GitHub geladen. Wer es lieber selbst bauen möchte: `docker compose up -d --build`.
+
+## Variante B: Nur eine Compose-Datei
+
+Lege einen Ordner an (z. B. `jf-hub`) und darin eine Datei `docker-compose.yml`:
+
+```yaml
+services:
+  jf-hub:
+    image: ghcr.io/amgiparker/open-jf-hub:latest
+    container_name: jf-hub
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"     # fürs Heimnetz: "8080:8080"
+    environment:
+      TZ: Europe/Berlin
+      PUSH_SUBJECT: mailto:deine-adresse@example.org
+    volumes:
+      - jf-hub-data:/data
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  jf-hub-data:
+```
+
+Dann `docker compose up -d`.
+
+## Variante C: Ein einzelner Befehl
+
+```bash
+docker run -d --name jf-hub --restart unless-stopped \
+  -p 127.0.0.1:8080:8080 -v jf-hub-data:/data \
+  -e PUSH_SUBJECT=mailto:deine-adresse@example.org \
+  ghcr.io/amgiparker/open-jf-hub:latest
+```
+
+## Variante D: NAS- und Server-Oberflächen (ZimaOS, Portainer, Arcane, Unraid, Synology)
+
+Lege einen neuen Stack bzw. ein neues Projekt an und füge den Inhalt aus **Variante B** (oder die `docker-compose.yml` aus dem Repository) ein. Die Variablen aus `.env.example` trägst du im Feld „Environment“ ein. Für einen festen Datenordner setzt du `DATA_PATH` auf einen Pfad deines Geräts (z. B. `/DATA/AppData/jf-hub` unter ZimaOS).
+
+## Erster Start
+
+```bash
+docker compose logs jf-hub | grep -A2 Ersteinrichtung
+```
+
+zeigt einen **Setup-Code**. Öffne `/admin/` (z. B. `http://localhost:8080/admin/`), gib den Code ein und lege das erste **Admin-Konto** an. Der Code gilt nur, solange es noch kein Konto gibt – danach kann niemand mehr ein Admin-Konto auf diesem Weg anlegen.
+
+Alternativ legst du das Konto per Umgebungsvariable an (nur für den allerersten Start): `ADMIN_USER` und `ADMIN_PASSWORD` (mindestens 10 Zeichen).
+
+Danach:
+
+1. **Admin → Benutzer:** Betreuer einladen (Link weitergeben, jede Person vergibt ihr Passwort selbst).
+2. **Admin → PDF-Layout:** Name der Gruppe, Logo, Fußzeile und Farbe für die PDFs.
+3. In der App unter **Mitglieder** die Gruppe anlegen.
+
+## Einstellungen (Umgebungsvariablen)
+
+| Variable | Bedeutung | Standard |
+| --- | --- | --- |
+| `JF_HUB_IMAGE` | Image, das Compose startet | `ghcr.io/amgiparker/open-jf-hub:latest` |
+| `BIND` | Adresse, auf der der Port veröffentlicht wird (`0.0.0.0` = ganzes Heimnetz) | `127.0.0.1` |
+| `HOST_PORT` | Port am Rechner | `8080` |
+| `DATA_PATH` | Datenordner oder Volume-Name | `jf-hub-data` |
+| `TZ` | Zeitzone | `Europe/Berlin` |
+| `ADMIN_USER` / `ADMIN_PASSWORD` | Erstes Konto per Umgebung statt Setup-Code | leer |
+| `ADMIN_PASSWORD_RESET` | `1` setzt das Passwort von `ADMIN_USER` auf `ADMIN_PASSWORD` (danach wieder `0`) | `0` |
+| `PUSH_SUBJECT` | Kontaktadresse für den Push-Dienst der Browser (`mailto:…` oder https-Adresse) | `mailto:admin@example.com` |
+| `TRUST_PROXY` | Welchen Proxys `X-Forwarded-For` geglaubt wird. Leer = nur Proxys aus privaten Netzen. `true` = jedem. `false` = keinem | leer |
+| `TUNNEL_TOKEN` | Cloudflare-Tunnel-Token (Profil `tunnel`) | leer |
+| `DOMAIN` | Domain für Caddy (`docker-compose.caddy.yml`) | – |
+
+Direkt im Container gibt es außerdem `PORT` (Standard 8080) und `DATA_DIR` (Standard `/data`).
+
+## Aktualisieren
+
+```bash
+docker compose pull && docker compose up -d       # Image von GitHub
+docker compose up -d --build                      # aus dem Quellcode gebaut (nach git pull)
+```
+
+Die Datenbank wird beim Start automatisch auf den neuen Stand gebracht. Mach vor größeren Versionssprüngen ein Backup (siehe unten). Was sich ändert, steht im [CHANGELOG](../CHANGELOG.md).
+
+Die PWA aktualisiert sich selbst: Beim nächsten Öffnen mit Netz wird die neue Version geladen.
+
+## Backup und Wiederherstellung
+
+Alles liegt in `/data` (Datei `jf-hub.sqlite`).
+
+- **Über die Oberfläche:** Admin → Backup & Export → „Datenbank-Backup laden“ (und „Alle Protokolle als ZIP“ als lesbare Kopie mit PDFs).
+- **Über das Volume:** `docker run --rm -v jf-hub-data:/data -v "$PWD":/backup alpine tar czf /backup/jf-hub-backup.tgz -C /data .`
+- **Wiederherstellen:** Container stoppen, die Datei als `/data/jf-hub.sqlite` zurücklegen (Rechte: Benutzer `node`, wird beim Start automatisch gesetzt), Container starten.
+
+Sichere das Backup nicht ungeschützt in einer Cloud: Es enthält Namen von Jugendlichen (siehe [Datenschutz](datenschutz.md)).
+
+## Passwort vergessen?
+
+- **Ein Betreuer:** Admin → Benutzer → „Passwort zurücksetzen“ erzeugt einen neuen Einladungslink.
+- **Der einzige Admin:** `ADMIN_USER=<name>`, `ADMIN_PASSWORD=<neues Passwort>` und `ADMIN_PASSWORD_RESET=1` setzen, Container neu starten, danach `ADMIN_PASSWORD_RESET` wieder auf `0` setzen und das Passwort aus der `.env` löschen.
+
+## Mehrere Instanzen
+
+Eine Instanz gehört zu **einer** Gruppe. Für mehrere Gruppen startest du mehrere Container mit eigenem Volume, Port und Tunnel.

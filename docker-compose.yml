@@ -1,0 +1,55 @@
+# JF Hub – Server, Web-App (PWA) und Admin-Oberfläche.
+#
+# Schnellstart:
+#   1. .env.example nach .env kopieren (optional – ohne .env laufen die Standardwerte)
+#   2. docker compose up -d
+#   3. Setup-Code im Log ablesen:  docker compose logs jf-hub | grep -A2 Ersteinrichtung
+#   4. http://localhost:8080/admin/ öffnen, Setup-Code eingeben, Admin-Konto anlegen
+#
+# Von außen erreichbar machen (HTTPS ist für die PWA und Benachrichtigungen nötig):
+#   - Hauptweg: Cloudflare Tunnel     →  docker compose --profile tunnel up -d   (docs/cloudflare-tunnel.md)
+#   - Alternative: eigene Domain+Caddy →  docker compose -f docker-compose.yml -f docker-compose.caddy.yml up -d
+#   - Alternative: eigener Reverse-Proxy / Tailscale → docs/https-alternativen.md
+services:
+  jf-hub:
+    image: ${JF_HUB_IMAGE:-ghcr.io/amgiparker/open-jf-hub:latest}
+    # Aus den Quellen bauen statt das fertige Image zu laden:  docker compose up -d --build
+    build: .
+    container_name: jf-hub
+    restart: unless-stopped
+    ports:
+      # Standard: nur auf diesem Rechner erreichbar. Für das Heimnetz BIND=0.0.0.0 setzen.
+      # Mit Cloudflare Tunnel oder Caddy braucht es keinen offenen Port (Zeile dann entfernen).
+      - "${BIND:-127.0.0.1}:${HOST_PORT:-8080}:8080"
+    environment:
+      TZ: ${TZ:-Europe/Berlin}
+      # Nur für den allerersten Start (oder zum Zurücksetzen mit ADMIN_PASSWORD_RESET=1).
+      # Leer lassen: dann erscheint ein Setup-Code im Log und das Konto wird im Browser unter /admin/ angelegt.
+      ADMIN_USER: ${ADMIN_USER:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      ADMIN_PASSWORD_RESET: ${ADMIN_PASSWORD_RESET:-0}
+      # Welchen vorgeschalteten Proxys X-Forwarded-For geglaubt wird (Anmelde-Begrenzung je Client-Adresse).
+      # Standard: nur Proxys in privaten Netzen (Docker, Tunnel, Reverse-Proxy im Heimnetz).
+      TRUST_PROXY: ${TRUST_PROXY:-}
+      # Kontaktadresse für den Push-Dienst der Browser (mailto: oder https-Adresse). Bitte eigene E-Mail eintragen.
+      PUSH_SUBJECT: ${PUSH_SUBJECT:-mailto:admin@example.com}
+    volumes:
+      - ${DATA_PATH:-jf-hub-data}:/data
+    security_opt:
+      - no-new-privileges:true
+
+  # Cloudflare Tunnel im selben Stack (Profil „tunnel“): veröffentlicht den Server per HTTPS, ohne Port-Freigabe am Router.
+  # Public Hostname im Cloudflare-Dashboard: Dienst  HTTP  jf-hub:8080
+  cloudflared:
+    profiles: ["tunnel"]
+    image: cloudflare/cloudflared:latest
+    container_name: jf-hub-cloudflared
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:-}
+    depends_on:
+      - jf-hub
+
+volumes:
+  jf-hub-data:

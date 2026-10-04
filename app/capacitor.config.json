@@ -1,0 +1,7 @@
+{
+  "appId": "de.jfhub.app",
+  "appName": "JF Hub",
+  "webDir": "dist",
+  "backgroundColor": "#0e0f12",
+  "plugins": { "CapacitorHttp": { "enabled": false } }
+}

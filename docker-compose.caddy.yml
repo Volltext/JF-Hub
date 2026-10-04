@@ -1,0 +1,28 @@
+# Ergänzung für eine eigene Domain mit automatischem HTTPS (Let's Encrypt) über Caddy.
+# Voraussetzung: DOMAIN zeigt auf diesen Rechner, die Ports 80 und 443 sind erreichbar.
+#   docker compose -f docker-compose.yml -f docker-compose.caddy.yml up -d
+services:
+  jf-hub:
+    # Nur Caddy spricht mit dem Server: kein offener Port nach außen.
+    ports: !reset []
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: jf-hub-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN:?DOMAIN setzen, z. B. jfhub.example.org}
+    volumes:
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - jf-hub
+
+volumes:
+  caddy-data:
+  caddy-config:

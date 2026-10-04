@@ -1,0 +1,67 @@
+/* ---- Kleidung ---- */
+
+/* Kleidertabelle: Name links, je Kleidungsstück eine Spalte; bei vielen Spalten seitlich scrollbar. */
+.kl-table { overflow-x: auto; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); }
+.acc .kl-table { margin-bottom: var(--s-2); }
+.kl-table__inner { display: flex; flex-direction: column; }
+.kl-row {
+  display: grid; gap: 4px; align-items: center; min-height: 52px; padding: 6px 10px; width: 100%;
+  border: 0; border-top: 1px solid var(--border); background: transparent; color: inherit; text-align: left; cursor: pointer;
+}
+.kl-row:hover { background: var(--surface-2); }
+.kl-row--head { min-height: 40px; border-top: 0; cursor: default; color: var(--muted); font-size: 0.74rem; font-weight: 700; line-height: 1.15; }
+.kl-row--head:hover { background: transparent; }
+.kl-row--head > span { overflow-wrap: anywhere; hyphens: auto; }
+.kl-row--head > span:not(:first-child) { text-align: center; }
+.kl-name { font-weight: 600; line-height: 1.2; overflow-wrap: anywhere; }
+.kl-cell { display: flex; flex-direction: column; align-items: center; text-align: center; line-height: 1.2; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.kl-new { color: var(--accent); font-weight: 700; font-size: 0.85rem; white-space: nowrap; }
+.kl-new--passed { color: var(--muted); }
+.kl-legend { margin: 0; font-size: 0.85rem; }
+
+/* Eine Person: je Kleidungsstück ein Block mit aktueller Größe und Beschaffung. */
+.kl-slot { display: flex; flex-direction: column; gap: var(--s-2); padding: var(--s-3); background: var(--surface-2); border-radius: var(--r-md); }
+.kl-slot__head { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); }
+.kl-size {
+  display: inline-flex; align-items: center; gap: var(--s-2); min-height: 40px; padding: 0 var(--s-3);
+  border-radius: var(--r-md); border: 1px solid var(--border); background: var(--surface); cursor: pointer;
+}
+.kl-size__label { color: var(--muted); font-size: 0.8rem; }
+.kl-size__value { font-weight: 700; font-variant-numeric: tabular-nums; }
+.kl-slot__req { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s-2); }
+.kl-req-tag { color: var(--accent); font-weight: 700; }
+.kl-slot__req .stepper-btn { width: 36px; height: 36px; }
+/* „Erhalten“ und ✕ bleiben zusammen und rücken nach rechts; auf sehr schmalen Geräten gemeinsam in die nächste Zeile. */
+.kl-req-actions { display: flex; align-items: center; gap: var(--s-2); margin-left: auto; }
+.kl-req-size {
+  min-width: 56px; min-height: 40px; padding: 0 var(--s-2); border-radius: var(--r-md); border: 2px solid var(--accent);
+  background: var(--surface); font-weight: 800; font-size: 1.05rem; font-variant-numeric: tabular-nums; cursor: pointer;
+}
+.kl-slot__note { font-size: 0.8rem; }
+
+.kl-btn { display: inline-flex; align-items: center; justify-content: center; gap: var(--s-2); }
+.kl-slot__req .btn, .kl-req-row .btn { min-height: 40px; padding: 0 var(--s-3); }
+.kl-up { background: color-mix(in srgb, var(--accent) 16%, var(--surface)); border-color: color-mix(in srgb, var(--accent) 50%, transparent); }
+
+.kl-nav { display: flex; gap: var(--s-3); }
+.kl-nav__next { flex: 1; min-width: 0; }
+.kl-ellipsis { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.kl-other { display: flex; align-items: flex-end; gap: var(--s-3); }
+.kl-other .field { flex: 1; min-width: 0; }
+
+/* Zu beschaffen */
+.kl-totals { display: flex; flex-direction: column; gap: var(--s-2); }
+.kl-total { display: flex; justify-content: space-between; align-items: baseline; gap: var(--s-3); }
+.kl-total strong { text-align: right; font-variant-numeric: tabular-nums; }
+.kl-req-row { display: flex; align-items: center; gap: var(--s-3); }
+.kl-linkbtn { background: none; border: 0; padding: 0; cursor: pointer; }
+.kl-plain { background: none; border: 0; padding: 0; text-align: left; cursor: pointer; color: inherit; }
+
+/* Export für den Kleiderwart */
+.kl-export { display: flex; flex-direction: column; gap: var(--s-3); padding: var(--s-3); background: var(--surface-2); border-radius: var(--r-md); }
+.kl-export__head { display: flex; align-items: flex-start; gap: var(--s-3); }
+.kl-export__head svg { color: var(--primary); flex-shrink: 0; margin-top: 2px; }
+.kl-small { font-size: 0.85rem; }
+.kl-alt { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-2); }
+.kl-alt .btn { min-height: 44px; padding: 0 var(--s-3); }
