@@ -65,11 +65,15 @@ export function StoppuhrTab({ competition, mode, onMode, lsp, defaultVariant }: 
 
   async function save() {
     if (!draft) return;
-    await runRepo.saveFromDraft(draft, lsp.variante);
-    // Der gespeicherte Lauf setzt den Entwurf zurück; State aus dem Speicher neu laden.
-    update((d) => reset(d));
-    setToast('Lauf gespeichert ✓');
-    setTimeout(() => setToast(''), 2000);
+    try {
+      await runRepo.saveFromDraft(draft, lsp.variante);
+      // Der gespeicherte Lauf setzt den Entwurf zurück; State aus dem Speicher neu laden.
+      update((d) => reset(d));
+      setToast('Lauf gespeichert ✓');
+    } catch (e) {
+      setToast(`Lauf konnte nicht gespeichert werden: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    setTimeout(() => setToast(''), 4000);
   }
 
   return (
