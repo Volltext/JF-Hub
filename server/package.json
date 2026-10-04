@@ -15,7 +15,7 @@
         "@fastify/static": "^10.1.5",
         "fastify": "^5.12.5",
         "fflate": "^0.8.3",
-        "pdfmake": "^0.2.23",
+        "pdfmake": "^0.3.11",
         "web-push": "^3.6.7"
     },
     "devDependencies": {
