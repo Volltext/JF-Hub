@@ -126,15 +126,21 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
 
   await app.register(cookie);
   await app.register(rateLimit, { global: false });
+  // Knappe Zusatzgrenzen für teure oder nach außen wirkende Endpunkte (PDF-Erzeugung, Export, Backups, Ferien-Abruf,
+  // Test-Push): schützt vor Überlast durch einen einzelnen – auch fehlerhaften oder übernommenen – Client. Normale
+  // Nutzung (manuelles Öffnen/Exportieren, gelegentliche Sicherungen) liegt weit darunter. Schlüssel ist die
+  // (ggf. über den vertrauten Proxy ermittelte) Client-IP.
+  const limited = (max: number, timeWindow = '1 minute') => ({ config: { rateLimit: { max, timeWindow } } });
 
-  app.addHook('onSend', async (_req, reply) => {
+  app.addHook('onSend', async (req, reply) => {
     reply.header('X-Content-Type-Options', 'nosniff');
     reply.header('X-Frame-Options', 'DENY');
     reply.header('Referrer-Policy', 'no-referrer');
-    reply.header('Strict-Transport-Security', 'max-age=31536000');
+    // HSTS nur über https ansagen: per http ignorieren Browser es ohnehin, und in Klartext-Antworten gehört es nicht.
+    if (req.protocol === 'https') reply.header('Strict-Transport-Security', 'max-age=31536000');
     reply.header(
       'Content-Security-Policy',
-      "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'",
+      "default-src 'self'; base-uri 'self'; form-action 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; worker-src 'self'; manifest-src 'self'; object-src 'none'; frame-src 'none'; frame-ancestors 'none'",
     );
   });
 
@@ -309,7 +315,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
     return { orgName: s.orgName, footer: s.footer, accent: s.accent, logo: s.logo };
   };
 
-  app.get<{ Params: { id: string } }>('/api/protocols/:id/pdf', async (req, reply) => {
+  app.get<{ Params: { id: string } }>('/api/protocols/:id/pdf', limited(60), async (req, reply) => {
     const row = db.prepare('SELECT * FROM protocols WHERE id = ?').get(req.params.id) as ProtocolRow | undefined;
     if (!row || !canSee(row, me(req))) return reply.code(404).send({ error: 'Nicht gefunden' });
     const doc = toServerDoc(row);
@@ -321,7 +327,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
   });
 
   /** Kleidertabelle als PDF: die App schickt die Zeilen, der Server setzt sie im Stil der Protokoll-PDFs. */
-  app.post('/api/clothing/pdf', async (req, reply) => {
+  app.post('/api/clothing/pdf', limited(30), async (req, reply) => {
     let data;
     try {
       data = parseClothingPdf(req.body);
@@ -336,7 +342,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
   });
 
   /** Alle für den Nutzer sichtbaren Protokolle als ZIP (PDF + JSON), Ordnerstruktur wie in der App. */
-  app.get('/api/export.zip', async (req, reply) => {
+  app.get('/api/export.zip', limited(10), async (req, reply) => {
     const rows = db.prepare(`SELECT * FROM protocols WHERE deletedAt IS NULL AND ${VISIBLE_SQL} ORDER BY datum`).all(me(req).id) as unknown as ProtocolRow[];
     const files: Record<string, Uint8Array> = {};
     const st = style();
@@ -364,7 +370,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
 
   // ---------- Ferien (Weitergabe von openholidaysapi.org) ----------
   const holidays = new HolidayCache(opts.fetchImpl);
-  app.get<{ Querystring: { state?: string } }>('/api/holidays', async (req, reply) => {
+  app.get<{ Querystring: { state?: string } }>('/api/holidays', limited(60), async (req, reply) => {
     try {
       return await holidays.get(String(req.query.state ?? ''));
     } catch (e) {
@@ -393,7 +399,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
   });
 
   /** Schickt sofort eine Testnachricht an dieses Gerät (zum Prüfen von HTTPS, Berechtigung und Push-Dienst). */
-  app.post<{ Body: { endpoint?: string } }>('/api/push/test', async (req, reply) => {
+  app.post<{ Body: { endpoint?: string } }>('/api/push/test', limited(20), async (req, reply) => {
     const row = db.prepare('SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE endpoint = ? AND userId = ?').get(String(req.body?.endpoint ?? ''), me(req).id) as
       | { endpoint: string; p256dh: string; auth: string }
       | undefined;
@@ -525,7 +531,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
     return r.changes ? { ok: true } : reply.code(404).send({ error: 'Nur Papierkorb-Einträge können endgültig gelöscht werden' });
   });
 
-  app.get('/api/admin/backup', async (_req, reply) => {
+  app.get('/api/admin/backup', limited(10), async (_req, reply) => {
     const dir = mkdtempSync(join(tmpdir(), 'jfh-'));
     const file = join(dir, 'backup.sqlite');
     try {
@@ -552,7 +558,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
     items: backupDir ? listBackups(backupDir) : [],
   }));
 
-  app.post('/api/admin/backups', async (_req, reply) => {
+  app.post('/api/admin/backups', limited(20), async (_req, reply) => {
     const dir = needDir(reply);
     if (!dir) return;
     const made = createBackup(db, dir, 'manuell');
@@ -591,7 +597,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
     }
   };
 
-  app.post<{ Params: { name: string } }>('/api/admin/backups/:name/restore', async (req, reply) => {
+  app.post<{ Params: { name: string } }>('/api/admin/backups/:name/restore', limited(10), async (req, reply) => {
     const dir = needDir(reply);
     if (!dir) return;
     const file = backupPath(dir, req.params.name);
@@ -600,7 +606,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
   });
 
   /** Eine hochgeladene Datenbank-Datei (Content-Type application/x-sqlite3) einspielen. */
-  app.post<{ Body: Buffer }>('/api/admin/restore', async (req, reply) => {
+  app.post<{ Body: Buffer }>('/api/admin/restore', limited(10), async (req, reply) => {
     const dir = needDir(reply);
     if (!dir) return;
     if (!Buffer.isBuffer(req.body) || req.body.length < 100) return reply.code(400).send({ error: 'Keine Datenbank-Datei übermittelt' });
@@ -613,7 +619,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
   });
 
   /** Beispiel-PDF für die Layout-Vorschau in der Admin-GUI. */
-  app.get('/api/admin/preview.pdf', async (_req, reply) => {
+  app.get('/api/admin/preview.pdf', limited(60), async (_req, reply) => {
     return reply.header('Content-Type', 'application/pdf').send(await renderPdf(sampleProtocol(), style()));
   });
 

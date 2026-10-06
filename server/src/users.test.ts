@@ -353,7 +353,10 @@ describe('Web-Push', () => {
 
   it('lehnt unsichere Push-Adressen ab (keine internen Ziele)', async () => {
     const t = (await login('admin', PW)).token;
-    for (const endpoint of ['http://fcm.googleapis.com/x', 'https://127.0.0.1/x', 'https://localhost/x', 'https://intern/x', 'https://[::1]/x', 'https://nas.local/x']) {
+    for (const endpoint of [
+      'http://fcm.googleapis.com/x', 'https://127.0.0.1/x', 'https://localhost/x', 'https://intern/x', 'https://[::1]/x', 'https://nas.local/x',
+      'https://0x7f.1/x', 'https://2130706433/x', 'https://dienst.test/x', 'https://dienst.invalid/x', 'https://router.home/x',
+    ]) {
       const r = await app.inject({ method: 'POST', url: '/api/push/subscribe', headers: auth(t), payload: { subscription: { ...sub(), endpoint }, device: 'x' } });
       expect(r.statusCode, endpoint).toBe(400);
     }

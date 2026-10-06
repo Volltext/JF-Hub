@@ -16,9 +16,16 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/). Versionen 
 - **Anleitung „Erste Schritte“** (`docs/erste-schritte.md`): vom Admin-Konto bis zum ersten Dienst, mit Screenshots.
 - **Übersichtsseite** `docs/README.md` mit Wegweiser nach Thema.
 
+### Sicherheit
+
+- **Zugriffsprüfung umgehbar über prozentkodierte Pfade:** Die API-Prüfung entschied anhand der rohen URL (`/api/…`), Fastify leitet aber auf dem dekodierten Pfad weiter – so traf z. B. `/%61pi/admin/users` denselben Admin-Handler, umging aber die Prüfung, und Admin-Endpunkte waren ohne Anmeldung erreichbar. Die Prüfung richtet sich jetzt nach dem gematchten Route-Muster (wie der Demo-Schutz).
+- **Serverseitige Anfragefälschung (SSRF) über Push-Adressen** stärker abgesichert: Push-Ziele müssen jetzt ein echter öffentlicher DNS-Name sein (IP-Adressen in jeder Schreibweise – auch „0x7f.1“ – und reservierte Namen werden abgewiesen), und der Versand prüft zusätzlich beim Verbinden die aufgelöste Adresse und bricht bei privaten/lokalen Zielen ab (fängt auch Resolver-Tricks wie `*.nip.io` und DNS-Rebinding).
+- **Rate-Limits** für teure bzw. nach außen wirkende Endpunkte ergänzt (Protokoll- und Kleidung-PDF, Protokoll-Export, Backups und Wiederherstellung, Ferien-Abruf, Test-Push), damit ein einzelner Client den Server nicht überlasten kann. Anmeldung/Einrichtung/Einladung waren bereits begrenzt.
+- **Sicherheits-Header verschärft:** Content-Security-Policy um `base-uri`, `form-action`, `object-src 'none'` und `frame-src 'none'` erweitert; HSTS wird nur noch über https gesendet.
+- Tests in `server/src/app.test.ts`, `server/src/push.test.ts` und `server/src/users.test.ts` sichern die Punkte ab.
+
 ### Behoben
 
-- **Sicherheit:** Die Zugriffsprüfung der API ließ sich mit einem prozentkodierten Pfad umgehen (z. B. `/%61pi/admin/…` statt `/api/admin/…`): Fastify leitet auf dem dekodierten Pfad weiter, die Prüfung sah aber die rohe URL und ließ die Anfrage ungeprüft durch. Dadurch waren Admin-Endpunkte ohne Anmeldung erreichbar. Die Prüfung richtet sich jetzt nach dem gematchten Route-Muster (wie der Demo-Schutz); ein Test in `server/src/app.test.ts` sichert das ab.
 - **APK-Build** (Workflow `android.yml`) brach ab, weil Dependabot den Gradle-Wrapper auf 9.8.0 gehoben hatte; das von Capacitor 8 vorgegebene Android Gradle Plugin 8.13 läuft nur bis Gradle 9.5. Der Wrapper steht wieder auf 8.14.3, und Dependabot schlägt keine Major-Sprünge für Gradle und das Android Gradle Plugin mehr vor.
 
 ## [2.0.1] – 2026-10-06

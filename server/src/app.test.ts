@@ -120,6 +120,31 @@ describe('Auth', () => {
   });
 });
 
+describe('Härtung', () => {
+  it('setzt CSP/Sicherheits-Header; HSTS nur über https', async () => {
+    const t = await login();
+    const r = await app.inject({ method: 'GET', url: '/api/me', headers: auth(t) });
+    const csp = r.headers['content-security-policy'] as string;
+    expect(csp).toContain("object-src 'none'");
+    expect(csp).toContain("base-uri 'self'");
+    expect(csp).toContain("frame-ancestors 'none'");
+    expect(r.headers['x-content-type-options']).toBe('nosniff');
+    // Über http (Standard bei inject) kein HSTS …
+    expect(r.headers['strict-transport-security']).toBeUndefined();
+    // … über https schon (per vertrautem Proxy signalisiert).
+    const s = await app.inject({ method: 'GET', url: '/api/me', headers: { ...auth(t), 'x-forwarded-proto': 'https' } });
+    expect(String(s.headers['strict-transport-security'])).toContain('max-age=');
+  });
+
+  it('begrenzt teure Endpunkte per Rate-Limit, normale nicht', async () => {
+    const t = await login();
+    const lim = await app.inject({ method: 'GET', url: '/api/export.zip', headers: auth(t) });
+    expect(String(lim.headers['x-ratelimit-limit'])).toBe('10');
+    const open = await app.inject({ method: 'GET', url: '/api/me', headers: auth(t) });
+    expect(open.headers['x-ratelimit-limit']).toBeUndefined();
+  });
+});
+
 describe('Sync', () => {
   it('legt neue Protokolle an und liefert sie ab Revision', async () => {
     const t = await login();
