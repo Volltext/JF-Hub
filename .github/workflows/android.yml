@@ -60,7 +60,7 @@ jobs:
       - name: APK bauen
         run: |
           if [ "${{ steps.keys.outputs.variant }}" = "debug" ]; then npm run apk -- debug; else npm run apk; fi
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: jf-hub-apk
           path: app/apk/*.apk
