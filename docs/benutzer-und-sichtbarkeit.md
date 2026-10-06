@@ -1,5 +1,11 @@
 # Benutzer und Sichtbarkeit
 
+[← Dokumentation](README.md)
+
+**Kurz gesagt:** Jeder Betreuer hat ein eigenes Konto. Mitglieder, Dienste und Kleidung gehören der ganzen Gruppe. Protokolle und Aufgaben sind zuerst **privat** und werden von dir **veröffentlicht**, wenn die anderen sie sehen sollen.
+
+**Auf dieser Seite:** [Rollen](#rollen) · [Betreuer einladen](#betreuer-einladen) · [Wer sieht was?](#wer-sieht-was) · [Zusammen arbeiten](#zusammen-arbeiten) · [Geteilte Geräte](#geteilte-geräte) · [Geräte verwalten](#geräte-verwalten)
+
 ## Rollen
 
 | | Betreuer | Admin |
@@ -14,49 +20,59 @@ Es muss immer mindestens ein aktiver Admin übrig bleiben. Den ersten Admin legs
 
 ## Betreuer einladen
 
-1. **Admin-Oberfläche** (`/admin/`) → **Benutzer** → Benutzername und Anzeigename eintragen → „Betreuer einladen“.
+<img src="images/admin-benutzer.png" alt="Admin-Oberfläche: Benutzerliste" width="720">
+
+1. **Admin-Oberfläche** (`/admin/`) → **Benutzer** → Benutzername und Anzeigename eintragen → **Betreuer einladen**.
 2. Es erscheint ein **Einladungslink** (gültig 7 Tage, einmal verwendbar). Gib ihn der Person, z. B. per Messenger.
 3. Die Person öffnet den Link, vergibt ihr **eigenes Passwort** (mindestens 10 Zeichen) und ist angemeldet. Der Admin kennt nie ein Passwort.
 
 In der Android-App löst man die Einladung unter *Einstellungen → Server & Konto → Einladung einlösen* ein (Adresse, Benutzername und Code aus der Einladung).
 
-**Passwort vergessen?** Admin → Benutzer → „Passwort zurücksetzen“ erzeugt einen neuen Link. Das alte Passwort gilt, bis der Link benutzt wird; danach sind alle Geräte der Person abgemeldet.
-
-**Sperren** beendet sofort alle Anmeldungen der Person. **Löschen** entfernt das Konto: Ihre *privaten* Protokolle und Aufgaben werden gelöscht, *veröffentlichte* gehören danach dem Admin, der gelöscht hat.
-
 Benutzernamen unterscheiden nicht zwischen Groß- und Kleinschreibung (3–32 Zeichen: Buchstaben, Ziffern, `.`, `_`, `-`).
+
+### Passwort vergessen, Konto sperren oder löschen
+
+| Aktion | Was passiert |
+| --- | --- |
+| **Passwort zurücksetzen** | Der Admin erzeugt unter *Benutzer* einen neuen Link. Das alte Passwort gilt, bis der Link benutzt wird; danach sind alle Geräte der Person abgemeldet. |
+| **Sperren** | Beendet sofort alle Anmeldungen der Person. |
+| **Löschen** | Entfernt das Konto. Ihre *privaten* Protokolle und Aufgaben werden gelöscht, *veröffentlichte* gehören danach dem Admin, der gelöscht hat. |
 
 ## Wer sieht was?
 
 | Daten | Sichtbarkeit |
 | --- | --- |
-| Mitglieder, Dienste (Anwesenheit), Kleidergrößen, Wettkampf-Läufe, Aufstellungs-Vorlagen | immer für alle Betreuer |
+| Mitglieder, Dienste (Anwesenheit), Kleidergrößen, Wettkampf-Läufe, Aufstellungs-Vorlagen | immer für **alle** Betreuer |
 | Ordner für Protokolle | für alle (nur die Struktur, nicht der Inhalt privater Protokolle) |
 | **Protokolle** | **privat** (nur du) oder **veröffentlicht** (alle Betreuer) |
 | **Aufgaben** | **privat** oder **veröffentlicht** |
 | Laufende Stoppuhr, aktuelle Aufstellung und Wertung | nur auf dem jeweiligen Gerät (Arbeitsstand, wird nicht abgeglichen) |
 
-Neue Protokolle und Aufgaben sind **zuerst privat**. Wer lieber gleich für alle schreibt, stellt das unter *Einstellungen → Darstellung & neue Einträge* um (gilt nur für das eigene Konto/Gerät).
+Neue Protokolle und Aufgaben sind **zuerst privat**. Wer lieber gleich für alle schreibt, stellt das unter *Einstellungen → Darstellung & neue Einträge* um (gilt nur für das eigene Konto und Gerät).
 
 ### Veröffentlichen und zurücknehmen
 
-- **Protokoll:** Im Editor oben auf das Schloss-/Gruppen-Symbol tippen → „Für alle Betreuer veröffentlichen“.
-- **Aufgabe:** Beim Anlegen/Bearbeiten „Für alle Betreuer veröffentlichen“ einschalten.
-- **Zurücknehmen:** Das Symbol erneut öffnen → „Wieder privat machen“. Der Eintrag verschwindet bei den anderen Betreuern beim nächsten Abgleich.
+| | Veröffentlichen | Zurücknehmen |
+| --- | --- | --- |
+| **Protokoll** | Im Editor oben auf das Symbol mit den zwei Personen tippen → **Für alle Betreuer veröffentlichen** | Das Symbol erneut öffnen → **Wieder privat machen** |
+| **Aufgabe** | Beim Anlegen oder Bearbeiten **Für alle Betreuer veröffentlichen** einschalten | Aufgabe bearbeiten und den Schalter wieder ausschalten |
 
-### Zusammen arbeiten
-
-- Veröffentlichte Einträge dürfen **alle bearbeiten** (Text ändern, Aufgabe abhaken). Aufgaben zeigen, wer sie erledigt hat.
-- **Sichtbarkeit ändern und löschen** darf nur der **Besitzer** (löschen zusätzlich der Admin, z. B. wenn jemand die Gruppe verlässt).
-- Bearbeiten zwei Personen dasselbe Protokoll gleichzeitig, bleibt die zuerst gespeicherte Fassung und die andere wird als Kopie „… (Konflikt)“ gesichert. Es geht nichts verloren. Bei Aufgaben gilt die letzte Änderung.
+Zurückgenommene Einträge verschwinden bei den anderen Betreuern beim nächsten Abgleich.
 
 ### Was kann der Admin sehen?
 
-Der Admin hat in der Oberfläche **keinen Einblick in private Protokolle und Aufgaben** anderer: Listen, PDF und ZIP-Export zeigen nur Veröffentlichtes und Eigenes. Technisch hat er als Betreiber des Servers aber Zugriff auf die Datenbank – das Datenbank-Backup enthält alles. Das gehört in die Absprache mit der Gruppe (siehe [Datenschutz](datenschutz.md)).
+> [!IMPORTANT]
+> Der Admin hat in der Oberfläche **keinen Einblick in private Protokolle und Aufgaben** anderer: Listen, PDF und ZIP-Export zeigen nur Veröffentlichtes und Eigenes. Technisch hat er als Betreiber des Servers aber Zugriff auf die Datenbank – das Datenbank-Backup enthält alles. Das gehört in die Absprache mit der Gruppe (siehe [Datenschutz](datenschutz.md)).
+
+## Zusammen arbeiten
+
+- Veröffentlichte Einträge dürfen **alle bearbeiten** (Text ändern, Aufgabe abhaken). Aufgaben zeigen, wer sie erledigt hat.
+- **Sichtbarkeit ändern und löschen** darf nur der **Besitzer** (löschen zusätzlich der Admin, z. B. wenn jemand die Gruppe verlässt).
+- Bearbeiten zwei Personen dasselbe Protokoll gleichzeitig, bleibt die zuerst gespeicherte Fassung und die andere wird als Kopie „… (Konflikt)“ gesichert. **Es geht nichts verloren.** Bei Aufgaben gilt die letzte Änderung.
 
 ## Geteilte Geräte
 
-Beim **Abmelden** wird zuerst ein letzter Abgleich versucht und danach werden Protokolle, Aufgaben, Mitglieder, Dienste, Kleidergrößen, Wettkampf-Läufe und Vorlagen vom Gerät **gelöscht**. Die Daten liegen weiter auf dem Server und kommen bei der nächsten Anmeldung zurück. Meldet sich jemand anderes an, bekommt er nie Daten des Vorgängers zu sehen und lädt nichts unter falschem Namen hoch.
+Beim **Abmelden** wird zuerst ein letzter Abgleich versucht. Danach werden Protokolle, Aufgaben, Mitglieder, Dienste, Kleidergrößen, Wettkampf-Läufe und Vorlagen vom Gerät **gelöscht**. Die Daten liegen weiter auf dem Server und kommen bei der nächsten Anmeldung zurück. Meldet sich jemand anderes an, bekommt er nie Daten des Vorgängers zu sehen und lädt nichts unter falschem Namen hoch.
 
 Hat ein Gerät noch nicht gesendete Änderungen (kein Netz), warnt die App vor dem Abmelden.
 
@@ -65,3 +81,7 @@ Nicht gelöscht werden die Einstellungen sowie die laufende Stoppuhr, die aktuel
 ## Geräte verwalten
 
 Jeder Betreuer sieht unter *Einstellungen → Konto → Meine Geräte* seine Anmeldungen und kann einzelne oder alle anderen abmelden (z. B. bei einem verlorenen Handy). Der Admin sieht in der Oberfläche alle Geräte aller Benutzer. Anmeldungen laufen nach 90 Tagen ohne Nutzung ab (einstellbar).
+
+---
+
+**Mehr dazu:** [Datenschutz](datenschutz.md) · [Erste Schritte](erste-schritte.md)

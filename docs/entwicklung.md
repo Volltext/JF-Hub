@@ -1,5 +1,11 @@
 # Entwicklung
 
+[← Dokumentation](README.md)
+
+Für alle, die an JF Hub mitarbeiten. Wie du Fehler meldest und Code beiträgst, steht in [CONTRIBUTING.md](../CONTRIBUTING.md).
+
+**Auf dieser Seite:** [Voraussetzungen](#voraussetzungen) · [Starten](#starten) · [Tests und Prüfungen](#tests-und-prüfungen) · [Aufbau](#aufbau) · [Abgleich](#wie-der-abgleich-funktioniert) · [Web-Push](#web-push) · [API](#api-in-kürze) · [Release](#release)
+
 ## Voraussetzungen
 
 Node 22 (der Server nutzt das eingebaute `node:sqlite`), npm. Für die Android-App zusätzlich JDK 21 und das Android SDK ([Android-App](android-app.md)). Docker nur zum Testen des Images.
@@ -14,7 +20,8 @@ cd server && npm install && npm run dev
 cd app && npm install && npm run dev:web
 ```
 
-Beim ersten Start steht der Setup-Code im Terminal des Servers; damit legst du unter `http://localhost:5173/admin/` das erste Konto an.
+> [!TIP]
+> Beim ersten Start steht der Setup-Code im Terminal des Servers. Damit legst du unter `http://localhost:5173/admin/` das erste Konto an.
 
 `npm run dev` (ohne `:web`) startet die App wie in der **Android-Hülle**: lokal, ohne Anmeldung, mit PIN-Sperre und Server-Adresse in den Einstellungen. Das ist praktisch für Oberfläche und Wettkampf-Teil; der Abgleich mit dem Server geht nur über `dev:web`, weil der Server (bewusst) kein CORS erlaubt.
 
@@ -26,7 +33,7 @@ rm -rf ../server/public/web && cp -r dist-web ../server/public/web
 cd ../server && npm run dev                       # Web-App unter http://localhost:8080/
 ```
 
-Ganzes Image: `docker build -t jf-hub .`
+Das ganze Image baust du mit `docker build -t jf-hub .`.
 
 ## Tests und Prüfungen
 
@@ -117,5 +124,5 @@ Nur Admins: `/api/admin/{info,settings,users…,sessions…,protocols…,backup,
 ## Release
 
 1. Versionen erhöhen: `app/package.json`, `app/android/app/build.gradle` (`versionCode` + `versionName`), `server/package.json`, `VERSION` in `server/src/app.ts`; `CHANGELOG.md` ergänzen.
-2. Auf `main` mergen, dann den Tag auf dem Merge-Commit setzen: `git tag v2.0.1 && git push --tags`.
-3. GitHub Actions baut das Docker-Image (`ghcr.io/<owner>/<repo>:2.0.0`, `:2.0`, `:latest`) und die APK und legt sie ans Release.
+2. Auf `main` mergen, dann den Tag auf dem Merge-Commit setzen: `git tag vX.Y.Z && git push --tags`.
+3. GitHub Actions baut das Docker-Image (`ghcr.io/volltext/jf-hub:X.Y.Z`, `:X.Y`, `:latest`) und die APK und legt sie ans Release.
