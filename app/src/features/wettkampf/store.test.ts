@@ -2,12 +2,14 @@ import type { Draft } from './model';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { db } from '@/core/db/db';
 import { exportBackup, importBackup } from '@/core/db/backup';
+import { seedOutboxOnce } from '@/core/db/outbox';
+import { wipeLocalData } from '@/core/db/wipe';
 import { buildRun, canSave } from './run';
-import { loadDraft, loadLineup, runRepo, saveDraft, saveLineup } from './store';
+import { loadDraft, loadLineup, runRepo, saveDraft, saveLineup, templateRepo } from './store';
 import { addFehler, emptyDraft, start, stop } from './stopwatch';
 
 beforeEach(async () => {
-  await Promise.all([db.members.clear(), db.runs.clear(), db.lineupTemplates.clear(), db.kv.clear()]);
+  await Promise.all([db.members.clear(), db.runs.clear(), db.lineupTemplates.clear(), db.outbox.clear(), db.kv.clear()]);
 });
 
 describe('buildRun', () => {
@@ -76,6 +78,46 @@ describe('Speicher', () => {
     expect(run.lineupSnapshot.memberNames['m1']).toBe('Anna');
     expect((await loadDraft('a')).elapsedMs).toBe(0);
     expect(await db.runs.count()).toBe(1);
+  });
+});
+
+describe('Abgleich mit dem Server', () => {
+  it('merkt Läufe und Vorlagen zum Senden vor, auch beim Ändern und Löschen', async () => {
+    const d = stop(start(emptyDraft('a'), 0), 80_000);
+    await saveDraft(d);
+    const run = await runRepo.saveFromDraft(d, 'gruppe', 80_000);
+    const tpl = await templateRepo.add('Standard', {});
+    expect((await db.outbox.toArray()).map((o) => o.key).sort()).toEqual([`lineupTemplates:${tpl.id}`, `runs:${run.id}`].sort());
+
+    await db.outbox.clear();
+    await runRepo.updateNotes(run.id, 'Knoten klemmt');
+    expect(await db.outbox.get(`runs:${run.id}`)).toMatchObject({ deleted: 0 });
+
+    await runRepo.remove(run.id);
+    await templateRepo.remove(tpl.id);
+    expect(await db.outbox.get(`runs:${run.id}`)).toMatchObject({ deleted: 1 });
+    expect(await db.outbox.get(`lineupTemplates:${tpl.id}`)).toMatchObject({ deleted: 1 });
+  });
+
+  it('trägt bestehende Läufe auf Geräten nach, die schon abgeglichen haben (einmalig)', async () => {
+    await db.kv.put({ key: 'records.seeded', value: true });
+    await db.runs.add({ id: 'run-alt', createdAt: '2026-09-01T10:00:00.000Z', updatedAt: '2026-09-01T10:00:00.000Z', mode: 'a', totalMs: 1, markers: [], knotDurationMs: null, taskTimers: {}, notes: '', scoring: null, lsp: null, lineupSnapshot: { assignments: {}, memberNames: {} } });
+    await seedOutboxOnce();
+    expect((await db.outbox.toArray()).map((o) => o.key)).toEqual(['runs:run-alt']);
+    await db.outbox.clear();
+    await seedOutboxOnce();
+    expect(await db.outbox.count()).toBe(0);
+  });
+
+  it('Abmelden entfernt auch Läufe und Vorlagen vom Gerät (liegen auf dem Server)', async () => {
+    await db.runs.add({ id: 'run-1', createdAt: '', updatedAt: '', mode: 'a', totalMs: 1, markers: [], knotDurationMs: null, taskTimers: {}, notes: '', scoring: null, lsp: null, lineupSnapshot: { assignments: {}, memberNames: {} } });
+    await db.lineupTemplates.add({ id: 't1', name: 'x', createdAt: '', assignments: {} });
+    await saveDraft(start(emptyDraft('a'), 5));
+    await wipeLocalData();
+    expect(await db.runs.count()).toBe(0);
+    expect(await db.lineupTemplates.count()).toBe(0);
+    // Die laufende Stoppuhr gehört zum Gerät und bleibt.
+    expect((await loadDraft('a')).isRunning).toBe(true);
   });
 });
 

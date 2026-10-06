@@ -200,6 +200,33 @@ describe('Sync', () => {
     expect(body.records.map((r) => r.collection).sort()).toEqual(['clothing', 'clothingItems']);
   });
 
+  it('gleicht Wettkampf-Läufe und Aufstellungsvorlagen für die ganze Gruppe ab', async () => {
+    const t = await login();
+    const inv = await app.inject({ method: 'POST', url: '/api/admin/users', headers: auth(t), payload: { username: 'anna', displayName: 'Anna' } });
+    const acc = await app.inject({ method: 'POST', url: '/api/invite/accept', payload: { username: 'anna', code: inv.json().invite.code, password: 'anna-passwort-123' } });
+    const anna = acc.json().token as string;
+    const post = async (token: string, since: number, records: unknown[]) =>
+      (await app.inject({ method: 'POST', url: '/api/sync', headers: auth(token), payload: { since, changes: [], records } })).json() as SyncResponse & { records: { collection: string; id: string; data: { notes?: string }; deleted: boolean }[] };
+
+    const run = { id: 'run-0001', mode: 'a', totalMs: 90_000, notes: 'gut' };
+    const up = await post(t, 0, [
+      { collection: 'runs', id: 'run-0001', data: run, updatedAt: 5, deleted: false },
+      { collection: 'lineupTemplates', id: 'tpl-0001', data: { id: 'tpl-0001', name: 'Standard', assignments: {} }, updatedAt: 5, deleted: false },
+    ]);
+    expect(up.collections).toEqual(expect.arrayContaining(['runs', 'lineupTemplates']));
+
+    // Anna sieht beides, ändert die Notiz, und der Admin bekommt die Änderung.
+    const seen = await post(anna, 0, []);
+    expect(seen.records.map((r) => r.collection).sort()).toEqual(['lineupTemplates', 'runs']);
+    const edit = await post(anna, seen.rev, [{ collection: 'runs', id: 'run-0001', data: { ...run, notes: 'sehr gut' }, updatedAt: 9, deleted: false }]);
+    const back = await post(t, up.rev, []);
+    expect(back.records.find((r) => r.id === 'run-0001')!.data.notes).toBe('sehr gut');
+
+    // Löschen kann jeder Betreuer (Gruppendaten wie Mitglieder).
+    await post(anna, edit.rev, [{ collection: 'runs', id: 'run-0001', data: {}, updatedAt: 12, deleted: true }]);
+    expect((await post(t, back.rev, [])).records.find((r) => r.id === 'run-0001')!.deleted).toBe(true);
+  });
+
   it('erkennt einen nicht passenden Stand (neue Datenbank) und liefert alles neu', async () => {
     const t = await login();
     await sync(t, 0, [change('doc-0001')]);

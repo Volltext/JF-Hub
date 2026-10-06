@@ -1,4 +1,5 @@
 import { db } from '@/core/db/db';
+import { markChanged } from '@/core/db/outbox';
 import { newId, nowIso } from '@/core/domain/id';
 import type { Draft, LineupTemplate, LspState, Run } from './model';
 import { buildRun } from './run';
@@ -48,9 +49,13 @@ export const templateRepo = {
   async add(name: string, assignments: Assignments): Promise<LineupTemplate> {
     const t: LineupTemplate = { id: newId(), name: name.trim() || 'Vorlage', createdAt: nowIso(), assignments };
     await db.lineupTemplates.add(t);
+    await markChanged('lineupTemplates', t.id);
     return t;
   },
-  remove: (id: string) => db.lineupTemplates.delete(id),
+  async remove(id: string): Promise<void> {
+    await db.lineupTemplates.delete(id);
+    await markChanged('lineupTemplates', id, true);
+  },
 };
 
 export const runRepo = {
@@ -64,9 +69,16 @@ export const runRepo = {
       lspVariante,
     });
     await db.runs.add(run);
+    await markChanged('runs', run.id);
     await saveDraft(reset(d));
     return run;
   },
-  updateNotes: (id: string, notes: string) => db.runs.update(id, { notes, updatedAt: nowIso() }),
-  remove: (id: string) => db.runs.delete(id),
+  async updateNotes(id: string, notes: string): Promise<void> {
+    await db.runs.update(id, { notes, updatedAt: nowIso() });
+    await markChanged('runs', id);
+  },
+  async remove(id: string): Promise<void> {
+    await db.runs.delete(id);
+    await markChanged('runs', id, true);
+  },
 };

@@ -30,11 +30,11 @@ Benutzernamen unterscheiden nicht zwischen Groß- und Kleinschreibung (3–32 Ze
 
 | Daten | Sichtbarkeit |
 | --- | --- |
-| Mitglieder, Dienste (Anwesenheit), Kleidergrößen | immer für alle Betreuer |
+| Mitglieder, Dienste (Anwesenheit), Kleidergrößen, Wettkampf-Läufe, Aufstellungs-Vorlagen | immer für alle Betreuer |
 | Ordner für Protokolle | für alle (nur die Struktur, nicht der Inhalt privater Protokolle) |
 | **Protokolle** | **privat** (nur du) oder **veröffentlicht** (alle Betreuer) |
 | **Aufgaben** | **privat** oder **veröffentlicht** |
-| Wettkampf-Läufe, Aufstellungen | nur auf dem jeweiligen Gerät (werden nicht abgeglichen) |
+| Laufende Stoppuhr, aktuelle Aufstellung und Wertung | nur auf dem jeweiligen Gerät (Arbeitsstand, wird nicht abgeglichen) |
 
 Neue Protokolle und Aufgaben sind **zuerst privat**. Wer lieber gleich für alle schreibt, stellt das unter *Einstellungen → Darstellung & neue Einträge* um (gilt nur für das eigene Konto/Gerät).
 
@@ -56,11 +56,11 @@ Der Admin hat in der Oberfläche **keinen Einblick in private Protokolle und Auf
 
 ## Geteilte Geräte
 
-Beim **Abmelden** wird zuerst ein letzter Abgleich versucht und danach werden Protokolle, Aufgaben, Mitglieder, Dienste und Kleidergrößen vom Gerät **gelöscht**. Die Daten liegen weiter auf dem Server und kommen bei der nächsten Anmeldung zurück. Meldet sich jemand anderes an, bekommt er nie Daten des Vorgängers zu sehen und lädt nichts unter falschem Namen hoch.
+Beim **Abmelden** wird zuerst ein letzter Abgleich versucht und danach werden Protokolle, Aufgaben, Mitglieder, Dienste, Kleidergrößen, Wettkampf-Läufe und Vorlagen vom Gerät **gelöscht**. Die Daten liegen weiter auf dem Server und kommen bei der nächsten Anmeldung zurück. Meldet sich jemand anderes an, bekommt er nie Daten des Vorgängers zu sehen und lädt nichts unter falschem Namen hoch.
 
 Hat ein Gerät noch nicht gesendete Änderungen (kein Netz), warnt die App vor dem Abmelden.
 
-Nicht gelöscht werden die Einstellungen sowie Wettkampf-Läufe und Aufstellungen dieses Geräts.
+Nicht gelöscht werden die Einstellungen sowie die laufende Stoppuhr, die aktuelle Aufstellung und Wertung dieses Geräts.
 
 ## Geräte verwalten
 
