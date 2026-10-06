@@ -46,3 +46,11 @@ updates:
     directory: /app/android
     schedule:
       interval: monthly
+    # Gradle und Android Gradle Plugin bleiben auf Hauptversion 8, wie Capacitor 8 sie vorgibt (alle seine
+    # Android-Module pinnen AGP 8.13). AGP 8.x läuft nicht mit Gradle ab 9.6: der APK-Build bricht ab.
+    # Erst zusammen anheben, wenn Capacitor AGP 9 unterstützt (siehe `npx cap migrate`).
+    ignore:
+      - dependency-name: gradle-wrapper
+        update-types: [version-update:semver-major]
+      - dependency-name: com.android.tools.build:gradle
+        update-types: [version-update:semver-major]
