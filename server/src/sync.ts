@@ -40,10 +40,10 @@ export interface ServerFolder extends ClientFolder {
 }
 
 /**
- * Erlaubte Sammlungen für die allgemeine Synchronisation (Mitglieder, Dienste, Aufgaben, Kleidergrößen).
+ * Erlaubte Sammlungen für die allgemeine Synchronisation (Mitglieder, Dienste, Aufgaben, Kleidergrößen, Wettkampf-Läufe und Aufstellungsvorlagen).
  * Die Liste geht in jeder Antwort mit, damit die App nur sendet, was dieser Server annimmt.
  */
-export const COLLECTIONS = ['members', 'sessions', 'tasks', 'clothing', 'clothingItems'];
+export const COLLECTIONS = ['members', 'sessions', 'tasks', 'clothing', 'clothingItems', 'runs', 'lineupTemplates'];
 
 /** Sammlungen, deren Einträge privat sein können. Alle anderen gehören der ganzen Gruppe. */
 export const PRIVATE_CAPABLE = ['tasks'];

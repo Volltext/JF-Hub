@@ -11,8 +11,8 @@ JF Hub läuft als **ein Docker-Container** (Server, Web-App und Admin-Oberfläch
 ## Variante A: Aus dem Repository (empfohlen)
 
 ```bash
-git clone https://github.com/amgiparker/open-jf-hub.git
-cd open-jf-hub
+git clone https://github.com/Volltext/JF-Hub.git
+cd JF-Hub
 cp .env.example .env        # optional, Werte siehe unten
 docker compose up -d
 ```
@@ -26,7 +26,7 @@ Lege einen Ordner an (z. B. `jf-hub`) und darin eine Datei `docker-compose.yml`:
 ```yaml
 services:
   jf-hub:
-    image: ghcr.io/amgiparker/open-jf-hub:latest
+    image: ghcr.io/volltext/jf-hub:latest
     container_name: jf-hub
     restart: unless-stopped
     ports:
@@ -51,7 +51,7 @@ Dann `docker compose up -d`.
 docker run -d --name jf-hub --restart unless-stopped \
   -p 127.0.0.1:8080:8080 -v jf-hub-data:/data \
   -e PUSH_SUBJECT=mailto:deine-adresse@example.org \
-  ghcr.io/amgiparker/open-jf-hub:latest
+  ghcr.io/volltext/jf-hub:latest
 ```
 
 ## Variante D: NAS- und Server-Oberflächen (ZimaOS, Portainer, Arcane, Unraid, Synology)
@@ -78,7 +78,7 @@ Danach:
 
 | Variable | Bedeutung | Standard |
 | --- | --- | --- |
-| `JF_HUB_IMAGE` | Image, das Compose startet | `ghcr.io/amgiparker/open-jf-hub:latest` |
+| `JF_HUB_IMAGE` | Image, das Compose startet | `ghcr.io/volltext/jf-hub:latest` |
 | `BIND` | Adresse, auf der der Port veröffentlicht wird (`0.0.0.0` = ganzes Heimnetz) | `127.0.0.1` |
 | `HOST_PORT` | Port am Rechner | `8080` |
 | `DATA_PATH` | Datenordner oder Volume-Name | `jf-hub-data` |
@@ -107,9 +107,11 @@ Die PWA aktualisiert sich selbst: Beim nächsten Öffnen mit Netz wird die neue 
 
 Alles liegt in `/data` (Datei `jf-hub.sqlite`).
 
-- **Über die Oberfläche:** Admin → Backup & Export → „Datenbank-Backup laden“ (und „Alle Protokolle als ZIP“ als lesbare Kopie mit PDFs).
+- **Automatisch:** Der Server legt täglich ein Backup in `/data/backups` an und behält die letzten 7 (einstellbar unter Admin → Backup & Export, `0` schaltet es ab). Diese Backups schützen vor Fehlern und versehentlichem Löschen, **nicht** vor dem Ausfall der Festplatte: Sie liegen im selben Volume. Lade ab und zu ein Backup herunter oder sichere das Volume an anderer Stelle.
+- **Über die Oberfläche:** Admin → Backup & Export: Backups ansehen, herunterladen, „Jetzt sichern“, und „Alle Protokolle als ZIP“ als lesbare Kopie mit PDFs.
+- **Wiederherstellen in der Oberfläche:** Admin → Backup & Export → bei einem Backup „Wiederherstellen“, oder eine heruntergeladene Datei unter „Aus Datei wiederherstellen“ hochladen. Der Server sichert vorher den aktuellen Stand (Art „vor Wiederherstellung“, die letzten 3 bleiben). Danach gleichen sich alle Geräte neu ab; Benutzer und Anmeldungen stammen aus dem Backup, wer dort fehlt, meldet sich neu an. Auch Backups älterer Versionen lassen sich einspielen.
 - **Über das Volume:** `docker run --rm -v jf-hub-data:/data -v "$PWD":/backup alpine tar czf /backup/jf-hub-backup.tgz -C /data .`
-- **Wiederherstellen:** Container stoppen, die Datei als `/data/jf-hub.sqlite` zurücklegen (Rechte: Benutzer `node`, wird beim Start automatisch gesetzt), Container starten.
+- **Wiederherstellen von Hand** (falls die Oberfläche nicht erreichbar ist): Container stoppen, die Datei als `/data/jf-hub.sqlite` zurücklegen (Rechte: Benutzer `node`, wird beim Start automatisch gesetzt), Container starten.
 
 Sichere das Backup nicht ungeschützt in einer Cloud: Es enthält Namen von Jugendlichen (siehe [Datenschutz](datenschutz.md)).
 

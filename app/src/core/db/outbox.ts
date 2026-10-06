@@ -1,6 +1,6 @@
 import { db, type SyncCollection } from './db';
 
-export const SYNC_COLLECTIONS: SyncCollection[] = ['members', 'sessions', 'tasks', 'clothing', 'clothingItems'];
+export const SYNC_COLLECTIONS: SyncCollection[] = ['members', 'sessions', 'tasks', 'clothing', 'clothingItems', 'runs', 'lineupTemplates'];
 
 /**
  * Sammlungen, die jeder Server mit allgemeinem Abgleich kennt. Neuere Server melden ihre Liste selbst
@@ -26,16 +26,24 @@ export async function markChanged(collection: SyncCollection, id: string, delete
 
 /** Beim ersten Abgleich nach dem Update werden vorhandene Daten (Mitglieder, Dienste, Aufgaben …) einmalig mitgesendet. */
 export async function seedOutboxOnce(): Promise<void> {
-  if (await db.kv.get('records.seeded')) return;
-  await markAllForSync();
-  await db.kv.put({ key: 'records.seeded', value: true });
+  if (!(await db.kv.get('records.seeded'))) {
+    await markAllForSync();
+    await db.kv.put({ key: 'records.seeded', value: true });
+  }
+  // Wettkampf-Läufe und Aufstellungsvorlagen kamen später dazu: bei bestehenden Geräten einmalig nachtragen.
+  if (!(await db.kv.get(WETTKAMPF_SEEDED))) {
+    await markAllForSync(['runs', 'lineupTemplates']);
+    await db.kv.put({ key: WETTKAMPF_SEEDED, value: true });
+  }
 }
 
+const WETTKAMPF_SEEDED = 'records.seeded.wettkampf';
+
 /** Alle vorhandenen Datensätze zum Senden vormerken (nach Import oder Wiederherstellung). */
-export async function markAllForSync(): Promise<void> {
+export async function markAllForSync(collections: SyncCollection[] = SYNC_COLLECTIONS): Promise<void> {
   const now = Date.now();
   const entries = [];
-  for (const collection of SYNC_COLLECTIONS) {
+  for (const collection of collections) {
     for (const id of (await db.table(collection).toCollection().primaryKeys()) as string[]) {
       entries.push({ key: `${collection}:${id}`, collection, id, updatedAt: now, deleted: 0 as const });
     }

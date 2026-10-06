@@ -3,7 +3,7 @@ import cookie from '@fastify/cookie';
 import rateLimit from '@fastify/rate-limit';
 import fastifyStatic from '@fastify/static';
 import { zipSync, strToU8 } from 'fflate';
-import { existsSync, readFileSync, rmSync, mkdtempSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, mkdtempSync, createReadStream } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
@@ -41,8 +41,9 @@ import { applySync, canSee, toServerDoc, VISIBLE_SQL, type SyncRequest } from '.
 import { ensureVapid, PushError, replaceReminders, sendDue, subscribe, unsubscribe, webPushSender, type PushSender } from './push.js';
 import { HolidayCache, type FetchLike } from './holidays.js';
 import { sampleProtocol } from './sample.js';
+import { autoKeep, backupPath, createBackup, deleteBackup, isBackupName, listBackups, pruneBackups, restoreFromFile, RestoreError, runAutoBackup, writeUpload } from './backup.js';
 
-export const VERSION = '2.0.0';
+export const VERSION = '2.0.1';
 const COOKIE = 'jfh_session';
 
 declare module 'fastify' {
@@ -69,6 +70,10 @@ export interface AppOptions {
   pushSender?: PushSender;
   /** false: Erinnerungen nicht automatisch verschicken (Tests). */
   pushTimer?: boolean;
+  /** Ordner für Backups (`/data/backups`); ohne Angabe gibt es keine gespeicherten Backups und keine Wiederherstellung. */
+  backupDir?: string;
+  /** false: keine automatischen Backups (Tests). */
+  backupTimer?: boolean;
   fetchImpl?: FetchLike;
   logger?: boolean;
 }
@@ -411,6 +416,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
       if (k === 'logo' && v !== '' && (!/^data:image\/(png|jpeg);base64,[A-Za-z0-9+/=]+$/.test(v) || v.length > 700_000)) {
         return reply.code(400).send({ error: 'Logo: PNG/JPEG, max. ca. 500 KB' });
       }
+      if (k === 'backupKeep' && !/^\d{1,3}$/.test(v)) return reply.code(400).send({ error: 'Backups: 0–365 aufbewahren' });
       if ((k === 'tokenDays' || k === 'trashDays') && !(Number(v) >= 1 && Number(v) <= 3650)) {
         return reply.code(400).send({ error: `${k}: 1–3650 Tage` });
       }
@@ -508,6 +514,77 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
     }
   });
 
+  // ---------- gespeicherte Backups und Wiederherstellung ----------
+  const backupDir = opts.backupDir;
+  app.addContentTypeParser('application/x-sqlite3', { parseAs: 'buffer', bodyLimit: 512 * 1024 * 1024 }, (_req, body, done) => done(null, body));
+  const needDir = (reply: FastifyReply) => (backupDir ? backupDir : void reply.code(404).send({ error: 'Gespeicherte Backups sind auf diesem Server nicht eingerichtet' }));
+
+  app.get('/api/admin/backups', async () => ({
+    enabled: !!backupDir,
+    keep: autoKeep(db),
+    items: backupDir ? listBackups(backupDir) : [],
+  }));
+
+  app.post('/api/admin/backups', async (_req, reply) => {
+    const dir = needDir(reply);
+    if (!dir) return;
+    const made = createBackup(db, dir, 'manuell');
+    pruneBackups(dir, autoKeep(db));
+    return made;
+  });
+
+  app.get<{ Params: { name: string } }>('/api/admin/backups/:name', async (req, reply) => {
+    const dir = needDir(reply);
+    if (!dir) return;
+    const file = backupPath(dir, req.params.name);
+    if (!file) return reply.code(404).send({ error: 'Backup nicht gefunden' });
+    return reply
+      .header('Content-Type', 'application/octet-stream')
+      .header('Content-Disposition', `attachment; filename="${req.params.name}"`)
+      .send(createReadStream(file));
+  });
+
+  app.delete<{ Params: { name: string } }>('/api/admin/backups/:name', async (req, reply) => {
+    const dir = needDir(reply);
+    if (!dir) return;
+    return deleteBackup(dir, req.params.name) ? { ok: true } : reply.code(404).send({ error: 'Backup nicht gefunden' });
+  });
+
+  /** Vor jeder Wiederherstellung sichert der Server den aktuellen Stand (Art „vorher“), damit sie sich rückgängig machen lässt. */
+  const restore = (reply: FastifyReply, dir: string, file: string) => {
+    const before = createBackup(db, dir, 'vorher');
+    try {
+      restoreFromFile(db, file);
+      pruneBackups(dir, autoKeep(db));
+      return { ok: true, before: before.name };
+    } catch (e) {
+      deleteBackup(dir, before.name);
+      if (e instanceof RestoreError) return reply.code(400).send({ error: e.message });
+      throw e;
+    }
+  };
+
+  app.post<{ Params: { name: string } }>('/api/admin/backups/:name/restore', async (req, reply) => {
+    const dir = needDir(reply);
+    if (!dir) return;
+    const file = backupPath(dir, req.params.name);
+    if (!file || !isBackupName(req.params.name)) return reply.code(404).send({ error: 'Backup nicht gefunden' });
+    return restore(reply, dir, file);
+  });
+
+  /** Eine hochgeladene Datenbank-Datei (Content-Type application/x-sqlite3) einspielen. */
+  app.post<{ Body: Buffer }>('/api/admin/restore', async (req, reply) => {
+    const dir = needDir(reply);
+    if (!dir) return;
+    if (!Buffer.isBuffer(req.body) || req.body.length < 100) return reply.code(400).send({ error: 'Keine Datenbank-Datei übermittelt' });
+    const up = writeUpload(req.body);
+    try {
+      return restore(reply, dir, up.file);
+    } finally {
+      up.cleanup();
+    }
+  });
+
   /** Beispiel-PDF für die Layout-Vorschau in der Admin-GUI. */
   app.get('/api/admin/preview.pdf', async (_req, reply) => {
     return reply.header('Content-Type', 'application/pdf').send(await renderPdf(sampleProtocol(), style()));
@@ -542,6 +619,24 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
   }, 6 * 3_600_000);
   timer.unref();
   app.addHook('onClose', async () => clearInterval(timer));
+
+  if (backupDir && opts.backupTimer !== false) {
+    const tick = () => {
+      try {
+        runAutoBackup(db, backupDir);
+      } catch (e) {
+        app.log.warn({ err: e }, 'Automatisches Backup fehlgeschlagen');
+      }
+    };
+    const first = setTimeout(tick, 60_000);
+    const backupTimer = setInterval(tick, 3_600_000);
+    first.unref();
+    backupTimer.unref();
+    app.addHook('onClose', async () => {
+      clearTimeout(first);
+      clearInterval(backupTimer);
+    });
+  }
 
   if (opts.pushTimer !== false) {
     const pushTimer = setInterval(() => {

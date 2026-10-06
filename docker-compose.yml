@@ -12,7 +12,7 @@
 #   - Alternative: eigener Reverse-Proxy / Tailscale → docs/https-alternativen.md
 services:
   jf-hub:
-    image: ${JF_HUB_IMAGE:-ghcr.io/amgiparker/open-jf-hub:latest}
+    image: ${JF_HUB_IMAGE:-ghcr.io/volltext/jf-hub:latest}
     # Aus den Quellen bauen statt das fertige Image zu laden:  docker compose up -d --build
     build: .
     container_name: jf-hub

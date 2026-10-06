@@ -35,7 +35,15 @@ cd app    && npm run typecheck && npm test
 cd server && npm run typecheck && npm test
 ```
 
-Die CI (`.github/workflows/ci.yml`) führt beides aus, baut die PWA und startet das Docker-Image als Rauchtest.
+Dazu kommt ein **Rauchtest im Browser** (Playwright, Ordner `e2e/`): Er startet den echten Server mit der gebauten Web-App, meldet zwei Betreuer an, schreibt ein Protokoll, veröffentlicht es und nimmt es wieder zurück.
+
+```bash
+cd server && npm run build && cd ../app && npm run build:web     # Voraussetzung: Server und Web-App gebaut
+cd ../e2e && npm ci && npx playwright install chromium && npm test
+# Mit vorhandenem Chromium: PW_CHROMIUM_PATH=/pfad/zu/chrome npm test
+```
+
+Die CI (`.github/workflows/ci.yml`) führt alles aus, baut die PWA und startet das Docker-Image als Rauchtest.
 
 Was getestet wird: Wertungslogik und Regeln (reine Funktionen), Datenbank-Schema, Abgleich (Konflikte, Sichtbarkeit, Löschhinweise), Dienst-Rhythmus, Web-Push-Client, Service Worker (in einer nachgebauten Umgebung), Server-API (Anmeldung, Benutzer, Sichtbarkeit, Push, PDF, Migration einer Alt-Datenbank).
 
@@ -61,9 +69,11 @@ server/
     auth.ts       Benutzer, Einladungen, Passwörter, Sitzungen, Login-Bremse, Migration von Version 1
     sync.ts       Abgleich mit Besitz und Sichtbarkeit
     push.ts       Web-Push: Abos, Erinnerungen, Versand
+    backup.ts     Backups (VACUUM INTO, täglich, Aufräumen) und Wiederherstellung
     pdf.ts, clothingPdf.ts, inkSvg.ts   PDF-Erzeugung
     db.ts         Schema und Migrationen (SQLite)
   public/admin/   Admin-Oberfläche (ohne Framework)
+e2e/              Playwright-Rauchtest (Server + gebaute Web-App)
 ```
 
 ### Ein neues Modul ergänzen
@@ -102,10 +112,10 @@ Dass die Termin-Logik im Client bleibt (Ferien, Saison-Zeiten), hält den Server
 
 Öffentlich: `GET /api/health`, `GET /api/status`, `POST /api/setup`, `/api/login`, `/api/invite/accept`.
 Angemeldet (Bearer-Token oder Cookie mit `X-JFH: 1`): `/api/me`, `/api/logout`, `/api/account/{password,sessions…}`, `POST /api/sync`, `GET /api/protocols/:id/pdf`, `POST /api/clothing/pdf`, `GET /api/export.zip`, `GET /api/holidays`, `/api/push/{key,subscribe,unsubscribe,reminders,test}`.
-Nur Admins: `/api/admin/{info,settings,users…,sessions…,protocols…,backup,preview.pdf}`.
+Nur Admins: `/api/admin/{info,settings,users…,sessions…,protocols…,backup,backups…,restore,preview.pdf}`.
 
 ## Release
 
 1. Versionen erhöhen: `app/package.json`, `app/android/app/build.gradle` (`versionCode` + `versionName`), `server/package.json`, `VERSION` in `server/src/app.ts`; `CHANGELOG.md` ergänzen.
-2. Tag setzen: `git tag v2.0.0 && git push --tags`.
+2. Auf `main` mergen, dann den Tag auf dem Merge-Commit setzen: `git tag v2.0.1 && git push --tags`.
 3. GitHub Actions baut das Docker-Image (`ghcr.io/<owner>/<repo>:2.0.0`, `:2.0`, `:latest`) und die APK und legt sie ans Release.

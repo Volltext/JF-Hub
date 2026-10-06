@@ -8,7 +8,7 @@ import type { ClothingItem, ClothingRecord } from '@/features/kleidung/model';
  * Zentrale lokale Datenbank. Neue Features erweitern das Schema über eine neue
  * `version(n)` – bestehende Versionen werden nie verändert.
  */
-export type SyncCollection = 'members' | 'sessions' | 'tasks' | 'clothing' | 'clothingItems';
+export type SyncCollection = 'members' | 'sessions' | 'tasks' | 'clothing' | 'clothingItems' | 'runs' | 'lineupTemplates';
 
 export interface OutboxEntry {
   /** `${collection}:${id}` */

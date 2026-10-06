@@ -167,7 +167,7 @@ export async function performSync(send: (req: SyncRequest) => Promise<SyncRespon
   let reuploaded = 0;
   const nowAccepted = Array.isArray(res.collections) ? SYNC_COLLECTIONS.filter((c) => res.collections!.includes(c)) : [...accepted];
 
-  await db.transaction('rw', [db.protokolle, db.folders, db.outbox, db.members, db.sessions, db.tasks, db.clothing, db.clothingItems, db.kv], async () => {
+  await db.transaction('rw', [db.protokolle, db.folders, db.outbox, db.members, db.sessions, db.tasks, db.clothing, db.clothingItems, db.runs, db.lineupTemplates, db.kv], async () => {
     for (const f of res.folders ?? []) {
       const local = await db.folders.get(f.id);
       // Ordner: letzte Änderung gewinnt; lokale Änderungen seit dem Senden bleiben bestehen.

@@ -19,7 +19,7 @@ const serverDoc = (id: string, over: Partial<ServerDoc> = {}): ServerDoc => ({
 });
 
 beforeEach(async () => {
-  await Promise.all([db.protokolle.clear(), db.folders.clear(), db.outbox.clear(), db.tasks.clear(), db.members.clear(), db.sessions.clear(), db.clothing.clear(), db.clothingItems.clear(), db.kv.clear()]);
+  await Promise.all([db.protokolle.clear(), db.folders.clear(), db.outbox.clear(), db.tasks.clear(), db.members.clear(), db.sessions.clear(), db.clothing.clear(), db.clothingItems.clear(), db.runs.clear(), db.lineupTemplates.clear(), db.kv.clear()]);
 });
 
 describe('performSync', () => {
@@ -328,5 +328,44 @@ describe('performSync: Besitzer und Sichtbarkeit', () => {
     expect(await db.protokolle.get(doc.id)).toBeUndefined();
     expect(await db.tasks.get('task-anna')).toBeUndefined();
     expect(await db.outbox.count()).toBe(0);
+  });
+
+  it('Läufe und Vorlagen: senden, was vorgemerkt ist, und übernehmen, was vom Server kommt', async () => {
+    const run = { id: 'run-lokal', createdAt: '2026-10-01T10:00:00.000Z', updatedAt: '2026-10-01T10:00:00.000Z', mode: 'a', totalMs: 90_000, markers: [], knotDurationMs: null, taskTimers: {}, notes: '', scoring: null, lsp: null, lineupSnapshot: { assignments: {}, memberNames: {} } };
+    await db.runs.add(run);
+    await db.outbox.put({ key: 'runs:run-lokal', collection: 'runs', id: 'run-lokal', updatedAt: 10, deleted: 0 });
+    const known = ['members', 'sessions', 'tasks', 'clothing', 'clothingItems', 'runs', 'lineupTemplates'];
+    await db.kv.bulkPut([
+      { key: 'protokolle.serverCollections', value: known },
+      { key: 'protokolle.serverRecords', value: true },
+    ]);
+    let sent: SyncRequest | undefined;
+    await performSync(async (req) => {
+      sent = req;
+      return {
+        rev: 4,
+        changes: [],
+        folders: [],
+        records: [{ collection: 'lineupTemplates', id: 'tpl-fremd', data: { id: 'tpl-fremd', name: 'Von Anna', createdAt: '2026-10-02T00:00:00.000Z', assignments: {} }, updatedAt: 11, deleted: false, rev: 4 }],
+        collections: known,
+        conflicts: [],
+      };
+    });
+    expect(sent!.records).toEqual([{ collection: 'runs', id: 'run-lokal', data: run, updatedAt: 10, deleted: false }]);
+    expect(await db.lineupTemplates.get('tpl-fremd')).toMatchObject({ name: 'Von Anna' });
+    expect(await db.outbox.count()).toBe(0);
+  });
+
+  it('Nach einer wiederhergestellten Server-Datenbank gehen vorhandene Läufe erneut hoch', async () => {
+    await db.runs.add({ id: 'run-1', createdAt: '', updatedAt: '', mode: 'a', totalMs: 1, markers: [], knotDurationMs: null, taskTimers: {}, notes: '', scoring: null, lsp: null, lineupSnapshot: { assignments: {}, memberNames: {} } });
+    await db.kv.bulkPut([
+      { key: 'protokolle.rev', value: 5 },
+      { key: 'protokolle.epoch', value: 'alt' },
+      { key: 'protokolle.serverRecords', value: true },
+      { key: 'protokolle.serverCollections', value: ['members', 'sessions', 'tasks', 'clothing', 'clothingItems', 'runs', 'lineupTemplates'] },
+    ]);
+    const res = await performSync(async () => ({ rev: 2, epoch: 'neu', reset: true, changes: [], folders: [], records: [], collections: ['members', 'sessions', 'tasks', 'clothing', 'clothingItems', 'runs', 'lineupTemplates'], conflicts: [] }));
+    expect(res.reuploaded).toBe(1);
+    expect(await db.outbox.get('runs:run-1')).toBeDefined();
   });
 });

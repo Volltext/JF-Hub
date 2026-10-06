@@ -29,8 +29,8 @@ Die Daten liegen auf **deinem** Server, nicht bei einem Anbieter.
 Du brauchst einen Rechner mit [Docker](https://docs.docker.com/get-docker/) (Docker Compose v2.24 oder neuer) – ein Raspberry Pi, ein NAS, ein Heimserver oder ein kleiner Cloud-Server reichen.
 
 ```bash
-git clone https://github.com/amgiparker/open-jf-hub.git
-cd open-jf-hub
+git clone https://github.com/Volltext/JF-Hub.git
+cd JF-Hub
 cp .env.example .env
 docker compose up -d
 docker compose logs jf-hub | grep -A2 Ersteinrichtung
@@ -90,7 +90,7 @@ docker compose pull && docker compose up -d     # neue Version (Image von GitHub
 docker compose up -d --build                    # neue Version (aus den Quellen gebaut)
 ```
 
-Die Datenbank ist **eine Datei** (`jf-hub.sqlite` im Volume `/data`). Sichern: das Volume kopieren oder in der Admin-Oberfläche unter **Backup & Export** ein Backup laden. Die Daten-Migrationen laufen beim Start von selbst.
+Die Datenbank ist **eine Datei** (`jf-hub.sqlite` im Volume `/data`). Der Server sichert täglich selbst in `/data/backups`. In der Admin-Oberfläche unter **Backup & Export** lädst du Backups herunter und stellst sie mit einem Klick wieder her. Für Ausfallsicherheit zusätzlich das Volume extern sichern. Die Daten-Migrationen laufen beim Start von selbst.
 
 ## Sicherheit und Datenschutz
 
