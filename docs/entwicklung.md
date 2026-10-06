@@ -35,7 +35,15 @@ cd app    && npm run typecheck && npm test
 cd server && npm run typecheck && npm test
 ```
 
-Die CI (`.github/workflows/ci.yml`) führt beides aus, baut die PWA und startet das Docker-Image als Rauchtest.
+Dazu kommt ein **Rauchtest im Browser** (Playwright, Ordner `e2e/`): Er startet den echten Server mit der gebauten Web-App, meldet zwei Betreuer an, schreibt ein Protokoll, veröffentlicht es und nimmt es wieder zurück.
+
+```bash
+cd server && npm run build && cd ../app && npm run build:web     # Voraussetzung: Server und Web-App gebaut
+cd ../e2e && npm ci && npx playwright install chromium && npm test
+# Mit vorhandenem Chromium: PW_CHROMIUM_PATH=/pfad/zu/chrome npm test
+```
+
+Die CI (`.github/workflows/ci.yml`) führt alles aus, baut die PWA und startet das Docker-Image als Rauchtest.
 
 Was getestet wird: Wertungslogik und Regeln (reine Funktionen), Datenbank-Schema, Abgleich (Konflikte, Sichtbarkeit, Löschhinweise), Dienst-Rhythmus, Web-Push-Client, Service Worker (in einer nachgebauten Umgebung), Server-API (Anmeldung, Benutzer, Sichtbarkeit, Push, PDF, Migration einer Alt-Datenbank).
 
@@ -64,6 +72,7 @@ server/
     pdf.ts, clothingPdf.ts, inkSvg.ts   PDF-Erzeugung
     db.ts         Schema und Migrationen (SQLite)
   public/admin/   Admin-Oberfläche (ohne Framework)
+e2e/              Playwright-Rauchtest (Server + gebaute Web-App)
 ```
 
 ### Ein neues Modul ergänzen

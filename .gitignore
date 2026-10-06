@@ -44,3 +44,7 @@ Thumbs.db
 .vscode/
 *.log
 .claude/
+
+# Playwright
+test-results/
+playwright-report/
