@@ -34,7 +34,7 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
-      - uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@v4
       - run: npm ci --no-audit --no-fund
       - run: chmod +x android/gradlew
       - name: Signierschlüssel bereitstellen
