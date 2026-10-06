@@ -29,8 +29,8 @@ Die Daten liegen auf **deinem** Server, nicht bei einem Anbieter.
 Du brauchst einen Rechner mit [Docker](https://docs.docker.com/get-docker/) (Docker Compose v2.24 oder neuer) – ein Raspberry Pi, ein NAS, ein Heimserver oder ein kleiner Cloud-Server reichen.
 
 ```bash
-git clone https://github.com/amgiparker/open-jf-hub.git
-cd open-jf-hub
+git clone https://github.com/Volltext/JF-Hub.git
+cd JF-Hub
 cp .env.example .env
 docker compose up -d
 docker compose logs jf-hub | grep -A2 Ersteinrichtung

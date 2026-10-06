@@ -3,7 +3,7 @@
 #   docker run -p 8080:8080 -v jf-hub-data:/data jf-hub
 
 # ---- 1. Web-App (PWA) bauen ----
-FROM node:26-alpine AS web
+FROM node:22-alpine AS web
 WORKDIR /build/app
 COPY app/package.json app/package-lock.json ./
 RUN npm ci --no-audit --no-fund
@@ -13,7 +13,7 @@ COPY app/public ./public
 RUN npx vite build --mode web --outDir /out/web --emptyOutDir
 
 # ---- 2. Server bauen ----
-FROM node:26-alpine AS server
+FROM node:22-alpine AS server
 WORKDIR /build/server
 COPY server/package.json server/package-lock.json ./
 RUN npm ci --no-audit --no-fund
@@ -22,7 +22,7 @@ COPY server/src ./src
 RUN npx tsc -p . && npm prune --omit=dev
 
 # ---- 3. Laufzeit ----
-FROM node:26-alpine
+FROM node:22-alpine
 ARG VERSION=dev
 ARG REVISION=unknown
 LABEL org.opencontainers.image.title="JF Hub" \

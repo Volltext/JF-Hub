@@ -11,8 +11,8 @@ JF Hub läuft als **ein Docker-Container** (Server, Web-App und Admin-Oberfläch
 ## Variante A: Aus dem Repository (empfohlen)
 
 ```bash
-git clone https://github.com/amgiparker/open-jf-hub.git
-cd open-jf-hub
+git clone https://github.com/Volltext/JF-Hub.git
+cd JF-Hub
 cp .env.example .env        # optional, Werte siehe unten
 docker compose up -d
 ```
@@ -26,7 +26,7 @@ Lege einen Ordner an (z. B. `jf-hub`) und darin eine Datei `docker-compose.yml`:
 ```yaml
 services:
   jf-hub:
-    image: ghcr.io/amgiparker/open-jf-hub:latest
+    image: ghcr.io/volltext/jf-hub:latest
     container_name: jf-hub
     restart: unless-stopped
     ports:
@@ -51,7 +51,7 @@ Dann `docker compose up -d`.
 docker run -d --name jf-hub --restart unless-stopped \
   -p 127.0.0.1:8080:8080 -v jf-hub-data:/data \
   -e PUSH_SUBJECT=mailto:deine-adresse@example.org \
-  ghcr.io/amgiparker/open-jf-hub:latest
+  ghcr.io/volltext/jf-hub:latest
 ```
 
 ## Variante D: NAS- und Server-Oberflächen (ZimaOS, Portainer, Arcane, Unraid, Synology)
@@ -78,7 +78,7 @@ Danach:
 
 | Variable | Bedeutung | Standard |
 | --- | --- | --- |
-| `JF_HUB_IMAGE` | Image, das Compose startet | `ghcr.io/amgiparker/open-jf-hub:latest` |
+| `JF_HUB_IMAGE` | Image, das Compose startet | `ghcr.io/volltext/jf-hub:latest` |
 | `BIND` | Adresse, auf der der Port veröffentlicht wird (`0.0.0.0` = ganzes Heimnetz) | `127.0.0.1` |
 | `HOST_PORT` | Port am Rechner | `8080` |
 | `DATA_PATH` | Datenordner oder Volume-Name | `jf-hub-data` |
