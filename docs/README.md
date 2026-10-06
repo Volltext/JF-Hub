@@ -34,6 +34,7 @@ Hier findest du alles zu JF Hub – von der Installation bis zum Datenschutz. Su
 | Thema | Worum geht's |
 | --- | --- |
 | [Entwicklung](entwicklung.md) | Starten, Testen, Aufbau, Abgleich, Web-Push, API, Release |
+| [Website](../website/README.md) | Die Projekt-Website auf GitHub Pages bearbeiten und veröffentlichen |
 | [CONTRIBUTING](../CONTRIBUTING.md) | Wie du Fehler meldest und Code beiträgst |
 | [CHANGELOG](../CHANGELOG.md) | Was sich in welcher Version geändert hat |
 
