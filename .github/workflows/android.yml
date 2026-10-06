@@ -35,6 +35,9 @@ jobs:
           distribution: temurin
           java-version: 21
       - uses: android-actions/setup-android@v3
+        with:
+          # Der Standard „tools platform-tools“ scheitert: das Paket „tools“ gibt es in den neuen Command-line-Tools nicht mehr.
+          packages: platform-tools
       - run: npm ci --no-audit --no-fund
       - run: chmod +x android/gradlew
       - name: Signierschlüssel bereitstellen
