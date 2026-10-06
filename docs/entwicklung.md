@@ -117,5 +117,5 @@ Nur Admins: `/api/admin/{info,settings,users…,sessions…,protocols…,backup,
 ## Release
 
 1. Versionen erhöhen: `app/package.json`, `app/android/app/build.gradle` (`versionCode` + `versionName`), `server/package.json`, `VERSION` in `server/src/app.ts`; `CHANGELOG.md` ergänzen.
-2. Tag setzen: `git tag v2.0.0 && git push --tags`.
+2. Auf `main` mergen, dann den Tag auf dem Merge-Commit setzen: `git tag v2.0.1 && git push --tags`.
 3. GitHub Actions baut das Docker-Image (`ghcr.io/<owner>/<repo>:2.0.0`, `:2.0`, `:latest`) und die APK und legt sie ans Release.

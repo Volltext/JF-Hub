@@ -43,7 +43,7 @@ import { HolidayCache, type FetchLike } from './holidays.js';
 import { sampleProtocol } from './sample.js';
 import { autoKeep, backupPath, createBackup, deleteBackup, isBackupName, listBackups, pruneBackups, restoreFromFile, RestoreError, runAutoBackup, writeUpload } from './backup.js';
 
-export const VERSION = '2.0.0';
+export const VERSION = '2.0.1';
 const COOKIE = 'jfh_session';
 
 declare module 'fastify' {
