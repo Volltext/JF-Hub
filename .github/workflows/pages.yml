@@ -34,7 +34,7 @@ jobs:
       - uses: actions/checkout@v4
       - id: pages
         if: github.event_name != 'pull_request'
-        uses: actions/configure-pages@v5
+        uses: actions/configure-pages@v6
       - name: Website zusammenstellen
         env:
           DEMO_URL: ${{ vars.DEMO_URL }}
