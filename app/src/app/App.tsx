@@ -5,7 +5,8 @@ import { LockScreen } from './LockScreen';
 import { loadSettings } from '@/core/settings/settings';
 import { pin } from '@/core/settings/pin';
 import { applyTheme } from '@/core/ui/theme';
-import { IS_WEB } from '@/core/env';
+import { IS_DEMO, IS_WEB } from '@/core/env';
+import { DemoApp } from './DemoApp';
 import { WebApp } from './WebApp';
 
 type Phase = 'boot' | 'locked' | 'open';
@@ -33,7 +34,8 @@ function NativeApp() {
   return <AppFrame />;
 }
 
-/** Browser (PWA): Anmeldung, dann die ganze App; Android-App: optionale PIN, dann die ganze App. */
+/** Browser (PWA): Anmeldung, dann die ganze App; Android-App: optionale PIN, dann die ganze App; Browser-Demo: gleich die App. */
 export function App() {
+  if (IS_DEMO) return <DemoApp />;
   return IS_WEB ? <WebApp /> : <NativeApp />;
 }

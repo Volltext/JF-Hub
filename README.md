@@ -14,6 +14,7 @@ Protokolle, Dienste, Aufgaben, Kleidergrößen und Wettkampf-Training – auf Ha
 ![PWA](https://img.shields.io/badge/PWA-installierbar-5a0fc8)
 ![Android](https://img.shields.io/badge/Android-App-3ddc84?logo=android&logoColor=white)
 
+[**Demo ausprobieren**](https://volltext.github.io/JF-Hub/demo/) ·
 [**Loslegen**](#-in-5-minuten-loslegen) ·
 [Funktionen](#-was-kann-jf-hub) ·
 [Screenshots](#-so-sieht-es-aus) ·
@@ -124,7 +125,7 @@ Du hast schon einen Reverse-Proxy, eine eigene Domain oder Tailscale? Dann schau
 | Von außen per https erreichbar sein | [Cloudflare Tunnel](docs/cloudflare-tunnel.md) · [Alternativen](docs/https-alternativen.md) |
 | Betreuer einladen und verstehen, wer was sieht | [Benutzer und Sichtbarkeit](docs/benutzer-und-sichtbarkeit.md) |
 | Die Android-App nutzen oder selbst bauen | [Android-App](docs/android-app.md) |
-| Eine öffentliche Demo zum Ausprobieren betreiben | [Demo-Instanz](docs/demo.md) |
+| Die Demo verstehen oder einen eigenen Demo-Server betreiben | [Demo](docs/demo.md) |
 | Wissen, welche Daten gespeichert werden | [Datenschutz](docs/datenschutz.md) |
 | Von der alten Version 1.x umsteigen | [Umstieg von 1.x](docs/umstieg-von-1x.md) |
 | Am Code mitarbeiten | [Entwicklung](docs/entwicklung.md) · [CONTRIBUTING](CONTRIBUTING.md) |

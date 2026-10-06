@@ -1,4 +1,5 @@
 import { db } from '@/core/db/db';
+import { DEMO_NEEDS_SERVER, IS_DEMO } from '@/core/env';
 import { loadSettings } from '@/core/settings/settings';
 import { shareBinaryFile } from '@/core/native/files';
 import { ProtoError, loadConn, request } from './http';
@@ -37,6 +38,7 @@ function pdfName(p: Protokoll): string {
 
 /** Gleicht ab, lädt das PDF vom Server und öffnet Teilen-Dialog (App) bzw. Download (Web). */
 export async function exportPdf(id: string): Promise<void> {
+  if (IS_DEMO) throw new ProtoError(DEMO_NEEDS_SERVER);
   const p = await db.protokolle.get(id);
   if (!p) throw new ProtoError('Protokoll nicht gefunden.');
   await syncNow();

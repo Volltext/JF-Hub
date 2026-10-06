@@ -1,6 +1,6 @@
 import { Capacitor } from '@capacitor/core';
 import { db } from '@/core/db/db';
-import { IS_WEB } from '@/core/env';
+import { IS_DEMO, IS_WEB } from '@/core/env';
 import { loadConn, request } from '@/features/protokolle/http';
 import type { Reminder } from '@/core/domain/tasks';
 
@@ -22,6 +22,7 @@ const TARGET: Record<PushKind, string> = {
 export function pushSupported(): boolean {
   return (
     IS_WEB &&
+    !IS_DEMO &&
     !Capacitor.isNativePlatform() &&
     typeof window !== 'undefined' &&
     window.isSecureContext &&
@@ -43,6 +44,7 @@ export function isStandalone(): boolean {
 /** Warum Push hier nicht geht (für die Anzeige), oder null. */
 export function pushUnavailableReason(): string | null {
   if (!IS_WEB) return null;
+  if (IS_DEMO) return 'Benachrichtigungen verschickt der JF-Hub-Server – in der Demo im Browser gibt es keinen.';
   if (!window.isSecureContext) return 'Benachrichtigungen brauchen eine verschlüsselte Verbindung (https). Der Server ist hier nur über http erreichbar.';
   if (isIos() && !isStandalone()) return 'Auf dem iPhone/iPad: erst „Zum Home-Bildschirm“ hinzufügen und die App von dort öffnen.';
   if (!pushSupported()) return 'Dieser Browser unterstützt keine Benachrichtigungen.';
@@ -137,12 +139,13 @@ export async function syncWebReminders(reminders: Reminder[], kind: PushKind): P
   });
 }
 
-/** Registriert den Service Worker (Web-Build, sicherer Kontext). */
+/** Registriert den Service Worker (Web-Build, sicherer Kontext; die Browser-Demo hat keinen). */
 export function registerServiceWorker(): void {
-  if (!IS_WEB || !('serviceWorker' in navigator) || !window.isSecureContext) return;
+  if (!IS_WEB) return;
+  // Nach einem Update fehlen alte Dateien: einmal neu laden statt eines kaputten Bildschirms.
+  window.addEventListener('vite:preloadError', () => window.location.reload());
+  if (IS_DEMO || !('serviceWorker' in navigator) || !window.isSecureContext) return;
   window.addEventListener('load', () => {
     void navigator.serviceWorker.register('/sw.js').catch(() => undefined);
   });
-  // Nach einem Update fehlen alte Dateien: einmal neu laden statt eines kaputten Bildschirms.
-  window.addEventListener('vite:preloadError', () => window.location.reload());
 }

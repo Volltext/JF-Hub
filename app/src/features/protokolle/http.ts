@@ -1,7 +1,7 @@
 import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import { loadSettings } from '@/core/settings/settings';
 import { secure } from '@/core/native/secure';
-import { IS_WEB } from '@/core/env';
+import { DEMO_NEEDS_SERVER, IS_DEMO, IS_WEB } from '@/core/env';
 
 export const PROTO_TOKEN_KEY = 'protokolle.token';
 
@@ -28,6 +28,7 @@ export interface ProtoConn {
 
 /** Adresse und Token der aktuellen Verbindung; `url` ist leer, solange nichts eingerichtet ist. */
 export async function loadConn(): Promise<ProtoConn> {
+  if (IS_DEMO) return { url: '', token: null };
   const url = IS_WEB ? location.origin : (await loadSettings()).protocolServerUrl;
   return { url, token: await secure.get(PROTO_TOKEN_KEY) };
 }
@@ -71,7 +72,7 @@ async function webRequest(method: string, url: string, headers: Record<string, s
 
 /** Eine Anfrage an den Server. Binärantworten kommen als Base64-String zurück. */
 export async function request<T>(conn: ProtoConn, method: string, path: string, body?: unknown, binary = false): Promise<T> {
-  if (!conn.url) throw new ProtoError('Kein Server eingerichtet.', 0);
+  if (!conn.url) throw new ProtoError(IS_DEMO ? DEMO_NEEDS_SERVER : 'Kein Server eingerichtet.', 0);
   const headers: Record<string, string> = {};
   if (conn.token && conn.token !== COOKIE_SESSION) headers.Authorization = `Bearer ${conn.token}`;
   if (IS_WEB) headers['X-JFH'] = '1'; // verlangt der Server bei Cookie-Sitzungen (CSRF-Schutz)

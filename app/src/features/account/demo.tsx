@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { IS_WEB } from '@/core/env';
+import { IS_DEMO, IS_WEB } from '@/core/env';
 
 /** Öffentlicher Zugang einer Demo-Instanz (Server mit `DEMO=1`). */
 export interface DemoAccount {
@@ -18,9 +18,9 @@ export interface DemoInfo {
 
 let cached: Promise<DemoInfo | null> | undefined;
 
-/** Fragt den Server einmal, ob er eine Demo ist. Nur im Browser; die App spricht nie mit einer Demo-Instanz. */
+/** Fragt den Server einmal, ob er eine Demo ist. Nur im Browser mit Server; die App spricht nie mit einer Demo-Instanz. */
 export function loadDemoInfo(): Promise<DemoInfo | null> {
-  if (!IS_WEB) return Promise.resolve(null);
+  if (!IS_WEB || IS_DEMO) return Promise.resolve(null);
   cached ??= fetch('/api/status')
     .then((r) => (r.ok ? (r.json() as Promise<{ demo?: DemoInfo }>) : null))
     .then((s) => s?.demo ?? null)

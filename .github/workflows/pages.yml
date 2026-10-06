@@ -1,15 +1,16 @@
 name: Website veröffentlichen
 
-# Baut die Projekt-Website aus website/ und veröffentlicht sie auf GitHub Pages (Anleitung: website/README.md).
-# Einmalig nötig: Settings → Pages → Source „GitHub Actions“.
-# Link zur Demo: Repository-Variable DEMO_URL (Settings → Secrets and variables → Actions → Variables).
+# Baut die Projekt-Website aus website/ samt Demo im Browser (app, Modus „demo“) und veröffentlicht sie auf GitHub Pages
+# (Anleitung: website/README.md). Einmalig nötig: Settings → Pages → Source „GitHub Actions“.
+# Optional eine Server-Demo statt der Demo im Browser: Repository-Variable DEMO_URL (Settings → Secrets and variables → Actions → Variables).
 on:
   push:
     branches: [main]
     paths:
       - website/**
       - docs/images/**
-      - app/public/favicon.svg
+      - app/**
+      - server/src/demoData.ts
       - .github/workflows/pages.yml
   pull_request:
     paths:
@@ -32,6 +33,16 @@ jobs:
       pages: read
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Demo im Browser bauen
+        working-directory: app
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build:demo
       - id: pages
         if: github.event_name != 'pull_request'
         uses: actions/configure-pages@v5

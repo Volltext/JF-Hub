@@ -87,6 +87,7 @@ body.web .icon-btn { cursor: pointer; }
 .demo-banner { padding: calc(var(--safe-top) + var(--s-2)) var(--s-4) var(--s-2); background: color-mix(in srgb, var(--warning) 18%, var(--surface)); border-bottom: 1px solid var(--border); font-size: 0.85rem; line-height: 1.35; text-align: center; }
 /* Die Leiste nimmt schon den Abstand zur Statusleiste (Notch) auf. */
 @media (max-width: 899px) { .demo-banner + .web-frame__app .shell__main { padding-top: var(--s-4); } }
+.demo-banner__link { padding: 0; border: 0; background: none; color: inherit; font: inherit; font-weight: 700; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
 .demo-login { padding-bottom: var(--s-3); border-bottom: 1px solid var(--border); }
 .demo-login p { margin: 0; }
 .demo-account { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%; min-height: 56px; padding: var(--s-2) var(--s-4); border-radius: var(--r-md); border: 1px solid var(--border); background: var(--surface-2); text-align: left; cursor: pointer; }

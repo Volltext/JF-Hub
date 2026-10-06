@@ -2,8 +2,8 @@ import { defineConfig, type Plugin } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
-import { readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
-import { join, relative, resolve } from 'node:path';
+import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { dirname, join, relative, resolve } from 'node:path';
 
 const { version } = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { version: string };
 
@@ -39,13 +39,29 @@ function serviceWorker(): Plugin {
   };
 }
 
+/** Browser-Demo: ohne Manifest, damit niemand die Demo „installiert“ (Start-Adresse und Offline-Betrieb gehören zur echten App). */
+function noManifest(): Plugin {
+  return { name: 'jfhub-demo-no-manifest', transformIndexHtml: (html) => html.replace(/\s*<link rel="manifest"[^>]*>/, '') };
+}
+
 const devServer = process.env.JF_HUB_SERVER ?? 'http://localhost:8080';
 
+/**
+ * Beispieldaten der Browser-Demo: dieselbe Quelle wie die Server-Demo. Beim Docker-Build der Web-App fehlt der Server-Ordner;
+ * dort wird die Demo nicht gebaut, ein Platzhalter hält den Import auflösbar.
+ */
+const demoData = fileURLToPath(new URL('../server/src/demoData.ts', import.meta.url));
+const demoDataOrStub = existsSync(demoData) ? demoData : fileURLToPath(new URL('./src/features/demo/noDemoData.ts', import.meta.url));
+
 export default defineConfig(({ mode }) => ({
-  plugins: [react(), ...(mode === 'web' ? [serviceWorker()] : [])],
+  // Die Browser-Demo liegt in einem Unterordner der Website (…/JF-Hub/demo/): relative Pfade, kein Service Worker.
+  base: mode === 'demo' ? './' : '/',
+  plugins: [react(), ...(mode === 'web' ? [serviceWorker()] : []), ...(mode === 'demo' ? [noManifest()] : [])],
   define: { __APP_VERSION__: JSON.stringify(version) },
-  resolve: { alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) } },
+  resolve: { alias: { '@demo-data': demoDataOrStub, '@': fileURLToPath(new URL('./src', import.meta.url)) } },
   // `npm run dev:web`: Web-Variante mit Hot-Reload, API und Admin-Oberfläche vom lokalen Server (server/ → npm run dev).
-  server: mode === 'web' ? { proxy: { '/api': devServer, '/admin': devServer } } : undefined,
+  // `npm run dev:demo`: Browser-Demo; sie liest die Beispieldaten aus server/src.
+  server:
+    mode === 'web' ? { proxy: { '/api': devServer, '/admin': devServer } } : mode === 'demo' ? { fs: { allow: ['.', dirname(demoData)] } } : undefined,
   test: { environment: 'node', setupFiles: ['./src/test-setup.ts'] },
 }));

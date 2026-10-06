@@ -1,15 +1,37 @@
-# Demo-Instanz
+# Demo
 
 [← Dokumentation](README.md)
 
-Eine öffentliche Demo lässt Interessierte JF Hub ausprobieren, ohne etwas zu installieren: Link öffnen, auf **„Als Tobias Wagner anmelden“** tippen, umsehen. Der Demo-Modus füllt den Server mit erfundenen Daten der „Jugendfeuerwehr Musterstadt“ und setzt alles jede Nacht zurück.
+Interessierte sollen JF Hub ausprobieren können, ohne etwas zu installieren. Dafür gibt es zwei Wege mit denselben erfundenen Daten der „Jugendfeuerwehr Musterstadt“:
+
+| | Demo im Browser | Demo-Server |
+| --- | --- | --- |
+| Wo | auf der [Website](../website/README.md) unter `/demo/` | eigener Server mit `DEMO=1` |
+| Aufwand | keiner, kommt mit GitHub Pages | Container, Domain, Tunnel |
+| Daten | nur im Browser des Besuchers, „Zurücksetzen“ per Knopf | auf dem Server, für alle Besucher gemeinsam, täglich zurückgesetzt |
+| Zeigt | die ganze App (Dienste, Protokolle, Aufgaben, Kleidung, Wettkampf) | zusätzlich PDFs, Benachrichtigungen, mehrere Betreuer, Server-Verwaltung |
+
+**Auf dieser Seite:** [Demo im Browser](#demo-im-browser) · [Demo-Server](#demo-server): [Was er zeigt](#was-die-demo-zeigt) · [Einrichten](#einrichten) · [Was gesperrt ist](#was-gesperrt-ist) · [Gut zu wissen](#gut-zu-wissen)
+
+## Demo im Browser
+
+Die App wird zusätzlich im Modus `demo` gebaut (`cd app && npm run build:demo`, Ausgabe in `app/dist-demo`). Die Website veröffentlicht sie unter `…/JF-Hub/demo/`. Der Workflow `pages.yml` erledigt das bei jedem Push auf `main`.
+
+- **Keine Anmeldung:** Besucher sind gleich Jana Becker, die Jugendwartin. Beim ersten Öffnen legt die App die Beispieldaten im Browser an (IndexedDB); privates von Tobias gibt es hier nicht.
+- **Nichts verlässt den Browser:** Die Demo spricht mit keinem Server, auch nicht mit fremden Diensten. Was ein Besucher einträgt, sieht niemand sonst.
+- **Zurücksetzen:** Die Leiste oben hat den Knopf „Zurücksetzen“. Er legt die Beispieldaten neu an, passend zum aktuellen Tag.
+- **Was fehlt:** PDFs, Benachrichtigungen, Abgleich zwischen Geräten und die Verwaltung brauchen den Server. In der Demo erscheint dort ein kurzer Hinweis.
+
+Die Beispieldaten stehen in `server/src/demoData.ts`. App und Server nutzen dieselbe Datei; Änderungen dort gelten für beide Demos.
+
+## Demo-Server
+
+Ein Server im Demo-Modus zeigt alles, auch die Verwaltung unter `/admin/`: Link öffnen, auf **„Als Tobias Wagner anmelden“** tippen, umsehen. Er füllt sich mit den Beispieldaten und setzt alles jede Nacht zurück.
 
 > [!CAUTION]
 > Der Demo-Modus **löscht beim Start und jede Nacht alle Daten** auf diesem Server. Schalte ihn nur auf einer **eigenen, getrennten** Instanz ein, nie auf dem Server deiner Jugendfeuerwehr.
 
-**Auf dieser Seite:** [Was die Demo zeigt](#was-die-demo-zeigt) · [Einrichten](#einrichten) · [Was gesperrt ist](#was-gesperrt-ist) · [Gut zu wissen](#gut-zu-wissen)
-
-## Was die Demo zeigt
+### Was die Demo zeigt
 
 Beim Start und täglich um **03:00 Uhr** (einstellbar) legt der Server diese Beispieldaten neu an:
 
@@ -33,7 +55,7 @@ Alle Daten sind relativ zum aktuellen Tag datiert, die Demo sieht also immer akt
 
 Oben in der App steht die ganze Zeit: *„Demo · Bitte keine echten Daten eintragen“*.
 
-## Einrichten
+### Einrichten
 
 Am einfachsten als eigener kleiner Stack mit [Cloudflare Tunnel](cloudflare-tunnel.md). Er läuft auch neben deiner echten Installation auf demselben Rechner, weil Container, Volume und Adresse getrennt sind.
 
@@ -80,12 +102,12 @@ docker compose logs jf-hub-demo | grep -A3 DEMO
 
 Im Log steht `DEMO-MODUS` mit Uhrzeit und Zugängen. Öffne die Adresse: Die Anmeldeseite zeigt die beiden Knöpfe.
 
-**4.** Den Link verteilen, z. B. auf der [Website](../website/README.md) (Variable `DEMO_URL`), als QR-Code auf einem Flyer oder bei der Dienstversammlung.
+**4.** Den Link verteilen, z. B. auf der [Website](../website/README.md) (Variable `DEMO_URL`: die Demo-Knöpfe führen dann hierher statt zur Demo im Browser), als QR-Code auf einem Flyer oder bei der Dienstversammlung.
 
 > [!TIP]
 > Nur zum Ausprobieren auf dem eigenen Rechner reicht `docker run --rm -p 8080:8080 -e DEMO=1 ghcr.io/volltext/jf-hub:latest`. Danach http://localhost:8080 öffnen.
 
-## Was gesperrt ist
+### Was gesperrt ist
 
 Alle Besucher teilen sich dieselben Zugänge. Damit niemand die anderen aussperrt oder an fremde Daten kommt, antwortet der Server auf diese Aktionen mit *„In der Demo ausgeschaltet.“*:
 
@@ -95,7 +117,7 @@ Alle Besucher teilen sich dieselben Zugänge. Damit niemand die anderen aussperr
 
 Alles andere geht wie im echten Betrieb, auch Benutzer einladen, PDF-Layout ändern, Protokolle veröffentlichen und Benachrichtigungen testen. Selbst angelegte Benutzer lassen sich ganz normal verwalten.
 
-## Gut zu wissen
+### Gut zu wissen
 
 - **Zurücksetzen:** Beim Zurücksetzen werden alle Besucher abgemeldet. Wer die Seite danach öffnet, landet auf der Anmeldung und bekommt nach dem nächsten Klick frische Daten. Auch ein Neustart des Containers setzt die Demo zurück.
 - **Anmelde-Begrenzung:** Fehlversuche sperren die Demo-Zugänge nicht. Je Internetadresse sind 60 Anmeldungen in 15 Minuten erlaubt (sonst 8), damit eine ganze Gruppe im selben WLAN gleichzeitig ausprobieren kann.

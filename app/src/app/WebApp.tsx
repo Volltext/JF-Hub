@@ -38,7 +38,7 @@ export function WebApp() {
     return (
       <div className="web-login stack">
         <div className="side__brand" style={{ justifyContent: 'center', paddingBottom: 'var(--s-3)' }}>
-          <img className="side__logo" src="/favicon.svg" alt="" />
+          <img className="side__logo" src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" />
           JF Hub
         </div>
         <Card title={invite ? 'Willkommen – Passwort festlegen' : 'Anmelden'}>

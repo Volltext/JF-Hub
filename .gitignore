@@ -2,6 +2,7 @@
 node_modules/
 dist/
 dist-web/
+dist-demo/
 _site/
 *.tsbuildinfo
 coverage/
@@ -14,6 +15,7 @@ server/public/web/
 .env.*
 !.env.example
 !app/.env.web
+!app/.env.demo
 data/
 *.sqlite
 *.sqlite-wal

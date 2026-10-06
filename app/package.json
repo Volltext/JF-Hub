@@ -7,12 +7,14 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "build:web": "tsc --noEmit && vite build --mode web --outDir dist-web --emptyOutDir",
+    "build:demo": "tsc --noEmit && vite build --mode demo --outDir dist-demo --emptyOutDir",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "android:sync": "npm run build && cap sync android",
     "apk": "node scripts/build-apk.mjs",
     "assets": "node scripts/make-assets.mjs && capacitor-assets generate --android",
-    "dev:web": "vite --mode web"
+    "dev:web": "vite --mode web",
+    "dev:demo": "vite --mode demo"
   },
   "dependencies": {
     "@capacitor-community/keep-awake": "^8.0.1",

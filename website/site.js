@@ -1,16 +1,12 @@
 'use strict';
-// Demo-Link aus der Build-Variable DEMO_URL (siehe build.sh). Ohne Demo bleiben die Ersatz-Links sichtbar – auch ohne JavaScript.
 (function () {
+  // Die Demo-Knöpfe zeigen auf die Demo im Browser (demo/). Gibt es eine Server-Demo (DEMO_URL, siehe build.sh), dorthin.
   var url = document.documentElement.getAttribute('data-demo-url') || '';
-  var hasDemo = /^https?:\/\/[^\s"'<>]+$/.test(url);
-  document.querySelectorAll('[data-demo]').forEach(function (el) {
-    if (!hasDemo) return;
-    if (el.tagName === 'A') el.href = url;
-    el.hidden = false;
-  });
-  document.querySelectorAll('[data-no-demo]').forEach(function (el) {
-    el.hidden = hasDemo;
-  });
+  if (/^https?:\/\/[^\s"'<>]+$/.test(url)) {
+    document.querySelectorAll('a[data-demo]').forEach(function (el) {
+      el.href = url;
+    });
+  }
 
   // „Link teilen“: Teilen-Menü des Handys, sonst in die Zwischenablage.
   var share = document.querySelector('[data-share]');
