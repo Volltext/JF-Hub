@@ -74,6 +74,18 @@ describe('Auth', () => {
     expect((await app.inject({ method: 'GET', url: '/api/me', headers: auth(t) })).statusCode).toBe(401);
   });
 
+  it('prozentkodierte Pfade umgehen die Prüfung nicht (/%61pi/admin/…)', async () => {
+    // Gleiche Route, andere Schreibweise: muss ebenso eine Anmeldung verlangen.
+    expect((await app.inject({ method: 'GET', url: '/%61pi/admin/users' })).statusCode).toBe(401);
+    expect((await app.inject({ method: 'GET', url: '/%61pi/admin/info' })).statusCode).toBe(401);
+    // Ein Betreuer (kein Admin) darf auch über eine kodierte Admin-URL nicht hinein.
+    const t = await login();
+    const inv = await app.inject({ method: 'POST', url: '/api/admin/users', headers: auth(t), payload: { username: 'max', displayName: 'Max' } });
+    const acc = await app.inject({ method: 'POST', url: '/api/invite/accept', payload: { username: 'max', code: inv.json().invite.code, password: 'max-passwort-123' } });
+    const max = acc.json().token as string;
+    expect((await app.inject({ method: 'GET', url: '/%61pi/admin/users', headers: auth(max) })).statusCode).toBe(403);
+  });
+
   it('Cookie-Sitzung braucht bei Schreibzugriffen den CSRF-Header', async () => {
     const r = await app.inject({ method: 'POST', url: '/api/login', payload: { username: 'admin', password: PW } });
     const cookie = r.headers['set-cookie'] as string;

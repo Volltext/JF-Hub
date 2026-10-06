@@ -154,8 +154,11 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
     });
   }
   app.addHook('preHandler', async (req, reply) => {
-    const path = req.url.split('?')[0]!;
-    if (!path.startsWith('/api/') || PUBLIC.has(path)) return;
+    // Auf dem gematchten Route-Muster prüfen, nicht auf der rohen URL: Fastify routet auf dem dekodierten
+    // Pfad, deshalb träfe z. B. „/%61pi/admin/…“ dieselbe Admin-Route, begänne aber nicht mit „/api/“ und
+    // umginge so die Prüfung. Das Muster ist bereits normalisiert (wie beim Demo-Schutz oben).
+    const route = req.routeOptions?.url;
+    if (!route || !route.startsWith('/api/') || PUBLIC.has(route)) return;
     const { token, viaCookie } = tokenOf(req);
     const user = validateSession(db, token);
     if (!user) return reply.code(401).send({ error: 'Nicht angemeldet' });
@@ -163,7 +166,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
     if (viaCookie && !['GET', 'HEAD'].includes(req.method) && req.headers['x-jfh'] !== '1') {
       return reply.code(403).send({ error: 'Ungültige Anfrage' });
     }
-    if (path.startsWith('/api/admin/') && user.role !== 'admin') return reply.code(403).send({ error: 'Nur für Admins' });
+    if (route.startsWith('/api/admin/') && user.role !== 'admin') return reply.code(403).send({ error: 'Nur für Admins' });
     req.user = user;
   });
 
