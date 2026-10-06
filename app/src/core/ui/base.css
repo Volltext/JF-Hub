@@ -70,6 +70,8 @@ h1, h2, h3 { margin: 0; line-height: 1.2; }
 .btn--primary:active { background: var(--primary-press); }
 .btn--danger { color: var(--danger); }
 .btn--block { width: 100%; }
+a.btn { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; color: var(--text); }
+a.btn--primary { color: var(--on-primary); }
 
 .segmented { display: flex; background: var(--surface-2); border-radius: var(--r-md); padding: 3px; }
 .segmented button {

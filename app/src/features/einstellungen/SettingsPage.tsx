@@ -15,7 +15,7 @@ import { loadWasserentnahme, saveWasserentnahme } from '@/features/wettkampf/sto
 import { confirmDialog } from '@/core/ui/dialog';
 import { ConnectionCard, DevicesCard, PasswordCard } from '@/features/account/AccountCards';
 import { useAccount } from '@/core/account/account';
-import { IS_WEB } from '@/core/env';
+import { IS_DEMO, IS_WEB } from '@/core/env';
 import { PushCard } from './PushCard';
 import { ServiceCard } from './ServiceCard';
 import { markAllForSync } from '@/core/db/outbox';
@@ -226,11 +226,34 @@ function Competition() {
 
 function Servers() {
   const account = useAccount();
+  if (IS_DEMO) return <DemoAccount />;
   return (
     <Page title={IS_WEB ? 'Konto' : 'Server & Konto'} back={BACK}>
       <ConnectionCard />
       {account && <PasswordCard />}
       {account && <DevicesCard />}
+    </Page>
+  );
+}
+
+/** Browser-Demo: kein Server, kein Konto – stattdessen der Weg zur eigenen Installation. */
+function DemoAccount() {
+  return (
+    <Page title="Konto" back={BACK}>
+      <Card title="Demo im Browser">
+        <div className="stack">
+          <p className="muted">
+            Hier bist du Jana Becker, die Jugendwartin der erfundenen Jugendfeuerwehr Musterstadt. Alles, was du änderst, bleibt nur in diesem Browser.
+          </p>
+          <p className="muted">
+            In der eigenen Installation hat jeder Betreuer ein Konto, alle Geräte gleichen sich über euren Server ab, und der Server erzeugt PDFs und
+            Benachrichtigungen.
+          </p>
+          <a className="btn btn--primary" href="https://github.com/Volltext/JF-Hub/blob/main/docs/installation.md" target="_blank" rel="noopener">
+            So richtest du JF Hub ein
+          </a>
+        </div>
+      </Card>
     </Page>
   );
 }

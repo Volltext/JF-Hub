@@ -46,7 +46,7 @@ export function NavShell({
     <div className="shell">
       <aside className="side" aria-label="Navigation">
         <div className="side__brand">
-          <img className="side__logo" src="/favicon.svg" alt="" />
+          <img className="side__logo" src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" />
           JF Hub
         </div>
         <nav className="side__nav" aria-label="Bereiche">

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '@/core/db/db';
 
 const calls: { method: string; path: string; body?: unknown }[] = [];
-vi.mock('@/core/env', () => ({ IS_WEB: true }));
+vi.mock('@/core/env', () => ({ IS_WEB: true, IS_DEMO: false }));
 vi.mock('@/features/protokolle/http', () => ({
   loadConn: async () => ({ url: 'https://hub.example', token: 'cookie' }),
   request: async (_c: unknown, method: string, path: string, body?: unknown) => {

@@ -6,6 +6,8 @@ import { join, resolve } from 'node:path';
 const PORT = 8099;
 /** Zweiter Server im Demo-Modus (tests/demo.spec.ts). */
 const DEMO_PORT = 8098;
+/** Demo im Browser (app/dist-demo) unter einem Unterpfad wie auf GitHub Pages (tests/browser-demo.spec.ts). */
+const PAGES_PORT = 8097;
 const root = resolve(import.meta.dirname, '..');
 const dataDir = process.env.E2E_DATA_DIR ?? mkdtempSync(join(tmpdir(), 'jfh-e2e-'));
 const demoDataDir = mkdtempSync(join(tmpdir(), 'jfh-e2e-demo-'));
@@ -17,7 +19,7 @@ const files = {
 
 /**
  * Rauchtest gegen den echten Server mit der gebauten Web-App (siehe docs/entwicklung.md):
- *   cd server && npm run build && cd ../app && npm run build:web
+ *   cd server && npm run build && cd ../app && npm run build:web && npm run build:demo
  *   cd e2e && npm ci && npx playwright install chromium && npm test
  * Mit PW_CHROMIUM_PATH lässt sich ein vorhandener Chromium verwenden.
  */
@@ -48,6 +50,12 @@ export default defineConfig({
       reuseExistingServer: false,
       timeout: 30_000,
       env: { PORT: String(DEMO_PORT), DATA_DIR: demoDataDir, DEMO: '1', ...files },
+    },
+    {
+      command: `node ${join(root, 'e2e/static-server.mjs')} ${PAGES_PORT} /JF-Hub/demo/ ${join(root, 'app/dist-demo')}`,
+      url: `http://127.0.0.1:${PAGES_PORT}/health`,
+      reuseExistingServer: false,
+      timeout: 10_000,
     },
   ],
 });

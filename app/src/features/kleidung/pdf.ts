@@ -1,9 +1,11 @@
 import { shareBinaryFile } from '@/core/native/files';
+import { DEMO_NEEDS_SERVER, IS_DEMO } from '@/core/env';
 import { ProtoError, loadConn, request } from '@/features/protokolle/http';
 import type { ClothingPdfRequest } from './model';
 
 /** Lässt den JF-Hub-Server die Kleidertabelle als PDF setzen (Layout wie die Protokolle) und teilt sie. */
 export async function shareClothingPdf(body: ClothingPdfRequest): Promise<void> {
+  if (IS_DEMO) throw new Error(DEMO_NEEDS_SERVER);
   const conn = await loadConn();
   if (!conn.url || !conn.token)
     throw new Error('Das PDF erstellt der JF-Hub-Server. Bitte zuerst unter Einstellungen → Server & Verbindungen anmelden.');

@@ -1,7 +1,7 @@
 import { Route, Routes } from 'react-router-dom';
 import { LogOut, Server } from 'lucide-react';
 import { useAccount } from '@/core/account/account';
-import { IS_WEB } from '@/core/env';
+import { IS_DEMO, IS_WEB } from '@/core/env';
 import { confirmAndLogout } from '@/features/account/AccountCards';
 import { GROUP_LABEL, featureGroups, features, routePath } from './features';
 import { NavShell, type NavEntry } from './NavShell';
@@ -18,7 +18,8 @@ const sections = featureGroups().map(({ group, items }) => ({ label: GROUP_LABEL
 export function AppShell() {
   const account = useAccount();
   // Im Browser gibt es keine Android-App-Hülle: Abmelden und (für Admins) die Server-Verwaltung stehen unten in der Seitenleiste.
-  const footer: NavEntry[] = IS_WEB
+  // Die Browser-Demo hat weder Konto noch Server.
+  const footer: NavEntry[] = IS_WEB && !IS_DEMO
     ? [
         ...(account?.role === 'admin' ? [{ id: 'admin', href: '/admin/', label: 'Server-Verwaltung', icon: Server }] : []),
         { id: 'logout', onClick: () => void confirmAndLogout().then((done) => done && window.location.reload()), label: 'Abmelden', icon: LogOut },

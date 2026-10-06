@@ -42,10 +42,10 @@ cd app    && npm run typecheck && npm test
 cd server && npm run typecheck && npm test
 ```
 
-Dazu kommt ein **Rauchtest im Browser** (Playwright, Ordner `e2e/`): Er startet den echten Server mit der gebauten Web-App, meldet zwei Betreuer an, schreibt ein Protokoll, veröffentlicht es und nimmt es wieder zurück. Ein zweiter Server läuft im [Demo-Modus](demo.md) und prüft die Anmeldung per Knopf und die Beispieldaten.
+Dazu kommt ein **Rauchtest im Browser** (Playwright, Ordner `e2e/`): Er startet den echten Server mit der gebauten Web-App, meldet zwei Betreuer an, schreibt ein Protokoll, veröffentlicht es und nimmt es wieder zurück. Ein zweiter Server läuft im [Demo-Modus](demo.md) und prüft die Anmeldung per Knopf und die Beispieldaten; die [Demo im Browser](demo.md#demo-im-browser) wird wie auf GitHub Pages unter einem Unterpfad ausgeliefert und geprüft.
 
 ```bash
-cd server && npm run build && cd ../app && npm run build:web     # Voraussetzung: Server und Web-App gebaut
+cd server && npm run build && cd ../app && npm run build:web && npm run build:demo     # Voraussetzung: Server, Web-App und Demo gebaut
 cd ../e2e && npm ci && npx playwright install chromium && npm test
 # Mit vorhandenem Chromium: PW_CHROMIUM_PATH=/pfad/zu/chrome npm test
 ```

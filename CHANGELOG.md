@@ -11,7 +11,8 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/). Versionen 
 ### Neu
 
 - **Demo-Modus** (`DEMO=1`, Anleitung in `docs/demo.md`): Der Server legt erfundene Beispieldaten der „Jugendfeuerwehr Musterstadt“ an (Mitglieder, Dienste, Aufgaben, Kleidung, Protokolle, Wettkampf-Läufe) und setzt sie täglich um `DEMO_RESET_AT` (Standard 03:00) zurück. App und Verwaltung bieten die Demo-Zugänge als Knopf an und zeigen einen Hinweis. Was alle Besucher aussperren würde (Passwörter, Backups, Demo-Konten ändern), ist gesperrt.
-- **Projekt-Website** in `website/`, veröffentlicht per GitHub Pages (Workflow `pages.yml`); der Link zur Demo kommt aus der Repository-Variable `DEMO_URL`.
+- **Demo im Browser** (`npm run build:demo`, auf der Website unter `/demo/`): die App ohne Server und ohne Anmeldung, mit denselben Beispieldaten wie der Demo-Modus des Servers. Alles bleibt im Browser des Besuchers, „Zurücksetzen“ legt die Daten neu an; PDF und Benachrichtigungen erklären, dass sie den Server brauchen. Die Beispieldaten liegen dafür in `server/src/demoData.ts` (eine Quelle für beide Demos).
+- **Projekt-Website** in `website/`, veröffentlicht per GitHub Pages (Workflow `pages.yml`); die Demo-Knöpfe führen zur Demo im Browser oder, mit der Repository-Variable `DEMO_URL`, zu einem Demo-Server.
 - **Anleitung „Erste Schritte“** (`docs/erste-schritte.md`): vom Admin-Konto bis zum ersten Dienst, mit Screenshots.
 - **Übersichtsseite** `docs/README.md` mit Wegweiser nach Thema.
 

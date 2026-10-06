@@ -1,9 +1,10 @@
 import { Cloud, CloudAlert, CloudOff, RefreshCw } from 'lucide-react';
+import { IS_DEMO } from '@/core/env';
 import { useSyncStatus, type SyncState } from './syncStatus';
 import { syncNow } from './sync';
 
 const INFO: Record<SyncState, { label: string; Icon: typeof Cloud }> = {
-  off: { label: 'Kein Server', Icon: CloudOff },
+  off: { label: IS_DEMO ? 'Nur im Browser' : 'Kein Server', Icon: CloudOff },
   idle: { label: 'Synchron', Icon: Cloud },
   syncing: { label: 'Gleicht ab …', Icon: RefreshCw },
   offline: { label: 'Offline', Icon: CloudOff },

@@ -1,6 +1,7 @@
 #!/bin/sh
 # Stellt die Website in einem Ordner zusammen (Standard: _site), so wie GitHub Pages sie ausliefert.
-#   DEMO_URL  Adresse der öffentlichen Demo (optional; ohne sie zeigt die Seite Ersatz-Links)
+# Die Demo im Browser kommt aus app/dist-demo (vorher: cd app && npm run build:demo) und landet unter demo/.
+#   DEMO_URL  Adresse einer Server-Demo (optional; ohne sie führen die Demo-Knöpfe zur Demo im Browser)
 #   SITE_URL  Adresse der Website selbst, für Vorschaubilder beim Teilen (optional)
 # Lokal ansehen:  website/build.sh && python3 -m http.server -d _site 8000
 set -eu
@@ -24,4 +25,11 @@ cp app/public/favicon.svg "$out/"
 cp docs/images/hero.png docs/images/logo.png docs/images/app-*.png "$out/images/"
 sed -i.bak -e "s#__DEMO_URL__#${demo}#g" -e "s#__SITE_URL__#${site}#g" "$out/index.html"
 rm -f "$out/index.html.bak"
-echo "Website in $out/ ($(ls "$out/images" | wc -l | tr -d ' ') Bilder, Demo: ${demo:-keine})"
+if [ -f app/dist-demo/index.html ]; then
+  cp -R app/dist-demo "$out/demo"
+  browser_demo="demo/"
+else
+  echo "Hinweis: app/dist-demo fehlt, die Demo im Browser ist nicht dabei (cd app && npm run build:demo)." >&2
+  browser_demo="fehlt"
+fi
+echo "Website in $out/ ($(ls "$out/images" | wc -l | tr -d ' ') Bilder, Demo im Browser: $browser_demo, Server-Demo: ${demo:-keine})"
