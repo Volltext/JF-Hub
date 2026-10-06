@@ -3,6 +3,7 @@ import { loadSettings } from '@/core/settings/settings';
 import { applyTheme } from '@/core/ui/theme';
 import { Card } from '@/core/ui/components';
 import { AuthForm, inviteFromHash } from '@/features/account/AuthForm';
+import { DemoBanner, useDemoInfo } from '@/features/account/demo';
 import { isLoggedIn } from '@/features/protokolle/auth';
 import { useSyncStatus } from '@/features/protokolle/syncStatus';
 import { AppFrame } from './AppFrame';
@@ -17,6 +18,7 @@ export function WebApp() {
   const [phase, setPhase] = useState<Phase>('boot');
   const syncState = useSyncStatus((s) => s.state);
   const [invite] = useState(() => inviteFromHash());
+  const demo = useDemoInfo();
 
   useEffect(() => {
     document.body.classList.add('web');
@@ -52,5 +54,13 @@ export function WebApp() {
       </div>
     );
   }
-  return <AppFrame />;
+  // Immer im selben Rahmen, damit die App nicht neu startet, wenn die Demo-Auskunft nachträglich eintrifft.
+  return (
+    <div className="web-frame">
+      {demo && <DemoBanner info={demo} />}
+      <div className="web-frame__app">
+        <AppFrame />
+      </div>
+    </div>
+  );
 }

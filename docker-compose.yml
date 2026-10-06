@@ -33,6 +33,9 @@ services:
       TRUST_PROXY: ${TRUST_PROXY:-}
       # Kontaktadresse für den Push-Dienst der Browser (mailto: oder https-Adresse). Bitte eigene E-Mail eintragen.
       PUSH_SUBJECT: ${PUSH_SUBJECT:-mailto:admin@example.com}
+      # Öffentliche Demo mit Beispieldaten (docs/demo.md). ACHTUNG: löscht beim Start und täglich ALLE Daten.
+      DEMO: ${DEMO:-0}
+      DEMO_RESET_AT: ${DEMO_RESET_AT:-03:00}
     volumes:
       - ${DATA_PATH:-jf-hub-data}:/data
     security_opt:

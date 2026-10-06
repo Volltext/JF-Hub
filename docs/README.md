@@ -27,6 +27,7 @@ Hier findest du alles zu JF Hub – von der Installation bis zum Datenschutz. Su
 | [Cloudflare Tunnel](cloudflare-tunnel.md) | Empfohlener Weg zu https – kostenlos, ohne Port-Freigabe |
 | [HTTPS-Alternativen](https-alternativen.md) | Caddy, eigener Reverse-Proxy, Tailscale, nur Heimnetz |
 | [Umstieg von 1.x](umstieg-von-1x.md) | Update von der privaten Vorversion |
+| [Demo-Instanz](demo.md) | Öffentliche Probier-Instanz mit Beispieldaten, die sich täglich zurücksetzt |
 
 ## Für Entwickler
 

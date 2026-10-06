@@ -3,6 +3,7 @@ import { Button, Segmented } from '@/core/ui/components';
 import { IS_WEB } from '@/core/env';
 import { loadSettings } from '@/core/settings/settings';
 import { acceptInvite, login } from '@/features/protokolle/auth';
+import { useDemoInfo, type DemoAccount } from './demo';
 
 export const MIN_PASSWORD = 10;
 
@@ -29,6 +30,7 @@ export function AuthForm({ onDone, initialMode = 'login', invite }: { onDone: ()
   const [repeat, setRepeat] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const demo = useDemoInfo();
 
   useEffect(() => {
     if (!IS_WEB) void loadSettings().then((s) => setUrl(s.protocolServerUrl));
@@ -39,13 +41,11 @@ export function AuthForm({ onDone, initialMode = 'login', invite }: { onDone: ()
   const ready =
     !!username.trim() && !!password && (IS_WEB || !!url.trim()) && (mode === 'login' || (!!code.trim() && password.length >= MIN_PASSWORD && repeat === password));
 
-  async function submit(e: FormEvent) {
-    e.preventDefault();
+  async function attempt(fn: () => Promise<unknown>) {
     setBusy(true);
     setError('');
     try {
-      if (mode === 'login') await login(url, username, password);
-      else await acceptInvite(url, username, code, password);
+      await fn();
       setPassword('');
       setRepeat('');
       onDone();
@@ -56,8 +56,31 @@ export function AuthForm({ onDone, initialMode = 'login', invite }: { onDone: ()
     }
   }
 
+  function submit(e: FormEvent) {
+    e.preventDefault();
+    void attempt(() => (mode === 'login' ? login(url, username, password) : acceptInvite(url, username, code, password)));
+  }
+
+  const demoLogin = (a: DemoAccount) => void attempt(() => login(url, a.username, a.password));
+
   return (
     <form className="stack" onSubmit={submit}>
+      {demo && mode === 'login' && (
+        <div className="demo-login stack">
+          <p>
+            <strong>Demo:</strong> Wähle einen Zugang und schau dich um. Alles ist erfunden und wird täglich um {demo.resetAt} Uhr zurückgesetzt.
+          </p>
+          {demo.accounts.map((a) => (
+            <button key={a.username} type="button" className="demo-account" disabled={busy} onClick={() => demoLogin(a)}>
+              <span className="demo-account__name">Als {a.displayName} anmelden</span>
+              <span className="demo-account__hint">
+                {a.hint} · Benutzer „{a.username}“
+              </span>
+            </button>
+          ))}
+          <p className="muted">Passwort für beide: {demo.accounts[0]?.password}</p>
+        </div>
+      )}
       <Segmented<AuthMode>
         value={mode}
         onChange={(m) => {

@@ -151,7 +151,31 @@
       setup && field('Anzeigename', name),
       field(setup ? 'Passwort (mind. 10 Zeichen)' : 'Passwort', pw),
       btn, box);
-    return h('div', { class: 'center' }, h('div', { class: 'brand', style: 'margin-bottom:16px' }, h('img', { class: 'logo', src: 'favicon.svg', alt: '' }), 'JF Hub – Server'), form);
+    return h('div', { class: 'center' }, h('div', { class: 'brand', style: 'margin-bottom:16px' }, h('img', { class: 'logo', src: 'favicon.svg', alt: '' }), 'JF Hub – Server'), !setup && demoLogin(), form);
+  }
+
+  // ---------- Demo-Instanz (Server mit DEMO=1) ----------
+  function demoLogin() {
+    var d = state.status && state.status.demo;
+    var admins = d ? d.accounts.filter(function (a) { return a.role === 'admin'; }) : [];
+    if (!admins.length) return null;
+    var box = msgBox();
+    return h('div', { class: 'card demo-card' },
+      h('h2', null, 'Demo'),
+      h('p', { class: 'muted small' }, 'Alles ist erfunden und wird täglich um ' + d.resetAt + ' Uhr zurückgesetzt. Die Server-Verwaltung ist nur für Admins.'),
+      admins.map(function (a) {
+        var btn = h('button', { class: 'btn primary', type: 'button', onclick: function () {
+          run(btn, box, function () { return json('POST', '/login', { username: a.username, password: a.password, device: 'Admin-Browser' }).then(render); });
+        } }, 'Als ' + a.displayName + ' anmelden');
+        return btn;
+      }),
+      h('p', { class: 'muted small' }, 'Von Hand: Benutzer „' + admins[0].username + '“, Passwort „' + admins[0].password + '“'),
+      box);
+  }
+  function demoNote() {
+    var d = state.status && state.status.demo;
+    return d && h('div', { class: 'demo-note', role: 'note' }, h('b', null, 'Demo'),
+      ' · Alles wird täglich um ' + d.resetAt + ' Uhr zurückgesetzt. Backups, Passwörter und die Demo-Zugänge selbst lassen sich hier nicht ändern.');
   }
 
   // ---------- Bereiche ----------
@@ -190,7 +214,7 @@
       h('div', { class: 'side__foot' },
         h('a', { class: 'side__link', href: '/' }, icon('out'), 'Zur Web-App'),
         h('button', { class: 'side__link', onclick: logout }, icon('exit'), 'Abmelden')));
-    return h('div', { class: 'layout' }, side, h('main', { class: 'content' }, content));
+    return h('div', { class: 'layout' }, side, h('main', { class: 'content' }, demoNote(), content));
   }
 
   VIEWS.overview = function () {

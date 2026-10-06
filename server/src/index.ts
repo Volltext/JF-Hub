@@ -2,10 +2,13 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildApp, parseTrustProxy, VERSION } from './app.js';
 import { openDb } from './db.js';
+import { DEMO_ACCOUNTS, formatResetAt, parseResetAt } from './demo.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const dataDir = resolve(process.env.DATA_DIR ?? './data');
 const port = Number(process.env.PORT ?? 8080);
+
+const demo = ['1', 'true', 'yes', 'ja'].includes((process.env.DEMO ?? '').trim().toLowerCase());
 
 const db = openDb(join(dataDir, 'jf-hub.sqlite'));
 const app = await buildApp({
@@ -19,7 +22,16 @@ const app = await buildApp({
   trustProxy: parseTrustProxy(process.env.TRUST_PROXY),
   pushSubject: process.env.PUSH_SUBJECT,
   backupDir: process.env.BACKUP_DIR ?? join(dataDir, 'backups'),
+  demo: demo ? { resetAt: process.env.DEMO_RESET_AT } : undefined,
 });
+
+if (demo) {
+  console.log('\n==================================================');
+  console.log(` JF Hub Server ${VERSION}: DEMO-MODUS`);
+  console.log(` Beispieldaten sind angelegt; alles wird täglich um ${formatResetAt(parseResetAt(process.env.DEMO_RESET_AT))} zurückgesetzt.`);
+  console.log(` Zugänge: ${DEMO_ACCOUNTS.map((a) => `${a.username} / ${a.password}`).join(', ')}`);
+  console.log('==================================================\n');
+}
 
 if (app.setupCode) {
   console.log('\n==================================================');

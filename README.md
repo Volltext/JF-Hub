@@ -124,6 +124,7 @@ Du hast schon einen Reverse-Proxy, eine eigene Domain oder Tailscale? Dann schau
 | Von außen per https erreichbar sein | [Cloudflare Tunnel](docs/cloudflare-tunnel.md) · [Alternativen](docs/https-alternativen.md) |
 | Betreuer einladen und verstehen, wer was sieht | [Benutzer und Sichtbarkeit](docs/benutzer-und-sichtbarkeit.md) |
 | Die Android-App nutzen oder selbst bauen | [Android-App](docs/android-app.md) |
+| Eine öffentliche Demo zum Ausprobieren betreiben | [Demo-Instanz](docs/demo.md) |
 | Wissen, welche Daten gespeichert werden | [Datenschutz](docs/datenschutz.md) |
 | Von der alten Version 1.x umsteigen | [Umstieg von 1.x](docs/umstieg-von-1x.md) |
 | Am Code mitarbeiten | [Entwicklung](docs/entwicklung.md) · [CONTRIBUTING](CONTRIBUTING.md) |
@@ -146,6 +147,7 @@ Alles ist optional, die Standardwerte funktionieren. Die Werte stehen in einer `
 | `PUSH_SUBJECT` | Kontaktadresse für den Push-Dienst (`mailto:…`) – bitte eigene eintragen | `mailto:admin@example.com` |
 | `TRUST_PROXY` | Welchen Proxys `X-Forwarded-For` geglaubt wird | private Netze |
 | `TUNNEL_TOKEN` | Token für Cloudflare Tunnel (Profil `tunnel`) | leer |
+| `DEMO`, `DEMO_RESET_AT` | Öffentliche [Demo](docs/demo.md) mit Beispieldaten, täglich zurückgesetzt. **Löscht alle Daten!** | `0`, `03:00` |
 | `TZ` | Zeitzone | `Europe/Berlin` |
 
 </details>

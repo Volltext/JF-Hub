@@ -42,6 +42,7 @@ import { ensureVapid, PushError, replaceReminders, sendDue, subscribe, unsubscri
 import { HolidayCache, type FetchLike } from './holidays.js';
 import { sampleProtocol } from './sample.js';
 import { autoKeep, backupPath, createBackup, deleteBackup, isBackupName, listBackups, pruneBackups, restoreFromFile, RestoreError, runAutoBackup, writeUpload } from './backup.js';
+import { DEMO_ACCOUNTS, demoBlock, formatResetAt, isDemoAccount, msUntilReset, parseResetAt, resetDemo } from './demo.js';
 
 export const VERSION = '2.0.1';
 const COOKIE = 'jfh_session';
@@ -74,6 +75,11 @@ export interface AppOptions {
   backupDir?: string;
   /** false: keine automatischen Backups (Tests). */
   backupTimer?: boolean;
+  /**
+   * Demo-Modus für eine öffentliche Probier-Instanz: Beispieldaten beim Start und täglich um `resetAt` (HH:MM, Standard 03:00),
+   * feste Zugänge, keine Backups. `timer: false` schaltet das tägliche Zurücksetzen ab (Tests).
+   */
+  demo?: { resetAt?: string; timer?: boolean };
   fetchImpl?: FetchLike;
   logger?: boolean;
 }
@@ -104,7 +110,10 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
   });
 
   migrateLegacy(db);
-  if (opts.adminPassword) {
+  const demoAt = opts.demo ? parseResetAt(opts.demo.resetAt) : undefined;
+  if (opts.demo) {
+    await resetDemo(db);
+  } else if (opts.adminPassword) {
     const name = opts.adminUser || 'admin';
     const existing = db.prepare('SELECT * FROM users WHERE username = ?').get(name) as UserRow | undefined;
     if (!existing && countUsers(db) === 0) {
@@ -137,6 +146,13 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
 
   /** Alle /api-Routen außer den öffentlichen verlangen eine gültige Sitzung; /api/admin/ zusätzlich die Admin-Rolle. */
   const PUBLIC = new Set(['/api/health', '/api/status', '/api/login', '/api/setup', '/api/invite/accept']);
+  if (opts.demo) {
+    // Vor dem Lesen des Bodys: gesperrt ist gesperrt, auch für große Uploads.
+    app.addHook('onRequest', async (req, reply) => {
+      const blocked = demoBlock(db, req.method, req.routeOptions.url, req.params);
+      if (blocked) return reply.code(403).send({ error: blocked });
+    });
+  }
   app.addHook('preHandler', async (req, reply) => {
     const path = req.url.split('?')[0]!;
     if (!path.startsWith('/api/') || PUBLIC.has(path)) return;
@@ -177,7 +193,12 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
 
   // ---------- öffentlich ----------
   app.get('/api/health', async () => ({ ok: true, version: VERSION }));
-  app.get('/api/status', async () => ({ setupRequired: countUsers(db) === 0, version: VERSION, orgName: getSettings(db).orgName }));
+  /** Im Demo-Modus mit den Zugängen, damit die Anmeldeseiten sie anbieten können (sie sind ohnehin öffentlich). */
+  const demoInfo = demoAt && {
+    resetAt: formatResetAt(demoAt),
+    accounts: DEMO_ACCOUNTS.map(({ username, password, displayName, role, hint }) => ({ username, password, displayName, role, hint })),
+  };
+  app.get('/api/status', async () => ({ setupRequired: countUsers(db) === 0, version: VERSION, orgName: getSettings(db).orgName, ...(demoInfo ? { demo: demoInfo } : {}) }));
 
   app.post<{ Body: { code?: string; username?: string; displayName?: string; password?: string; device?: string } }>(
     '/api/setup',
@@ -201,14 +222,17 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
 
   app.post<{ Body: { username?: string; password?: string; device?: string } }>(
     '/api/login',
-    { config: { rateLimit: { max: 8, timeWindow: '15 minutes' } } },
+    // Demo: viele Besucher teilen sich eine Adresse (z. B. alle im WLAN eines Lehrgangs).
+    { config: { rateLimit: { max: opts.demo ? 60 : 8, timeWindow: '15 minutes' } } },
     async (req, reply) => {
       const { username, password, device } = req.body ?? {};
       if (typeof username !== 'string' || typeof password !== 'string') return reply.code(400).send({ error: 'Benutzername und Passwort angeben' });
-      if (throttle.blocked(username)) return reply.code(429).send({ error: 'Zu viele Versuche für dieses Konto. Bitte später erneut probieren.' });
+      // Die Demo-Zugänge sind öffentlich: Fehlversuche dürfen sie nicht für alle sperren.
+      const guarded = !(opts.demo && isDemoAccount(username));
+      if (guarded && throttle.blocked(username)) return reply.code(429).send({ error: 'Zu viele Versuche für dieses Konto. Bitte später erneut probieren.' });
       const user = await authenticate(db, username, password);
       if (!user) {
-        throttle.fail(username);
+        if (guarded) throttle.fail(username);
         return reply.code(401).send({ error: 'Benutzername oder Passwort falsch' });
       }
       throttle.reset(username);
@@ -620,7 +644,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
   timer.unref();
   app.addHook('onClose', async () => clearInterval(timer));
 
-  if (backupDir && opts.backupTimer !== false) {
+  if (backupDir && opts.backupTimer !== false && !opts.demo) {
     const tick = () => {
       try {
         runAutoBackup(db, backupDir);
@@ -635,6 +659,26 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
     app.addHook('onClose', async () => {
       clearTimeout(first);
       clearInterval(backupTimer);
+    });
+  }
+
+  if (demoAt && opts.demo?.timer !== false) {
+    let closed = false;
+    let next: ReturnType<typeof setTimeout> | undefined;
+    const plan = () => {
+      if (closed) return;
+      next = setTimeout(() => {
+        resetDemo(db)
+          .then(() => app.log.info('Demo zurückgesetzt'))
+          .catch((e) => app.log.warn({ err: e }, 'Demo konnte nicht zurückgesetzt werden'))
+          .finally(plan);
+      }, msUntilReset(new Date(), demoAt));
+      next.unref();
+    };
+    plan();
+    app.addHook('onClose', async () => {
+      closed = true;
+      clearTimeout(next);
     });
   }
 

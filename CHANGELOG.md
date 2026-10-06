@@ -10,6 +10,7 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/). Versionen 
 
 ### Neu
 
+- **Demo-Modus** (`DEMO=1`, Anleitung in `docs/demo.md`): Der Server legt erfundene Beispieldaten der „Jugendfeuerwehr Musterstadt“ an (Mitglieder, Dienste, Aufgaben, Kleidung, Protokolle, Wettkampf-Läufe) und setzt sie täglich um `DEMO_RESET_AT` (Standard 03:00) zurück. App und Verwaltung bieten die Demo-Zugänge als Knopf an und zeigen einen Hinweis. Was alle Besucher aussperren würde (Passwörter, Backups, Demo-Konten ändern), ist gesperrt.
 - **Anleitung „Erste Schritte“** (`docs/erste-schritte.md`): vom Admin-Konto bis zum ersten Dienst, mit Screenshots.
 - **Übersichtsseite** `docs/README.md` mit Wegweiser nach Thema.
 
