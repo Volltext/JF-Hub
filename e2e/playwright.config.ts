@@ -4,8 +4,16 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 const PORT = 8099;
+/** Zweiter Server im Demo-Modus (tests/demo.spec.ts). */
+const DEMO_PORT = 8098;
 const root = resolve(import.meta.dirname, '..');
 const dataDir = process.env.E2E_DATA_DIR ?? mkdtempSync(join(tmpdir(), 'jfh-e2e-'));
+const demoDataDir = mkdtempSync(join(tmpdir(), 'jfh-e2e-demo-'));
+const files = {
+  ADMIN_DIR: join(root, 'server/public/admin'),
+  WEB_DIR: join(root, 'app/dist-web'),
+  NODE_OPTIONS: '--disable-warning=ExperimentalWarning',
+};
 
 /**
  * Rauchtest gegen den echten Server mit der gebauten Web-App (siehe docs/entwicklung.md):
@@ -26,19 +34,20 @@ export default defineConfig({
     trace: 'retain-on-failure',
     launchOptions: process.env.PW_CHROMIUM_PATH ? { executablePath: process.env.PW_CHROMIUM_PATH } : {},
   },
-  webServer: {
-    command: `node ${join(root, 'server/dist/index.js')}`,
-    url: `http://127.0.0.1:${PORT}/api/health`,
-    reuseExistingServer: false,
-    timeout: 30_000,
-    env: {
-      PORT: String(PORT),
-      DATA_DIR: dataDir,
-      ADMIN_USER: 'admin',
-      ADMIN_PASSWORD: 'e2e-admin-passwort',
-      ADMIN_DIR: join(root, 'server/public/admin'),
-      WEB_DIR: join(root, 'app/dist-web'),
-      NODE_OPTIONS: '--disable-warning=ExperimentalWarning',
+  webServer: [
+    {
+      command: `node ${join(root, 'server/dist/index.js')}`,
+      url: `http://127.0.0.1:${PORT}/api/health`,
+      reuseExistingServer: false,
+      timeout: 30_000,
+      env: { PORT: String(PORT), DATA_DIR: dataDir, ADMIN_USER: 'admin', ADMIN_PASSWORD: 'e2e-admin-passwort', ...files },
     },
-  },
+    {
+      command: `node ${join(root, 'server/dist/index.js')}`,
+      url: `http://127.0.0.1:${DEMO_PORT}/api/health`,
+      reuseExistingServer: false,
+      timeout: 30_000,
+      env: { PORT: String(DEMO_PORT), DATA_DIR: demoDataDir, DEMO: '1', ...files },
+    },
+  ],
 });

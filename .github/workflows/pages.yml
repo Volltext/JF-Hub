@@ -1,0 +1,60 @@
+name: Website veröffentlichen
+
+# Baut die Projekt-Website aus website/ und veröffentlicht sie auf GitHub Pages (Anleitung: website/README.md).
+# Einmalig nötig: Settings → Pages → Source „GitHub Actions“.
+# Link zur Demo: Repository-Variable DEMO_URL (Settings → Secrets and variables → Actions → Variables).
+on:
+  push:
+    branches: [main]
+    paths:
+      - website/**
+      - docs/images/**
+      - app/public/favicon.svg
+      - .github/workflows/pages.yml
+  pull_request:
+    paths:
+      - website/**
+      - .github/workflows/pages.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: read
+    steps:
+      - uses: actions/checkout@v4
+      - id: pages
+        if: github.event_name != 'pull_request'
+        uses: actions/configure-pages@v5
+      - name: Website zusammenstellen
+        env:
+          DEMO_URL: ${{ vars.DEMO_URL }}
+          SITE_URL: ${{ steps.pages.outputs.base_url }}
+        run: website/build.sh _site
+      - if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -10,6 +10,7 @@
   --primary-press: #b4221b;
   --on-primary: #ffffff;
   --ok: #1b8a52;
+  --warning: #9a6a00;
   --danger: #c93028;
   --r-md: 14px;
   --r-lg: 20px;
@@ -26,6 +27,7 @@
     --primary: #e5372e;
     --primary-press: #c92c24;
     --ok: #34c27a;
+    --warning: #f2b441;
     --danger: #ff5d55;
     color-scheme: dark;
   }
@@ -140,3 +142,9 @@ dialog .row { justify-content: flex-end; }
 .card > .row { margin-bottom: 12px; }
 .card > form { margin-bottom: 12px; }
 .card input[type=file] { font: inherit; color: var(--text); }
+
+/* ---- Demo-Instanz ---- */
+.demo-card { margin-bottom: 16px; display: grid; gap: 10px; }
+.demo-card > p { margin: 0; }
+.demo-card h2 { margin: 0; }
+.demo-note { max-width: 860px; margin: 0 auto 16px; padding: 10px 14px; border-radius: 10px; background: color-mix(in srgb, var(--warning) 16%, var(--surface)); border: 1px solid var(--border); font-size: 14px; }
