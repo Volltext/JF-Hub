@@ -29,7 +29,7 @@ Es gibt **keine Analyse-Werkzeuge, keine Werbung und keine Weitergabe** an Dritt
 - **Hosting:** Am besten zu Hause/im Gerätehaus oder bei einem Anbieter in der EU. Der Server braucht kaum Leistung.
 - **Zugriff:** Nur Betreuer bekommen Konten; Konten ausgeschiedener Betreuer **sperren oder löschen**.
 - **Einwilligungen:** Für Fotos von Jugendlichen gelten die üblichen Regeln (Einwilligung der Eltern). Fotos in Protokollen sind für alle sichtbar, sobald das Protokoll veröffentlicht ist.
-- **Backups:** Das Backup enthält die vollständigen Daten. Verschlüsselt und nicht in einer fremden Cloud ablegen.
+- **Backups:** Das Backup enthält die vollständigen Daten. Verschlüsselt und nicht in einer fremden Cloud ablegen. Der Server legt täglich automatische Backups in `/data/backups` an; gelöschte Mitglieder oder Protokolle stecken dort noch bis zu 7 Tage (einstellbar) weiter drin, bis das Backup durch ein neueres ersetzt wird.
 - **Geräte:** PIN-Sperre der Android-App einschalten, Bildschirmsperre am Handy nutzen. Auf geteilten Geräten immer abmelden (das löscht die lokalen Daten).
 - **Löschen:** Mitglieder löschen entfernt auch ihre Kleidergrößen. Frühere Dienste behalten eine Referenz auf die ID (ohne Namen); die Statistik ignoriert sie. Protokolle landen zuerst im Papierkorb (30 Tage, einstellbar) und werden dann endgültig gelöscht. Endgültiges Löschen gibt es auch sofort: Admin → Protokolle → Papierkorb.
 - **Auskunft/Export:** Admin → Backup & Export liefert alle Protokolle als PDF + JSON. Daten einzelner Personen stehen in der Datenbank (SQLite) und lassen sich auslesen.

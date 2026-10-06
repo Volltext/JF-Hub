@@ -69,6 +69,7 @@ server/
     auth.ts       Benutzer, Einladungen, Passwörter, Sitzungen, Login-Bremse, Migration von Version 1
     sync.ts       Abgleich mit Besitz und Sichtbarkeit
     push.ts       Web-Push: Abos, Erinnerungen, Versand
+    backup.ts     Backups (VACUUM INTO, täglich, Aufräumen) und Wiederherstellung
     pdf.ts, clothingPdf.ts, inkSvg.ts   PDF-Erzeugung
     db.ts         Schema und Migrationen (SQLite)
   public/admin/   Admin-Oberfläche (ohne Framework)
@@ -111,7 +112,7 @@ Dass die Termin-Logik im Client bleibt (Ferien, Saison-Zeiten), hält den Server
 
 Öffentlich: `GET /api/health`, `GET /api/status`, `POST /api/setup`, `/api/login`, `/api/invite/accept`.
 Angemeldet (Bearer-Token oder Cookie mit `X-JFH: 1`): `/api/me`, `/api/logout`, `/api/account/{password,sessions…}`, `POST /api/sync`, `GET /api/protocols/:id/pdf`, `POST /api/clothing/pdf`, `GET /api/export.zip`, `GET /api/holidays`, `/api/push/{key,subscribe,unsubscribe,reminders,test}`.
-Nur Admins: `/api/admin/{info,settings,users…,sessions…,protocols…,backup,preview.pdf}`.
+Nur Admins: `/api/admin/{info,settings,users…,sessions…,protocols…,backup,backups…,restore,preview.pdf}`.
 
 ## Release
 

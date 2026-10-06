@@ -477,13 +477,98 @@
     return wrap;
   };
 
+  var KIND = { auto: 'automatisch', manuell: 'manuell', vorher: 'vor Wiederherstellung' };
+  var RESTORE_WARN = 'Alle aktuellen Daten werden durch den Stand der Sicherung ersetzt, auch Benutzer und Anmeldungen. ' +
+    'Vorher legt der Server automatisch eine Sicherung des jetzigen Stands an. ' +
+    'Die Geräte gleichen sich danach neu ab und senden hoch, was in der Sicherung fehlt. Wer in der Sicherung nicht existierte, muss sich neu anmelden.';
+
+  function restoreDone(msgBox, r) {
+    msgBox.show('Wiederhergestellt. Der vorherige Stand liegt als „' + r.before + '“ in der Liste. Du wirst neu angemeldet, falls nötig …', true);
+    setTimeout(render, 1500);
+  }
+
   VIEWS.backup = function () {
     var wrap = h('div', { class: 'page', style: 'display:grid;gap:16px' });
+    wrap.appendChild(pageHead('Backup & Export', 'Der Server sichert die Datenbank täglich selbst. Hier siehst du die Sicherungen, lädst sie herunter und stellst sie wieder her.'));
+
+    // --- gespeicherte Backups ---
     var box = msgBox();
-    var b1 = h('button', { class: 'btn primary', onclick: function () { run(b1, box, function () { return download('/admin/backup', 'jf-hub-backup.sqlite'); }); } }, 'Datenbank-Backup laden');
-    var b2 = h('button', { class: 'btn', onclick: function () { run(b2, box, function () { return download('/admin/export.zip', 'protokolle.zip'); }); } }, 'Alle Protokolle als ZIP (PDF + JSON)');
-    wrap.appendChild(pageHead('Backup & Export', 'Die Datenbank liegt im Docker-Volume /data. Sichere dieses Volume oder lade hier regelmäßig ein Backup.'));
-    wrap.appendChild(h('div', { class: 'card' }, h('div', { class: 'row' }, b1, b2), box));
+    var listBox = h('div');
+    var keep = h('input', { type: 'number', min: 0, max: 365 });
+    var saveKeep = h('button', { class: 'btn', type: 'submit' }, 'Speichern');
+    var now = h('button', { class: 'btn primary', onclick: function () { run(now, box, function () { return json('POST', '/admin/backups').then(load); }, 'Backup angelegt.'); } }, 'Jetzt sichern');
+    var keepForm = h('form', { onsubmit: function (e) {
+      e.preventDefault();
+      run(saveKeep, box, function () { return json('PUT', '/admin/settings', { backupKeep: String(keep.value || 0) }); }, 'Gespeichert.');
+    } }, field('Wie viele automatische Backups aufheben? (0 = keine automatischen Backups)', keep), saveKeep);
+
+    function draw(info) {
+      listBox.textContent = '';
+      keep.value = info.keep;
+      if (!info.enabled) {
+        listBox.appendChild(h('div', { class: 'empty' }, 'Auf diesem Server ist kein Backup-Ordner eingerichtet.'));
+        now.disabled = true;
+        return;
+      }
+      if (!info.items.length) {
+        listBox.appendChild(h('div', { class: 'empty' }, 'Noch keine Backups. Das erste automatische Backup entsteht kurz nach dem Start; du kannst auch jetzt eines anlegen.'));
+        return;
+      }
+      var body = h('tbody');
+      info.items.forEach(function (b) {
+        var acts = h('td', { class: 'act' },
+          h('button', { class: 'btn small', onclick: function () { download('/admin/backups/' + encodeURIComponent(b.name), b.name).catch(function (e) { box.show(e.message); }); } }, 'Laden'), ' ',
+          h('button', { class: 'btn small', onclick: function () {
+            confirmBox('Diesen Stand wiederherstellen?', fmt(b.createdAt) + ' (' + KIND[b.kind] + '). ' + RESTORE_WARN, 'Wiederherstellen').then(function (ok) {
+              if (ok) json('POST', '/admin/backups/' + encodeURIComponent(b.name) + '/restore').then(function (r) { restoreDone(box, r); }, function (e) { box.show(e.message); });
+            });
+          } }, 'Wiederherstellen'), ' ',
+          h('button', { class: 'btn small danger', onclick: function () {
+            confirmBox('Backup löschen?', fmt(b.createdAt) + ' wird unwiderruflich entfernt.', 'Löschen').then(function (ok) {
+              if (ok) json('DELETE', '/admin/backups/' + encodeURIComponent(b.name)).then(load, function (e) { box.show(e.message); });
+            });
+          } }, 'Löschen'));
+        body.appendChild(h('tr', null, h('td', null, fmt(b.createdAt)), h('td', null, h('span', { class: 'tag' }, KIND[b.kind])), h('td', { class: 'muted' }, fmtSize(b.size)), acts));
+      });
+      listBox.appendChild(h('div', { class: 'scroll' }, h('table', null,
+        h('thead', null, h('tr', null, h('th', null, 'Zeitpunkt'), h('th', null, 'Art'), h('th', null, 'Größe'), h('th'))), body)));
+    }
+    function load() {
+      return json('GET', '/admin/backups').then(draw).catch(function (e) { box.show(e.message); });
+    }
+    load();
+    wrap.appendChild(h('div', { class: 'card' }, h('h2', null, 'Gespeicherte Backups'),
+      h('p', { class: 'muted' }, 'Sie liegen im Datenordner des Servers (/data/backups) und schützen vor Fehlern und versehentlichem Löschen. ' +
+        'Fällt die ganze Festplatte aus, sind sie mit weg: Lade deshalb ab und zu ein Backup herunter oder sichere das Volume an anderer Stelle.'),
+      h('div', { class: 'row' }, now), keepForm, box, listBox));
+
+    // --- aus Datei ---
+    var box2 = msgBox();
+    var file = h('input', { type: 'file', accept: '.sqlite,application/octet-stream' });
+    var up = h('button', { class: 'btn', type: 'submit' }, 'Aus Datei wiederherstellen');
+    wrap.appendChild(h('form', { class: 'card', onsubmit: function (e) {
+      e.preventDefault();
+      var f = file.files && file.files[0];
+      if (!f) return box2.show('Bitte zuerst eine Backup-Datei (.sqlite) auswählen.');
+      confirmBox('Aus „' + f.name + '“ wiederherstellen?', RESTORE_WARN, 'Wiederherstellen').then(function (ok) {
+        if (!ok) return;
+        run(up, box2, function () {
+          return fetch('/api/admin/restore', { method: 'POST', credentials: 'same-origin', headers: { 'X-JFH': '1', 'Content-Type': 'application/x-sqlite3' }, body: f })
+            .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { if (!r.ok) throw new Error(j.error || 'Fehler ' + r.status); return j; }); })
+            .then(function (r) { restoreDone(box2, r); load(); });
+        });
+      });
+    } }, h('h2', null, 'Aus Datei wiederherstellen'),
+      h('p', { class: 'muted' }, 'Eine Datei, die du über „Datenbank-Backup laden“ (oder aus dem Backup-Ordner) bekommen hast. Auch Sicherungen älterer Versionen sind möglich.'),
+      field('Backup-Datei', file), up, box2));
+
+    // --- Downloads ---
+    var box3 = msgBox();
+    var b1 = h('button', { class: 'btn primary', onclick: function () { run(b1, box3, function () { return download('/admin/backup', 'jf-hub-backup.sqlite'); }); } }, 'Aktuelles Datenbank-Backup laden');
+    var b2 = h('button', { class: 'btn', onclick: function () { run(b2, box3, function () { return download('/export.zip', 'protokolle.zip'); }); } }, 'Alle Protokolle als ZIP (PDF + JSON)');
+    wrap.appendChild(h('div', { class: 'card' }, h('h2', null, 'Herunterladen'),
+      h('p', { class: 'muted' }, 'Das Backup enthält alle Daten, auch Fotos und Anhänge. Verschlüsselt und nicht in einer fremden Cloud ablegen.'),
+      h('div', { class: 'row' }, b1, b2), box3));
     return wrap;
   };
 

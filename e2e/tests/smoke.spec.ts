@@ -84,4 +84,30 @@ test.describe.serial('JF Hub Rauchtest', () => {
     await admin.context.close();
     await anna.context.close();
   });
+
+  test('Admin: Backup anlegen und wiederherstellen', async ({ browser }) => {
+    const { context, page } = await newSession(browser);
+    await page.goto('/admin/');
+    await page.getByLabel('Benutzername').fill(ADMIN.username);
+    await page.getByLabel('Passwort').fill(ADMIN.password);
+    await page.locator('button[type=submit]').click();
+    await page.goto('/admin/#/backup');
+    await expect(page.getByRole('heading', { name: 'Gespeicherte Backups' })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Jetzt sichern' }).click();
+    await expect(page.getByText('Backup angelegt.')).toBeVisible();
+    const row = page.getByRole('row').filter({ hasText: 'manuell' });
+    await expect(row).toHaveCount(1);
+    await page.screenshot({ path: 'test-results/admin-backup.png', fullPage: true });
+
+    await row.getByRole('button', { name: 'Wiederherstellen' }).click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Wiederherstellen' }).click();
+    await expect(page.getByText(/Wiederhergestellt/)).toBeVisible();
+    // Vor der Wiederherstellung hat der Server den Stand gesichert.
+    await expect(async () => {
+      await page.goto('/admin/#/backup');
+      await expect(page.getByRole('row').filter({ hasText: 'vor Wiederherstellung' })).toHaveCount(1, { timeout: 3_000 });
+    }).toPass({ timeout: 15_000 });
+    await context.close();
+  });
 });

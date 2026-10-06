@@ -90,7 +90,7 @@ docker compose pull && docker compose up -d     # neue Version (Image von GitHub
 docker compose up -d --build                    # neue Version (aus den Quellen gebaut)
 ```
 
-Die Datenbank ist **eine Datei** (`jf-hub.sqlite` im Volume `/data`). Sichern: das Volume kopieren oder in der Admin-Oberfläche unter **Backup & Export** ein Backup laden. Die Daten-Migrationen laufen beim Start von selbst.
+Die Datenbank ist **eine Datei** (`jf-hub.sqlite` im Volume `/data`). Der Server sichert täglich selbst in `/data/backups`. In der Admin-Oberfläche unter **Backup & Export** lädst du Backups herunter und stellst sie mit einem Klick wieder her. Für Ausfallsicherheit zusätzlich das Volume extern sichern. Die Daten-Migrationen laufen beim Start von selbst.
 
 ## Sicherheit und Datenschutz
 

@@ -71,6 +71,8 @@ export const CONFIG_DEFAULTS = {
   logo: '',
   tokenDays: '90',
   trashDays: '30',
+  /** Wie viele automatische Backups aufgehoben werden (0 = keine). */
+  backupKeep: '7',
 } as const;
 export type ConfigKey = keyof typeof CONFIG_DEFAULTS;
 

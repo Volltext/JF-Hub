@@ -18,6 +18,7 @@ const app = await buildApp({
   resetPassword: process.env.ADMIN_PASSWORD_RESET === '1',
   trustProxy: parseTrustProxy(process.env.TRUST_PROXY),
   pushSubject: process.env.PUSH_SUBJECT,
+  backupDir: process.env.BACKUP_DIR ?? join(dataDir, 'backups'),
 });
 
 if (app.setupCode) {
