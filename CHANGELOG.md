@@ -2,6 +2,17 @@
 
 Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/). Versionen folgen [SemVer](https://semver.org/lang/de/).
 
+## [Unreleased]
+
+### Geändert
+
+- **Dokumentation neu gestaltet:** README mit Titelbild, Screenshots, 3-Schritte-Start und Wegweiser. Alle Anleitungen in `docs/` einheitlich gegliedert, mit Inhaltsverzeichnis, Hinweisen und einklappbaren Details.
+
+### Neu
+
+- **Anleitung „Erste Schritte“** (`docs/erste-schritte.md`): vom Admin-Konto bis zum ersten Dienst, mit Screenshots.
+- **Übersichtsseite** `docs/README.md` mit Wegweiser nach Thema.
+
 ## [2.0.1] – 2026-10-06
 
 Stabilisierung nach der ersten öffentlichen Version.

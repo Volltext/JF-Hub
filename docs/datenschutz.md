@@ -1,6 +1,13 @@
 # Datenschutz
 
+[← Dokumentation](README.md)
+
+> [!IMPORTANT]
 > Das ist eine praktische Orientierung, **keine Rechtsberatung**. Wer JF Hub für eine Jugendfeuerwehr betreibt, ist für die Daten verantwortlich. Sprecht das mit dem Wehrführer, der Gemeinde bzw. dem Träger und ggf. dem Datenschutzbeauftragten ab.
+
+**Auf dieser Seite:** [Welche Daten?](#welche-daten-speichert-jf-hub) · [Daten nach außen](#wohin-gehen-daten-nach-außen) · [Empfehlungen](#empfehlungen) · [Technischer Schutz](#technischer-schutz)
+
+**Kurz gesagt:** JF Hub speichert bewusst wenig (Namen, Anwesenheit, Kleidergrößen), schickt nichts an Analyse- oder Werbedienste und liegt auf **deinem** Server.
 
 ## Welche Daten speichert JF Hub?
 
@@ -20,25 +27,41 @@ Es gibt **keine Analyse-Werkzeuge, keine Werbung und keine Weitergabe** an Dritt
 
 ## Wohin gehen Daten nach außen?
 
-- **Schulferien:** Der Server fragt öffentliche Ferientermine bei `openholidaysapi.org` ab (nur das Bundesland, keine personenbezogenen Daten) und gibt sie an die Geräte weiter. Die Android-App fragt diesen Dienst direkt ab (dabei sieht er die IP-Adresse des Handys), wenn sie ohne Server benutzt wird.
-- **Push-Benachrichtigungen:** Für Web-Push nutzen Browser den Dienst ihres Herstellers (Google, Mozilla, Apple, Microsoft). Dorthin gehen nur die Nachricht und die technische Adresse des Geräts. Die Nachrichtentexte („Dienst gleich“, Titel fälliger Aufgaben) sind Ende-zu-Ende verschlüsselt, sodass der Push-Dienst sie nicht lesen kann.
-- **Handschrift → Text (Android):** Die Texterkennung lädt beim ersten Mal ein Sprachmodell von Google herunter; die Erkennung selbst läuft auf dem Gerät.
-- **Cloudflare Tunnel:** Cloudflare leitet den Datenverkehr weiter und beendet dabei die Verschlüsselung. Cloudflare kann den Verkehr technisch einsehen (siehe [Cloudflare Tunnel](cloudflare-tunnel.md)). Wer das nicht möchte, nimmt Tailscale oder einen eigenen Reverse-Proxy ([Alternativen](https-alternativen.md)). Mit Cloudflare ist ein Vertrag zur Auftragsverarbeitung nötig (Cloudflare bietet ihn an).
+| Dienst | Was geht raus? | Hinweis |
+| --- | --- | --- |
+| **Schulferien** (`openholidaysapi.org`) | Nur das Bundesland, keine personenbezogenen Daten | Der Server fragt die Termine ab und gibt sie an die Geräte weiter. Die Android-App fragt den Dienst direkt ab, wenn sie ohne Server benutzt wird – dabei sieht er die IP-Adresse des Handys. |
+| **Push-Benachrichtigungen** | Die Nachricht und die technische Adresse des Geräts | Browser nutzen für Web-Push den Dienst ihres Herstellers (Google, Mozilla, Apple, Microsoft). Die Nachrichtentexte („Dienst gleich“, Titel fälliger Aufgaben) sind Ende-zu-Ende verschlüsselt, sodass der Push-Dienst sie nicht lesen kann. |
+| **Handschrift → Text** (Android) | Beim ersten Mal wird ein Sprachmodell von Google heruntergeladen | Die Erkennung selbst läuft auf dem Gerät. |
+| **Cloudflare Tunnel** (falls genutzt) | Der gesamte Datenverkehr läuft über Cloudflare | Cloudflare beendet die Verschlüsselung und kann den Verkehr technisch einsehen (siehe [Cloudflare Tunnel](cloudflare-tunnel.md)). Wer das nicht möchte, nimmt Tailscale oder einen eigenen Reverse-Proxy ([Alternativen](https-alternativen.md)). Mit Cloudflare ist ein Vertrag zur Auftragsverarbeitung nötig (Cloudflare bietet ihn an). |
 
 ## Empfehlungen
 
+**Hosting und Zugriff**
+
 - **Hosting:** Am besten zu Hause/im Gerätehaus oder bei einem Anbieter in der EU. Der Server braucht kaum Leistung.
-- **Zugriff:** Nur Betreuer bekommen Konten; Konten ausgeschiedener Betreuer **sperren oder löschen**.
-- **Einwilligungen:** Für Fotos von Jugendlichen gelten die üblichen Regeln (Einwilligung der Eltern). Fotos in Protokollen sind für alle sichtbar, sobald das Protokoll veröffentlicht ist.
-- **Backups:** Das Backup enthält die vollständigen Daten. Verschlüsselt und nicht in einer fremden Cloud ablegen. Der Server legt täglich automatische Backups in `/data/backups` an; gelöschte Mitglieder oder Protokolle stecken dort noch bis zu 7 Tage (einstellbar) weiter drin, bis das Backup durch ein neueres ersetzt wird.
+- **Zugriff:** Nur Betreuer bekommen Konten. Konten ausgeschiedener Betreuer **sperren oder löschen**.
 - **Geräte:** PIN-Sperre der Android-App einschalten, Bildschirmsperre am Handy nutzen. Auf geteilten Geräten immer abmelden (das löscht die lokalen Daten).
-- **Löschen:** Mitglieder löschen entfernt auch ihre Kleidergrößen. Frühere Dienste behalten eine Referenz auf die ID (ohne Namen); die Statistik ignoriert sie. Protokolle landen zuerst im Papierkorb (30 Tage, einstellbar) und werden dann endgültig gelöscht. Endgültiges Löschen gibt es auch sofort: Admin → Protokolle → Papierkorb.
-- **Auskunft/Export:** Admin → Backup & Export liefert alle Protokolle als PDF + JSON. Daten einzelner Personen stehen in der Datenbank (SQLite) und lassen sich auslesen.
+
+**Inhalte**
+
+- **Einwilligungen:** Für Fotos von Jugendlichen gelten die üblichen Regeln (Einwilligung der Eltern). Fotos in Protokollen sind für alle sichtbar, sobald das Protokoll veröffentlicht ist.
+
+**Backups und Löschen**
+
+- **Backups:** Das Backup enthält die vollständigen Daten. Verschlüsselt und nicht in einer fremden Cloud ablegen. Der Server legt täglich automatische Backups in `/data/backups` an. Gelöschte Mitglieder oder Protokolle stecken dort noch bis zu 7 Tage (einstellbar) weiter drin, bis das Backup durch ein neueres ersetzt wird.
+- **Löschen:** Mitglieder löschen entfernt auch ihre Kleidergrößen. Frühere Dienste behalten eine Referenz auf die ID (ohne Namen), die Statistik ignoriert sie. Protokolle landen zuerst im Papierkorb (30 Tage, einstellbar) und werden dann endgültig gelöscht. Endgültiges Löschen gibt es auch sofort: *Admin → Protokolle → Papierkorb*.
+- **Auskunft/Export:** *Admin → Backup & Export* liefert alle Protokolle als PDF + JSON. Daten einzelner Personen stehen in der Datenbank (SQLite) und lassen sich auslesen.
 
 ## Technischer Schutz
 
-- Passwörter: scrypt, mindestens 10 Zeichen, begrenzte Anmeldeversuche je Adresse und je Konto.
-- Sitzungen: zufällige Tokens (nur der Hash liegt auf dem Server), im Browser in einem `HttpOnly`-Cookie (`SameSite=Strict`, bei https `Secure`) mit Schutz gegen CSRF.
-- Strenge Sicherheits-Header (CSP, HSTS, `X-Frame-Options`), keine Inhalte von Fremdservern.
-- Der Container läuft ohne Root-Rechte und mit `no-new-privileges`.
-- Daten auf dem Server sind **nicht zusätzlich verschlüsselt** (außer durch die Verschlüsselung deines Datenträgers). Aktiviere sie dort (z. B. BitLocker, LUKS), wenn der Rechner nicht abgeschlossen steht.
+- **Passwörter:** scrypt, mindestens 10 Zeichen, begrenzte Anmeldeversuche je Adresse und je Konto.
+- **Sitzungen:** zufällige Tokens (nur der Hash liegt auf dem Server), im Browser in einem `HttpOnly`-Cookie (`SameSite=Strict`, bei https `Secure`) mit Schutz gegen CSRF.
+- **Browser-Schutz:** Strenge Sicherheits-Header (CSP, HSTS, `X-Frame-Options`), keine Inhalte von Fremdservern.
+- **Container:** läuft ohne Root-Rechte und mit `no-new-privileges`.
+
+> [!WARNING]
+> Daten auf dem Server sind **nicht zusätzlich verschlüsselt** (außer durch die Verschlüsselung deines Datenträgers). Aktiviere sie dort (z. B. BitLocker, LUKS), wenn der Rechner nicht abgeschlossen steht.
+
+---
+
+**Mehr dazu:** [Benutzer und Sichtbarkeit](benutzer-und-sichtbarkeit.md) · [SECURITY.md](../SECURITY.md) · [NOTICE](../NOTICE.md)
