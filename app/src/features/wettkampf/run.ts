@@ -1,4 +1,4 @@
-import { newId, nowIso } from '@/core/domain/id';
+import { deriveId, nowIso } from '@/core/domain/id';
 import type { Draft, LspSnapshot, Run, ScoringSnapshot } from './model';
 import { WASSERENTNAHME_LABEL, computeScore, resolveFehlerList, sumFehlerpunkte, type Wasserentnahme } from './rules/bwScoring';
 import { computeLspDisziplin } from './rules/leistungsspange';
@@ -29,6 +29,9 @@ export interface BuildRunArgs {
   lspVariante: string;
 }
 
+/** ID des Laufs aus Lauf-Kennung und letzter Eingabe: derselbe Stand ergibt auf jedem Gerät dieselbe ID. */
+export const runIdFor = (d: Draft): string => deriveId('run', d.id, d.opIds?.[d.opIds.length - 1] ?? '', String(d.elapsedMs));
+
 export function buildRun(d: Draft, { now, assignments, memberNames, lspVariante }: BuildRunArgs): Run {
   const isLsp = getMode(d.mode).competition === 'lsp';
   const totalMs = elapsedOf(d, now);
@@ -54,7 +57,7 @@ export function buildRun(d: Draft, { now, assignments, memberNames, lspVariante 
   }
 
   return {
-    id: newId(),
+    id: runIdFor(d),
     createdAt: stamp,
     updatedAt: stamp,
     mode: d.mode,

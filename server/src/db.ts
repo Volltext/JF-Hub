@@ -167,6 +167,14 @@ export function openDb(path: string): DatabaseSync {
       PRIMARY KEY (endpoint, kind, key)
     );
     CREATE INDEX IF NOT EXISTS push_reminders_at ON push_reminders(at);
+    -- Live-Stoppuhr: aktueller Stand je Modus (JSON der App), für alle Betreuer gemeinsam (siehe live.ts).
+    CREATE TABLE IF NOT EXISTS live_drafts (
+      mode TEXT PRIMARY KEY,
+      data TEXT NOT NULL,
+      rev INTEGER NOT NULL,
+      updatedAt INTEGER NOT NULL,
+      userId TEXT NOT NULL DEFAULT ''
+    );
   `);
   // Migration: Ordner-Zuordnung (ab 1.1.0 des Servers).
   addColumn(db, 'protocols', 'folderId', "TEXT NOT NULL DEFAULT ''");

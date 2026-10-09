@@ -43,6 +43,7 @@ import { HolidayCache, type FetchLike } from './holidays.js';
 import { sampleProtocol } from './sample.js';
 import { autoKeep, backupPath, createBackup, deleteBackup, isBackupName, listBackups, pruneBackups, restoreFromFile, RestoreError, runAutoBackup, writeUpload } from './backup.js';
 import { DEMO_ACCOUNTS, demoBlock, formatResetAt, isDemoAccount, msUntilReset, parseResetAt, resetDemo } from './demo.js';
+import { LiveHub } from './live.js';
 
 export const VERSION = '2.0.1';
 const COOKIE = 'jfh_session';
@@ -80,6 +81,8 @@ export interface AppOptions {
    * feste Zugänge, keine Backups. `timer: false` schaltet das tägliche Zurücksetzen ab (Tests).
    */
   demo?: { resetAt?: string; timer?: boolean };
+  /** Wie lange eine Live-Abfrage der Stoppuhr höchstens auf eine Änderung wartet (Standard 25 s, unter üblichen Proxy-Zeitlimits). */
+  liveWaitMs?: number;
   fetchImpl?: FetchLike;
   logger?: boolean;
 }
@@ -296,6 +299,38 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
   app.post<{ Body: SyncRequest }>('/api/sync', async (req, reply) => {
     try {
       return applySync(db, req.body, me(req));
+    } catch (e) {
+      return reply.code(400).send({ error: (e as Error).message });
+    }
+  });
+
+  // ---------- Live-Stoppuhr (siehe live.ts) ----------
+  const live = new LiveHub(db);
+  const liveWaitMs = opts.liveWaitMs ?? 25_000;
+  // Wartende Abfragen vor dem Schließen beantworten, sonst hielten sie das Beenden bis zu `liveWaitMs` auf.
+  app.addHook('preClose', async () => live.close());
+
+  /**
+   * Änderungen nach `since`; ohne Änderung wartet die Anfrage (außer mit `wait=0`). `held` = so lange gewartet (für den Uhrenabgleich).
+   * Ohne Zugriffs-Log: offene Stoppuhren fragen alle 25 s, das würde das Server-Log fluten.
+   */
+  app.get<{ Querystring: { since?: string; epoch?: string; wait?: string } }>('/api/live', { logLevel: 'warn' }, async (req, reply) => {
+    const t0 = Date.now();
+    const since = Math.max(0, Math.floor(Number(req.query.since) || 0));
+    let res = live.read(since, req.query.epoch);
+    if (req.query.wait !== '0' && !res.full && res.drafts.length === 0) {
+      await live.wait(liveWaitMs, reply.raw);
+      res = live.read(since, req.query.epoch);
+    }
+    const now = Date.now();
+    reply.header('Cache-Control', 'no-store');
+    return { ...res, now, held: now - t0 };
+  });
+
+  app.put<{ Params: { mode: string }; Body: { baseRev?: unknown; draft?: unknown } | undefined }>('/api/live/:mode', async (req, reply) => {
+    try {
+      const res = live.write(req.params.mode, req.body?.baseRev, req.body?.draft, me(req).id);
+      return { ...res, now: Date.now() };
     } catch (e) {
       return reply.code(400).send({ error: (e as Error).message });
     }
@@ -579,6 +614,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
     const before = createBackup(db, dir, 'vorher');
     try {
       restoreFromFile(db, file);
+      live.wake(); // neue Epoche: Live-Abfragen holen sich sofort den wiederhergestellten Stand
       pruneBackups(dir, autoKeep(db));
       return { ok: true, before: before.name };
     } catch (e) {
@@ -669,7 +705,10 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
       if (closed) return;
       next = setTimeout(() => {
         resetDemo(db)
-          .then(() => app.log.info('Demo zurückgesetzt'))
+          .then(() => {
+            live.wake();
+            app.log.info('Demo zurückgesetzt');
+          })
           .catch((e) => app.log.warn({ err: e }, 'Demo konnte nicht zurückgesetzt werden'))
           .finally(plan);
       }, msUntilReset(new Date(), demoAt));

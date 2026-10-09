@@ -196,6 +196,11 @@ a.btn--primary { color: var(--on-primary); }
 .icon-btn { width: 40px; height: 40px; flex-shrink: 0; display: grid; place-items: center; border-radius: var(--r-md); border: 1px solid var(--border); background: var(--surface-2); color: var(--muted); text-decoration: none; }
 .chips-row--compact { gap: var(--s-2); }
 .chips-row--compact .chip-btn { min-height: 34px; padding: 0 var(--s-3); font-size: 0.88rem; white-space: nowrap; }
+/* Live-Stoppuhr: Status in der Uhr-Karte, Hinweis auf eine Stoppuhr, die in einem anderen Modus läuft */
+.chip-btn__dot { display: inline-block; width: 8px; height: 8px; margin-left: 6px; border-radius: 50%; background: var(--success); vertical-align: 1px; }
+.live-status { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: var(--s-2); font-size: 0.85rem; }
+.live-banner { display: flex; align-items: center; gap: var(--s-2); min-height: 44px; padding: 0 var(--s-4); border-radius: var(--r-md); border: 1px solid var(--success); background: var(--surface); text-align: left; cursor: pointer; }
+.live-banner .chip-btn__dot { margin-left: 0; }
 
 /* ---- Uhrzeit-Auswahl ---- */
 .tp { display: flex; flex-direction: column; gap: var(--s-3); }

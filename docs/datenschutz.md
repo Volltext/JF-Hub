@@ -21,7 +21,8 @@
 | Protokolle (Text, Fotos, Anhänge, Handschrift), Aufgaben | Server + Geräte | Inhalt bestimmen die Betreuer – denkt an Fotos von Kindern |
 | Push-Abonnements: technische Adresse des Push-Dienstes deines Browsers, geplante Erinnerungen | Server | werden beim Abmelden gelöscht |
 | Wettkampf-Läufe (mit Namen der aufgestellten Mitglieder) und Aufstellungs-Vorlagen | Server + Geräte | für alle Betreuer sichtbar |
-| Laufende Stoppuhr, aktuelle Aufstellung | nur Gerät | Arbeitsstand, wird nicht an den Server gesendet |
+| Stoppuhr je Modus: Zeiten, Fehler, Notizen, wer zuletzt geändert hat | Server + Geräte | für alle Betreuer live sichtbar (Live-Stoppuhr); enthält keine Namen von Mitgliedern |
+| Aktuelle Aufstellung | nur Gerät | Arbeitsstand, wird nicht an den Server gesendet |
 
 Es gibt **keine Analyse-Werkzeuge, keine Werbung und keine Weitergabe** an Dritte durch JF Hub selbst.
 

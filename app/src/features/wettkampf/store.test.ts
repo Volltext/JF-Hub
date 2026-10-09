@@ -67,7 +67,7 @@ describe('Speicher', () => {
     expect(a['b-laeufer-1']).toBeNull();
   });
 
-  it('Lauf speichern setzt die Uhr zurück und behält die Aufstellung als Schnappschuss', async () => {
+  it('Lauf speichern behält die Aufstellung als Schnappschuss', async () => {
     await db.members.add({ id: 'm1', name: 'Anna', kind: 'jugendlich', active: true });
     await saveLineup({ 'a-melder': 'm1' });
     const d = stop(start(emptyDraft('a'), 0), 80_000);
@@ -76,8 +76,18 @@ describe('Speicher', () => {
     const run = await runRepo.saveFromDraft(d, 'gruppe', 80_000);
     expect(run.lineupSnapshot.assignments['a-melder']).toBe('m1');
     expect(run.lineupSnapshot.memberNames['m1']).toBe('Anna');
-    expect((await loadDraft('a')).elapsedMs).toBe(0);
     expect(await db.runs.count()).toBe(1);
+  });
+
+  it('derselbe Stand zweimal gespeichert (zwei Geräte gleichzeitig) ergibt einen Lauf, ein anderer einen zweiten', async () => {
+    const d = { ...stop(start(emptyDraft('a'), 0), 80_000), opIds: ['op-1', 'op-2'] };
+    const first = await runRepo.saveFromDraft(d, 'gruppe', 80_000);
+    const again = await runRepo.saveFromDraft({ ...d }, 'gruppe', 80_000);
+    expect(again.id).toBe(first.id);
+    expect(await db.runs.count()).toBe(1);
+
+    await runRepo.saveFromDraft({ ...d, opIds: ['op-1', 'op-2', 'op-3'], elapsedMs: 81_000 }, 'gruppe', 81_000);
+    expect(await db.runs.count()).toBe(2);
   });
 });
 
@@ -113,11 +123,16 @@ describe('Abgleich mit dem Server', () => {
     await db.runs.add({ id: 'run-1', createdAt: '', updatedAt: '', mode: 'a', totalMs: 1, markers: [], knotDurationMs: null, taskTimers: {}, notes: '', scoring: null, lsp: null, lineupSnapshot: { assignments: {}, memberNames: {} } });
     await db.lineupTemplates.add({ id: 't1', name: 'x', createdAt: '', assignments: {} });
     await saveDraft(start(emptyDraft('a'), 5));
+    await db.kv.bulkPut([
+      { key: 'draftSync', value: { since: 3 } },
+      { key: 'draftSync.a', value: { ops: [] } },
+    ]);
     await wipeLocalData();
     expect(await db.runs.count()).toBe(0);
     expect(await db.lineupTemplates.count()).toBe(0);
-    // Die laufende Stoppuhr gehört zum Gerät und bleibt.
+    // Die laufende Stoppuhr gehört zum Gerät und bleibt, ihr Live-Abgleich gehört zum Konto und geht.
     expect((await loadDraft('a')).isRunning).toBe(true);
+    expect(await db.kv.where('key').startsWith('draftSync').count()).toBe(0);
   });
 });
 
