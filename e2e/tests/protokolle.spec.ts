@@ -307,6 +307,44 @@ test.describe.serial('Protokolle: Tabellen, Links und Hervorhebung', () => {
     await context.close();
   });
 
+  test('Foto und Trennlinie aus einer Tabellenzelle heraus landen hinter der Tabelle und zerteilen sie nicht', async ({ browser, request }) => {
+    await adminToken(request);
+    const { context, page } = await newSession(browser);
+    await signIn(page, ADMIN);
+    await writeProtocol(page, 'Foto neben Tabelle', 'Text.');
+    const editor = page.getByLabel('Protokolltext', { exact: true });
+    await page.getByRole('button', { name: 'Einfügen', exact: true }).click();
+    await page.getByRole('dialog', { name: 'Einfügen' }).getByRole('button', { name: /^Tabelle/ }).click();
+    await page.getByLabel(/^Zeilen/).fill('2');
+    await page.getByLabel(/^Spalten/).fill('2');
+    await page.getByRole('button', { name: 'Tabelle einfügen', exact: true }).click();
+    await page.keyboard.type('Zelle'); // der Cursor steht in der ersten Zelle der ersten Zeile
+
+    // Zellen nehmen nur Text und Listen auf. Ein Foto soll nicht verschwinden und die Tabelle nicht zerreißen, sondern dahinter stehen.
+    await page.getByRole('button', { name: 'Foto oder Datei anhängen' }).click();
+    const chooser = page.waitForEvent('filechooser');
+    await page.getByRole('button', { name: /Foto aus Galerie/ }).click();
+    await (await chooser).setFiles({ name: 'teich.png', mimeType: 'image/png', buffer: PNG_1X1 });
+    await expect(editor.locator('.photo-node img')).toBeVisible();
+    await expect(editor.locator('table')).toHaveCount(1);
+    await expect(editor.locator('table .photo-node')).toHaveCount(0);
+    await expect(editor.locator('tr')).toHaveCount(2);
+
+    // Dasselbe für die Trennlinie; Tabelle und Zitat gibt es in einer Tabelle nicht
+    await editor.locator('td').first().click();
+    await page.getByRole('button', { name: 'Einfügen', exact: true }).click();
+    const sheet = page.getByRole('dialog', { name: 'Einfügen' });
+    await expect(sheet.getByRole('button', { name: /^Tabelle/ })).toHaveCount(0);
+    await expect(sheet.getByRole('button', { name: /^Zitat/ })).toHaveCount(0);
+    await sheet.getByRole('button', { name: /^Trennlinie/ }).click();
+    await expect(editor.locator('hr')).toHaveCount(1);
+    await expect(editor.locator('table')).toHaveCount(1);
+    await expect(editor.locator('tr')).toHaveCount(2);
+    await expect(editor.locator('table hr')).toHaveCount(0);
+    await expect(editor.locator('table')).toContainText('Zelle');
+    await context.close();
+  });
+
   test('am Handy: Leiste, Tabelle und Link passen auf den Bildschirm', async ({ browser, request }) => {
     const title = 'Handy mit Tabelle';
     await adminToken(request);

@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import type { Editor } from '@tiptap/core';
 import { Minus, NotebookPen, PenLine, Quote, Table2 } from 'lucide-react';
 import { Button, MenuGroup, MenuRow, Segmented, Sheet } from '@/core/ui/components';
+import { insertBlocks } from './insertBlocks';
 
 export const TABLE_MAX_ROWS = 20;
 export const TABLE_MAX_COLS = 6;
@@ -53,17 +54,25 @@ export function InsertSheet({ editor, onClose }: { editor: Editor; onClose: () =
   const [step, setStep] = useState<'menu' | 'table'>('menu');
   if (step === 'table') return <TableForm editor={editor} onClose={onClose} />;
 
+  // Zellen nehmen nur Absätze und Listen auf: In einer Tabelle gibt es weder Tabelle noch Zitat, und Trennlinie und Handschrift kommen
+  // hinter die Tabelle (der Editor würde die Tabelle sonst an der Cursorstelle zerteilen).
+  const inTable = editor.isActive('table');
   const run = (fn: (e: Editor) => unknown) => () => {
     onClose();
     fn(editor);
   };
   return (
     <Sheet title="Einfügen" onClose={onClose}>
+      {inTable && <p className="muted">Der Cursor steht in einer Tabelle. Trennlinie und Handschrift kommen hinter die Tabelle.</p>}
       <MenuGroup>
-        {/* Zellen nehmen keine Tabellen auf */}
-        {!editor.isActive('table') && <MenuRow icon={Table2} title="Tabelle" sub="Zeilen und Spalten, mit oder ohne Kopfzeile" onClick={() => setStep('table')} />}
-        <MenuRow icon={Quote} title="Zitat / Hinweis" sub="Hebt einen Absatz hervor" onClick={run((e) => e.chain().focus().toggleBlockquote().run())} />
-        <MenuRow icon={Minus} title="Trennlinie" sub="Waagerechte Linie" onClick={run((e) => e.chain().focus().setHorizontalRule().run())} />
+        {!inTable && <MenuRow icon={Table2} title="Tabelle" sub="Zeilen und Spalten, mit oder ohne Kopfzeile" onClick={() => setStep('table')} />}
+        {!inTable && <MenuRow icon={Quote} title="Zitat / Hinweis" sub="Hebt einen Absatz hervor" onClick={run((e) => e.chain().focus().toggleBlockquote().run())} />}
+        <MenuRow
+          icon={Minus}
+          title="Trennlinie"
+          sub="Waagerechte Linie"
+          onClick={run((e) => (inTable ? insertBlocks(e, [{ type: 'horizontalRule' }, { type: 'paragraph' }]) : e.chain().focus().setHorizontalRule().run()))}
+        />
         <MenuRow icon={PenLine} title="Handschrift" sub="Zeichenfläche im Text" onClick={run((e) => e.commands.insertInk('block'))} />
         <MenuRow icon={NotebookPen} title="Handschrift-Seite" sub="Eine ganze Seite zum Schreiben und Zeichnen" onClick={run((e) => e.commands.insertInk('page'))} />
       </MenuGroup>

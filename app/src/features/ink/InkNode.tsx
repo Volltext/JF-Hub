@@ -5,6 +5,7 @@ import { editInk, type InkEditOutcome } from './editInk';
 import { isInkEmpty, normalizeInk, type InkDoc, type InkVariant } from './inkModel';
 import { inkSvg } from './inkSvg';
 import './ink.css';
+import { insertBlocks } from '@/features/protokolle/insertBlocks';
 
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {
@@ -107,7 +108,7 @@ export const InkNode = Node.create({
             if (!keepInk && !paras.length) return;
             const content: unknown[] = keepInk ? [{ type: 'ink', attrs: { ink: result.doc, variant } }, ...paras] : paras;
             content.push({ type: 'paragraph' });
-            editor.chain().focus().insertContent(content as never).run();
+            insertBlocks(editor, content as never); // in einer Tabelle: dahinter, Zellen nehmen keine Zeichnungen auf
           });
           return true;
         },

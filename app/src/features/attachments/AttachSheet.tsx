@@ -3,6 +3,7 @@ import type { Editor } from '@tiptap/core';
 import { Sheet } from '@/core/ui/components';
 import { putLocalBlob } from '@/core/db/blobs';
 import { alertDialog } from '@/core/ui/dialog';
+import { insertBlocks } from '@/features/protokolle/insertBlocks';
 import { MAX_FILE_BYTES, formatBytes } from './limits';
 import { photoToJpeg, pickFiles } from './pick';
 
@@ -28,12 +29,12 @@ async function insertAll(editor: Editor, kind: Kind, files: File[]): Promise<voi
         const mime = file.type || 'application/octet-stream';
         const blob = await putLocalBlob({ kind: 'file', mime, name: file.name, data: new Uint8Array(await file.arrayBuffer()) });
         const attrs = { blobId: blob.id, name: file.name, mime, size: file.size };
-        editor.chain().focus().insertContent([{ type: 'attachment', attrs }, { type: 'paragraph' }]).run();
+        insertBlocks(editor, [{ type: 'attachment', attrs }, { type: 'paragraph' }]);
       } else {
         const photo = await photoToJpeg(file);
         const blob = await putLocalBlob({ kind: 'photo', mime: 'image/jpeg', name: '', data: photo.data });
         const attrs = { blobId: blob.id, mime: 'image/jpeg', w: photo.w, h: photo.h, caption: '' };
-        editor.chain().focus().insertContent([{ type: 'photo', attrs }, { type: 'paragraph' }]).run();
+        insertBlocks(editor, [{ type: 'photo', attrs }, { type: 'paragraph' }]); // in einer Tabelle: dahinter
       }
     } catch (e) {
       skipped.push(`${file.name || 'Datei'}: ${e instanceof Error ? e.message : 'Fehler'}`);
