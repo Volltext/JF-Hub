@@ -13,7 +13,7 @@ vi.mock('./http', async () => {
 import { ProtoError } from './http';
 import { syncNow } from './sync';
 
-const reply = (over: Record<string, unknown> = {}) => ({ rev: 1, changes: [], folders: [], records: [], conflicts: [], api: 2, ...over });
+const reply = (over: Record<string, unknown> = {}) => ({ rev: 1, changes: [], folders: [], records: [], conflicts: [], api: 3, ...over });
 const status = () => useSyncStatus.getState();
 
 beforeEach(async () => {

@@ -4,6 +4,8 @@ import { expect, test, type APIRequestContext, type Browser, type Page } from '@
 test.use({ baseURL: 'http://127.0.0.1:8096' });
 
 const ADMIN = { username: 'admin', password: 'e2e-admin-passwort' };
+/** Direkte Anfragen an den Abgleich melden das Dokumentformat wie die App (ohne Angabe gilt eine Anfrage als Version 2.0.x und wird abgewiesen). */
+const SCHEMA = { 'X-JFH-Schema': '3' };
 const BEN = { username: 'ben', password: 'ben-hat-ein-passwort' };
 
 /** Ein Anmelde-Token für alle Tests (die Anmeldung ist je Adresse begrenzt). */
@@ -17,9 +19,11 @@ async function adminToken(request: APIRequestContext): Promise<string> {
   return cachedToken;
 }
 
-/** Admin legt Ben per API an; Ben löst die Einladung ein. */
+/** Admin legt Ben per API an (falls es ihn noch nicht gibt); Ben löst die Einladung ein. */
 async function createBen(request: APIRequestContext) {
   const auth = { Authorization: `Bearer ${await adminToken(request)}` };
+  const users = (await (await request.get('/api/admin/users', { headers: auth })).json()) as { username: string }[];
+  if (users.some((u) => u.username === BEN.username)) return;
   const created = await request.post('/api/admin/users', { headers: auth, data: { username: BEN.username, displayName: 'Ben', role: 'betreuer' } });
   expect(created.ok()).toBeTruthy();
   const { invite } = await created.json();
@@ -57,7 +61,7 @@ async function writeProtocol(page: Page, title: string, text: string) {
 
 /** Das Protokoll mit diesem Titel, wie der Server es gerade hat. */
 async function serverDoc(request: APIRequestContext, token: string, title: string) {
-  const r = await request.post('/api/sync', { headers: { Authorization: `Bearer ${token}` }, data: { since: 0, changes: [] } });
+  const r = await request.post('/api/sync', { headers: { Authorization: `Bearer ${token}`, ...SCHEMA }, data: { since: 0, changes: [] } });
   const res = (await r.json()) as { changes: { title: string; rev: number; updatedAt: number; deleted: boolean; content: unknown }[] };
   return res.changes.find((c) => c.title === title);
 }
@@ -168,7 +172,7 @@ test.describe.serial('Protokolle: Schutz vor unbekannten Inhalten', () => {
     const p = (text: string) => ({ type: 'paragraph', content: [{ type: 'text', text }] });
     const content = { type: 'doc', content: [p('Davor'), { type: 'table', content: [{ type: 'tableRow', content: [{ type: 'tableCell', content: [p('Zelle A1')] }] }] }, p('Danach')] };
     const sent = await request.post('/api/sync', {
-      headers: { Authorization: `Bearer ${token}` },
+      headers: { Authorization: `Bearer ${token}`, ...SCHEMA },
       data: { since: 0, changes: [{ id: 'zukunft-0001', baseRev: 0, title, datum: '2026-10-01', beginn: '', ende: '', ort: '', leitung: '', content, updatedAt: Date.now(), deleted: false }] },
     });
     expect(sent.ok()).toBeTruthy();
@@ -200,6 +204,73 @@ function respelled(path: string, segment: number): string {
     .map((s, i) => (i === segment && s ? `%${s.charCodeAt(0).toString(16)}${s.slice(1)}` : s))
     .join('/');
 }
+
+/** Ein 1×1-Pixel-PNG: Die App macht daraus ein verkleinertes JPEG. */
+const PNG_1X1 = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+
+test.describe.serial('Protokolle: Fotos als Anhänge', () => {
+  test('Foto einfügen, hochladen, bei einem anderen Betreuer sehen und im PDF finden', async ({ browser, request }) => {
+    const title = 'Teich mit Foto';
+    const token = await adminToken(request);
+    await createBen(request);
+
+    const admin = await newSession(browser);
+    await signIn(admin.page, ADMIN);
+    await writeProtocol(admin.page, title, 'Text vor dem Foto.');
+    await admin.page.getByRole('button', { name: 'Sichtbarkeit: privat' }).click();
+    await admin.page.getByRole('button', { name: 'Für alle Betreuer veröffentlichen' }).click();
+    await expect(admin.page.getByRole('button', { name: 'Sichtbarkeit: für alle Betreuer' })).toBeVisible();
+
+    // Foto aus der Galerie: Die Auswahl öffnet die Dateiauswahl des Browsers.
+    await admin.page.getByLabel('Protokolltext').click();
+    await admin.page.getByRole('button', { name: 'Foto oder Datei anhängen' }).click();
+    const chooser = admin.page.waitForEvent('filechooser');
+    await admin.page.getByRole('button', { name: /Foto aus Galerie/ }).click();
+    await (await chooser).setFiles({ name: 'teich.png', mimeType: 'image/png', buffer: PNG_1X1 });
+    const photo = admin.page.locator('.photo-node img');
+    await expect(photo).toBeVisible();
+    await expect(admin.page.getByText('Gespeichert')).toBeVisible();
+    await admin.page.screenshot({ path: 'test-results/foto-im-protokoll.png', fullPage: true });
+    await syncNow(admin.page);
+
+    // Auf dem Server liegt nur ein Verweis im Protokoll, das Bild als eigener Anhang.
+    const doc = await serverDoc(request, token, title);
+    expect(doc).toBeTruthy();
+    const json = JSON.stringify(doc!.content);
+    expect(json).not.toContain('data:image');
+    const blobId = /"blobId":"([^"]+)"/.exec(json)?.[1];
+    expect(blobId).toBeTruthy();
+    const blob = await request.get(`/api/blobs/${blobId}`, { headers: { Authorization: `Bearer ${token}` } });
+    expect(blob.status()).toBe(200);
+    expect(blob.headers()['content-type']).toBe('image/jpeg');
+    expect([...(await blob.body()).subarray(0, 3)]).toEqual([0xff, 0xd8, 0xff]);
+
+    // Das PDF enthält das Foto.
+    const pdf = await request.get(`/api/protocols/${(doc as unknown as { id: string }).id}/pdf`, { headers: { Authorization: `Bearer ${token}` } });
+    expect(pdf.status()).toBe(200);
+    expect((await pdf.body()).toString('latin1')).toContain('/DCTDecode');
+
+    // Ben sieht das Foto: Es wird beim Anschauen vom Server geholt.
+    const ben = await newSession(browser);
+    await signIn(ben.page, BEN);
+    await ben.page.goto('/#/protokolle');
+    await ben.page.getByText(title).click({ timeout: 30_000 });
+    const benPhoto = ben.page.locator('.photo-node img');
+    await expect(benPhoto).toBeVisible({ timeout: 30_000 });
+    await expect.poll(() => benPhoto.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
+    await ben.page.screenshot({ path: 'test-results/foto-bei-ben.png', fullPage: true });
+
+    // Anschauen verändert nichts: Das Protokoll mit Foto bleibt beim Server auf derselben Revision.
+    await ben.page.getByRole('link', { name: /Protokolle/ }).first().click();
+    await syncNow(ben.page);
+    const after = await serverDoc(request, token, title);
+    expect(after!.rev).toBe(doc!.rev);
+    expect(after!.updatedAt).toBe(doc!.updatedAt);
+
+    await admin.context.close();
+    await ben.context.close();
+  });
+});
 
 test.describe('Server: Zugriffsschutz', () => {
   test('geschützte Routen sind in jeder Schreibweise des Pfads geschützt', async ({ request }) => {

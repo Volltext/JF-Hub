@@ -13,3 +13,4 @@
 .photo-lightbox img { max-width: 100%; max-height: 85vh; object-fit: contain; }
 .photo-lightbox__close { position: absolute; top: calc(var(--s-3) + var(--safe-top)); right: var(--s-3); }
 .photo-node__missing { margin: 0; padding: var(--s-3); border-radius: var(--r-md); background: var(--surface-2, rgba(127, 127, 127, 0.12)); }
+.photo-node__missing .link-btn { display: inline; padding: 0; background: none; border: 0; color: var(--primary); font: inherit; text-decoration: underline; cursor: pointer; }

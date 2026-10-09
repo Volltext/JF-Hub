@@ -4,9 +4,10 @@
  * ab („Bitte die App aktualisieren“), statt dass sie Inhalte, die sie nicht kennt, stillschweigend verwirft und überschreibt.
  *
  *   1 = Version 2.0.x (ohne Meldung)
- *   2 = ab 2.1.0: meldet sich beim Server, schützt unbekannte Inhalte vor dem Überschreiben, reicht `blobId` durch
+ *   2 = 2.1.0: meldet sich beim Server, schützt unbekannte Inhalte vor dem Überschreiben, reicht `blobId` durch
+ *   3 = ab 2.2.0: Fotos und Dateien liegen als Anhänge (`blobId`) auf dem Server und werden angezeigt
  */
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
-/** Kleinste Server-Schnittstelle (`api` in `/api/status` und in der Abgleich-Antwort), mit der diese App-Version arbeitet. */
-export const MIN_SERVER_API = 1;
+/** Kleinste Server-Schnittstelle (`api` in `/api/status` und in der Abgleich-Antwort), mit der diese App-Version arbeitet. 3 = Anhänge. */
+export const MIN_SERVER_API = 3;

@@ -20,6 +20,30 @@ export interface OutboxEntry {
   deleted: 0 | 1;
 }
 
+/**
+ * Ein Anhang (Foto oder Datei) eines Protokolls, lokal abgelegt. Im Protokoll steht nur `blobId`; die Bytes liegen getrennt in
+ * `blobData`, damit Listen und Aufräumen nicht jedes Mal alle Bilder laden.
+ */
+export interface LocalBlob {
+  id: string;
+  kind: 'photo' | 'file';
+  mime: string;
+  name: string;
+  size: number;
+  /** `local`: nur auf diesem Gerät, wartet auf den Upload. `synced`: der Server hat ihn; diese Kopie darf verdrängt werden. */
+  state: 'local' | 'synced';
+  /** Grund, wenn der Server den Upload endgültig abgelehnt hat (zu groß, kein JPEG …). Ohne neuen Anhang gibt es keinen neuen Versuch. */
+  rejected?: string;
+  createdAt: number;
+  /** Letzte Nutzung, für das Verdrängen der ältesten Kopien. */
+  lastUsedAt: number;
+}
+
+export interface BlobData {
+  id: string;
+  data: Uint8Array;
+}
+
 export class HubDb extends Dexie {
   members!: Table<Member, string>;
   sessions!: Table<Session, string>;
@@ -32,6 +56,8 @@ export class HubDb extends Dexie {
   outbox!: Table<OutboxEntry, string>;
   clothing!: Table<ClothingRecord, string>;
   clothingItems!: Table<ClothingItem, string>;
+  blobs!: Table<LocalBlob, string>;
+  blobData!: Table<BlobData, string>;
 
   constructor(name = 'jf-hub') {
     super(name);
@@ -66,6 +92,11 @@ export class HubDb extends Dexie {
     this.version(8).stores({
       /** Das Dienstbuch (Feuer-On-Anbindung) gibt es nicht mehr. */
       dienstbuch: null,
+    });
+    this.version(9).stores({
+      /** Fotos und Dateien der Protokolle: Angaben (zum Auswählen und Verdrängen) und Bytes getrennt. */
+      blobs: 'id, state, lastUsedAt',
+      blobData: 'id',
     });
   }
 }

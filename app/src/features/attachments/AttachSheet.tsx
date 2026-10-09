@@ -1,14 +1,18 @@
 import { Camera, Image as ImageIcon, Paperclip } from 'lucide-react';
 import type { Editor } from '@tiptap/core';
 import { Sheet } from '@/core/ui/components';
+import { putLocalBlob } from '@/core/db/blobs';
 import { alertDialog } from '@/core/ui/dialog';
-import { MAX_ATTACHMENT_CHARS, MAX_FILE_BYTES, attachmentChars, formatBytes } from './limits';
-import { fileToBase64, photoToDataUrl, pickFiles } from './pick';
+import { MAX_FILE_BYTES, formatBytes } from './limits';
+import { photoToJpeg, pickFiles } from './pick';
 
 type Kind = 'camera' | 'gallery' | 'file';
 
+/**
+ * Legt Fotos und Dateien lokal ab und fügt Verweise auf sie ins Protokoll ein. Der Upload folgt beim nächsten Abgleich, noch vor dem
+ * Protokoll selbst; bis dahin (auch offline) sind sie hier sofort zu sehen.
+ */
 async function insertAll(editor: Editor, kind: Kind, files: File[]): Promise<void> {
-  let used = attachmentChars(editor.getJSON());
   const skipped: string[] = [];
   for (const file of files) {
     try {
@@ -17,22 +21,14 @@ async function insertAll(editor: Editor, kind: Kind, files: File[]): Promise<voi
           skipped.push(`${file.name}: größer als ${formatBytes(MAX_FILE_BYTES)}`);
           continue;
         }
-        const data = await fileToBase64(file);
-        if (used + data.length > MAX_ATTACHMENT_CHARS) {
-          skipped.push(`${file.name}: Anhänge dieses Protokolls wären zu groß`);
-          continue;
-        }
-        used += data.length;
-        const attrs = { name: file.name, mime: file.type || 'application/octet-stream', size: file.size, data };
+        const mime = file.type || 'application/octet-stream';
+        const blob = await putLocalBlob({ kind: 'file', mime, name: file.name, data: new Uint8Array(await file.arrayBuffer()) });
+        const attrs = { blobId: blob.id, name: file.name, mime, size: file.size };
         editor.chain().focus().insertContent([{ type: 'attachment', attrs }, { type: 'paragraph' }]).run();
       } else {
-        const photo = await photoToDataUrl(file);
-        if (used + photo.src.length > MAX_ATTACHMENT_CHARS) {
-          skipped.push(`${file.name || 'Foto'}: Anhänge dieses Protokolls wären zu groß`);
-          continue;
-        }
-        used += photo.src.length;
-        const attrs = { src: photo.src, w: photo.w, h: photo.h, caption: '' };
+        const photo = await photoToJpeg(file);
+        const blob = await putLocalBlob({ kind: 'photo', mime: 'image/jpeg', name: '', data: photo.data });
+        const attrs = { blobId: blob.id, mime: 'image/jpeg', w: photo.w, h: photo.h, caption: '' };
         editor.chain().focus().insertContent([{ type: 'photo', attrs }, { type: 'paragraph' }]).run();
       }
     } catch (e) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { attachmentChars, fitWithin, formatBytes } from './limits';
+import { MAX_FILE_BYTES, MAX_PHOTO_BYTES, fitWithin, formatBytes } from './limits';
 
 describe('fitWithin', () => {
   it('verkleinert die längste Kante und behält das Verhältnis', () => {
@@ -11,18 +11,10 @@ describe('fitWithin', () => {
   });
 });
 
-describe('attachmentChars', () => {
-  it('zählt Fotos und Dateien auch in Verschachtelungen', () => {
-    const doc = {
-      type: 'doc',
-      content: [
-        { type: 'paragraph', content: [{ type: 'text', text: 'x' }] },
-        { type: 'photo', attrs: { src: 'a'.repeat(10) } },
-        { type: 'blockquote', content: [{ type: 'attachment', attrs: { data: 'b'.repeat(5) } }] },
-      ],
-    };
-    expect(attachmentChars(doc)).toBe(15);
-    expect(attachmentChars(undefined)).toBe(0);
+describe('Grenzen', () => {
+  it('stimmen mit dem Server überein', () => {
+    expect(MAX_FILE_BYTES).toBe(10 * 1024 * 1024);
+    expect(MAX_PHOTO_BYTES).toBe(6 * 1024 * 1024);
   });
 });
 

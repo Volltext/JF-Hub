@@ -1,3 +1,4 @@
+import { localBlobCount } from './blobs';
 import { db } from './db';
 
 /** kv-Einträge, die an einen Server-Stand oder ein Konto gebunden sind. */
@@ -19,7 +20,7 @@ const SYNC_KV_KEYS = [
  * Einstellungen, Ferien-Zwischenspeicher und die laufende Stoppuhr, Aufstellung und Wertung dieses Geräts bleiben.
  */
 export async function wipeLocalData(): Promise<void> {
-  await db.transaction('rw', [db.protokolle, db.folders, db.members, db.sessions, db.tasks, db.clothing, db.clothingItems, db.runs, db.lineupTemplates, db.outbox, db.kv], async () => {
+  await db.transaction('rw', [db.protokolle, db.folders, db.members, db.sessions, db.tasks, db.clothing, db.clothingItems, db.runs, db.lineupTemplates, db.outbox, db.blobs, db.blobData, db.kv], async () => {
     await Promise.all([
       db.protokolle.clear(),
       db.folders.clear(),
@@ -31,12 +32,14 @@ export async function wipeLocalData(): Promise<void> {
       db.runs.clear(),
       db.lineupTemplates.clear(),
       db.outbox.clear(),
+      db.blobs.clear(),
+      db.blobData.clear(),
       db.kv.bulkDelete(SYNC_KV_KEYS),
     ]);
   });
 }
 
-/** Zahl der Einträge, die noch nicht auf dem Server sind (geht beim Abmelden verloren). */
+/** Zahl der Einträge, die noch nicht auf dem Server sind (geht beim Abmelden verloren), Fotos und Dateien eingeschlossen. */
 export async function unsyncedCount(): Promise<number> {
-  return (await db.protokolle.where('dirty').equals(1).count()) + (await db.folders.where('dirty').equals(1).count()) + (await db.outbox.count());
+  return (await db.protokolle.where('dirty').equals(1).count()) + (await db.folders.where('dirty').equals(1).count()) + (await db.outbox.count()) + (await localBlobCount());
 }

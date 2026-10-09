@@ -2,7 +2,16 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { db } from '@/core/db/db';
 import { newProtokoll } from './model';
 import { dismissConflict, loadConflicts, noteConflicts } from './conflicts';
-import { performSync, type ServerDoc } from './sync';
+import { MIN_SERVER_API } from './schemaVersion';
+import { performSync as syncAgainstServer, type ServerDoc } from './sync';
+
+/** Die Server dieser Tests sprechen die Schnittstelle, die die App verlangt (außer ein Test sagt ausdrücklich etwas anderes). */
+const performSync: typeof syncAgainstServer = (send, opts, store, blobs) =>
+  syncAgainstServer(async (req) => {
+    const res = await send(req);
+    return 'api' in res ? res : { ...res, api: MIN_SERVER_API };
+  }, opts, store, blobs);
+
 
 beforeEach(async () => {
   await Promise.all([db.protokolle.clear(), db.folders.clear(), db.outbox.clear(), db.kv.clear()]);

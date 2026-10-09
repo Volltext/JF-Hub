@@ -1,7 +1,9 @@
 import type { JSONContent } from '@tiptap/core';
 import { db, type HubDb, type SyncCollection } from '@/core/db/db';
 import { saveDirectory, type DirectoryUser } from '@/core/account/account';
+import { requeueBlobs } from '@/core/db/blobs';
 import { BASE_COLLECTIONS, SYNC_COLLECTIONS, seedOutboxOnce } from '@/core/db/outbox';
+import { httpTransport, uploadPendingBlobs, type BlobTransport } from './blobSync';
 import { noteConflicts } from './conflicts';
 import { ProtoError, loadConn, request } from './http';
 import { MIN_SERVER_API } from './schemaVersion';
@@ -97,6 +99,8 @@ export interface SyncResponse {
   rejected?: Rejected[];
   /** Schnittstelle des Servers (ab 2.1.0; fehlt bei älteren: 1). */
   api?: number;
+  /** Ab Server 2.2.0: Anhänge, auf die ein soeben gesendetes Protokoll verweist und die der Server nicht hat. */
+  missingBlobs?: string[];
 }
 
 export interface SyncResult {
@@ -105,6 +109,8 @@ export interface SyncResult {
   conflicts: number;
   /** Anzahl der Protokolle, die der Server abgelehnt hat. */
   rejected: number;
+  /** Anhänge dieses Laufs: hochgeladen, vom Server abgelehnt, wegen eines Serverfehlers noch wartend. */
+  blobs: { uploaded: number; rejected: number; failed: number };
   /** Anzahl lokaler Einträge, die dem Server fehlten und neu hochgeladen werden. */
   reuploaded: number;
   counts: SyncCounts | null;
@@ -145,7 +151,15 @@ const toChange = (p: Protokoll): ClientChange => ({
  * Wurde ein Eintrag während der Übertragung weiter bearbeitet, bleibt die lokale Fassung erhalten.
  * Passt der Stand nicht zum Server (neue/zurückgesetzte Datenbank), werden Einträge, die dem Server fehlen, neu gesendet.
  */
-export async function performSync(send: (req: SyncRequest) => Promise<SyncResponse>, opts: SyncOptions = {}, store: HubDb = db): Promise<SyncResult> {
+export async function performSync(
+  send: (req: SyncRequest) => Promise<SyncResponse>,
+  opts: SyncOptions = {},
+  store: HubDb = db,
+  blobTransport: BlobTransport = httpTransport,
+): Promise<SyncResult> {
+  // Zuerst die Anhänge: Ein Protokoll soll beim Server nie auf einen Anhang zeigen, den es noch nicht gibt.
+  const blobs = await uploadPendingBlobs(blobTransport, store);
+
   const storedEpoch = (await store.kv.get(EPOCH_KEY))?.value as string | undefined;
   // Hat der Server bisher keine Mitglieder/Dienste/Aufgaben unterstützt (alter Stand), einmal komplett abgleichen.
   const hadRecordsBefore = (await store.kv.get(RECORDS_KEY))?.value === true;
@@ -295,11 +309,16 @@ export async function performSync(send: (req: SyncRequest) => Promise<SyncRespon
     if (res.epoch) await store.kv.put({ key: EPOCH_KEY, value: res.epoch });
   });
 
+  // Der Server vermisst Anhänge, auf die ein soeben gesendetes Protokoll verweist (aufgeräumt, Datenbank ersetzt): Hat dieses Gerät
+  // sie noch, gehen sie im nächsten Lauf hoch.
+  reuploaded += await requeueBlobs(res.missingBlobs ?? [], store);
+
   return {
     pushed: dirty.length + dirtyFolders.length + records.length,
     pulled: res.changes.length + (res.folders?.length ?? 0) + (res.records?.length ?? 0),
     conflicts: res.conflicts.length,
     rejected: (res.rejected ?? []).filter((r) => r.kind === 'protocol').length,
+    blobs,
     reuploaded,
     counts: res.counts ?? null,
   };
@@ -334,6 +353,8 @@ export function syncNow(opts: SyncOptions = {}): Promise<SyncResult | null> {
         message: [
           result.conflicts ? `${result.conflicts} Konflikt(e): Kopie mit „(Konflikt)“ im Titel angelegt.` : '',
           result.rejected ? `${result.rejected} Protokoll(e) vom Server abgelehnt (zu groß oder ungültig).` : '',
+          result.blobs.rejected ? `${result.blobs.rejected} Anhang/Anhänge vom Server abgelehnt (zu groß oder kein gültiges Foto).` : '',
+          result.blobs.failed ? `${result.blobs.failed} Anhang/Anhänge konnten noch nicht hochgeladen werden (Serverfehler), der nächste Abgleich versucht es erneut.` : '',
         ]
           .filter(Boolean)
           .join(' '),

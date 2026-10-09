@@ -1,7 +1,19 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { db } from '@/core/db/db';
+import { putLocalBlob } from '@/core/db/blobs';
 import { newProtokoll } from './model';
-import { performSync, type ServerDoc, type SyncRequest, type SyncResponse } from './sync';
+import type { BlobTransport } from './blobSync';
+import { ProtoError } from './http';
+import { MIN_SERVER_API } from './schemaVersion';
+import { performSync as syncAgainstServer, type ServerDoc, type SyncRequest, type SyncResponse } from './sync';
+
+/** Die Server dieser Tests sprechen die Schnittstelle, die die App verlangt (außer ein Test sagt ausdrücklich etwas anderes). */
+const performSync: typeof syncAgainstServer = (send, opts, store, blobs) =>
+  syncAgainstServer(async (req) => {
+    const res = await send(req);
+    return 'api' in res ? res : { ...res, api: MIN_SERVER_API };
+  }, opts, store, blobs);
+
 
 const serverDoc = (id: string, over: Partial<ServerDoc> = {}): ServerDoc => ({
   id,
@@ -19,7 +31,7 @@ const serverDoc = (id: string, over: Partial<ServerDoc> = {}): ServerDoc => ({
 });
 
 beforeEach(async () => {
-  await Promise.all([db.protokolle.clear(), db.folders.clear(), db.outbox.clear(), db.tasks.clear(), db.members.clear(), db.sessions.clear(), db.clothing.clear(), db.clothingItems.clear(), db.runs.clear(), db.lineupTemplates.clear(), db.kv.clear()]);
+  await Promise.all([db.protokolle.clear(), db.folders.clear(), db.outbox.clear(), db.tasks.clear(), db.members.clear(), db.sessions.clear(), db.clothing.clear(), db.clothingItems.clear(), db.runs.clear(), db.lineupTemplates.clear(), db.blobs.clear(), db.blobData.clear(), db.kv.clear()]);
 });
 
 describe('performSync', () => {
@@ -468,5 +480,117 @@ describe('performSync: Besitzer und Sichtbarkeit', () => {
     const res = await performSync(async () => ({ rev: 2, epoch: 'neu', reset: true, changes: [], folders: [], records: [], collections: ['members', 'sessions', 'tasks', 'clothing', 'clothingItems', 'runs', 'lineupTemplates'], conflicts: [] }));
     expect(res.reuploaded).toBe(1);
     expect(await db.outbox.get('runs:run-1')).toBeDefined();
+  });
+});
+
+describe('Anhänge im Abgleich', () => {
+  const JPEG = Uint8Array.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]);
+  const withPhoto = (blobId: string) => ({ type: 'doc', content: [{ type: 'paragraph' }, { type: 'photo', attrs: { blobId, mime: 'image/jpeg', w: 10, h: 10, caption: '' } }] });
+  const photoBlob = (id: string) => putLocalBlob({ id, kind: 'photo', mime: 'image/jpeg', name: '', data: JPEG });
+  const noDownload = async () => {
+    throw new ProtoError('Nicht gefunden', 404);
+  };
+
+  it('lädt wartende Anhänge hoch, bevor das Protokoll gesendet wird', async () => {
+    await photoBlob('foto-0001');
+    const p = { ...newProtokoll(), title: 'Mit Foto', content: withPhoto('foto-0001') };
+    await db.protokolle.add(p);
+    const order: string[] = [];
+    const transport: BlobTransport = { upload: async (meta) => void order.push(`upload ${meta.id}`), download: noDownload };
+    const res = await performSync(
+      async (req) => {
+        order.push(`sync ${req.changes.map((c) => c.id).join(',')}`);
+        return { rev: 3, changes: [serverDoc(p.id, { title: 'Mit Foto', content: withPhoto('foto-0001'), updatedAt: p.updatedAt, rev: 3 })], folders: [], conflicts: [] };
+      },
+      {},
+      db,
+      transport,
+    );
+    expect(order).toEqual(['upload foto-0001', `sync ${p.id}`]);
+    expect(res.blobs).toEqual({ uploaded: 1, rejected: 0, failed: 0 });
+    expect(await db.blobs.get('foto-0001')).toMatchObject({ state: 'synced' });
+  });
+
+  it('scheitert der Upload, bleibt das Protokoll unverändert vorgemerkt und der Server hört nichts', async () => {
+    await photoBlob('foto-0001');
+    const p = { ...newProtokoll(), title: 'Mit Foto', content: withPhoto('foto-0001') };
+    await db.protokolle.add(p);
+    let called = false;
+    const transport: BlobTransport = { upload: async () => Promise.reject(new ProtoError('Keine Verbindung zum Server.', 0)), download: noDownload };
+    await expect(
+      performSync(
+        async () => {
+          called = true;
+          return { rev: 1, changes: [], folders: [], conflicts: [] };
+        },
+        {},
+        db,
+        transport,
+      ),
+    ).rejects.toMatchObject({ status: 0 });
+    expect(called).toBe(false);
+    expect(await db.protokolle.get(p.id)).toMatchObject({ dirty: 1, rev: 0 });
+    expect(await db.blobs.get('foto-0001')).toMatchObject({ state: 'local' });
+  });
+
+  it('ein vom Server abgelehnter Anhang hält den Abgleich nicht auf und wird gemeldet', async () => {
+    await photoBlob('foto-gross1');
+    const p = { ...newProtokoll(), title: 'Mit Foto', content: withPhoto('foto-gross1') };
+    await db.protokolle.add(p);
+    const transport: BlobTransport = { upload: async () => Promise.reject(new ProtoError('Das Foto ist größer als 6 MB', 413)), download: noDownload };
+    const res = await performSync(async () => ({ rev: 2, changes: [serverDoc(p.id, { title: 'Mit Foto', updatedAt: p.updatedAt, rev: 2 })], folders: [], conflicts: [] }), {}, db, transport);
+    expect(res.blobs).toEqual({ uploaded: 0, rejected: 1, failed: 0 });
+    expect(await db.blobs.get('foto-gross1')).toMatchObject({ state: 'local', rejected: 'Das Foto ist größer als 6 MB' });
+    expect(await db.protokolle.get(p.id)).toMatchObject({ dirty: 0 });
+  });
+
+  it('ein Serverfehler bei einem Anhang hält das Protokoll nicht auf; der Anhang kommt beim nächsten Abgleich wieder dran', async () => {
+    await photoBlob('foto-0001');
+    const p = { ...newProtokoll(), title: 'Mit Foto', content: withPhoto('foto-0001') };
+    await db.protokolle.add(p);
+    const transport: BlobTransport = { upload: async () => Promise.reject(new ProtoError('Serverfehler 500.', 500)), download: noDownload };
+    const res = await performSync(async () => ({ rev: 2, changes: [serverDoc(p.id, { title: 'Mit Foto', updatedAt: p.updatedAt, rev: 2 })], folders: [], conflicts: [] }), {}, db, transport);
+    expect(res.blobs).toEqual({ uploaded: 0, rejected: 0, failed: 1 });
+    expect(await db.protokolle.get(p.id)).toMatchObject({ dirty: 0 });
+    expect(await db.blobs.get('foto-0001')).toMatchObject({ state: 'local' });
+  });
+
+  it('meldet der Server einen Anhang als fehlend, geht er im nächsten Lauf erneut hoch', async () => {
+    await photoBlob('foto-0001');
+    await db.blobs.update('foto-0001', { state: 'synced' }); // einmal hochgeladen, inzwischen beim Server weg (Datenbank ersetzt)
+    const p = { ...newProtokoll(), title: 'Mit Foto', content: withPhoto('foto-0001') };
+    await db.protokolle.add(p);
+    const uploaded: string[] = [];
+    const transport: BlobTransport = { upload: async (meta) => void uploaded.push(meta.id), download: noDownload };
+    const answer = (missing: string[]) => async () => ({ rev: 2, changes: [serverDoc(p.id, { title: 'Mit Foto', updatedAt: p.updatedAt, rev: 2 })], folders: [], conflicts: [], missingBlobs: missing });
+
+    const first = await performSync(answer(['foto-0001']), {}, db, transport);
+    expect(first.reuploaded).toBe(1);
+    expect(uploaded).toEqual([]);
+    expect(await db.blobs.get('foto-0001')).toMatchObject({ state: 'local' });
+
+    await performSync(answer([]), {}, db, transport);
+    expect(uploaded).toEqual(['foto-0001']);
+    expect(await db.blobs.get('foto-0001')).toMatchObject({ state: 'synced' });
+  });
+
+  it('ein Anhang, den dieses Gerät nicht hat, wird nicht angefordert', async () => {
+    const p = { ...newProtokoll(), title: 'Mit Foto', content: withPhoto('foto-fremd1') };
+    await db.protokolle.add(p);
+    const res = await performSync(async () => ({ rev: 2, changes: [serverDoc(p.id, { title: 'Mit Foto', updatedAt: p.updatedAt, rev: 2 })], folders: [], conflicts: [], missingBlobs: ['foto-fremd1'] }));
+    expect(res.reuploaded).toBe(0);
+  });
+
+  it('ohne wartende Anhänge entsteht keine Anfrage an die Anhang-Schnittstelle', async () => {
+    let touched = false;
+    const transport: BlobTransport = {
+      upload: async () => void (touched = true),
+      download: async () => {
+        touched = true;
+        return new Uint8Array();
+      },
+    };
+    await performSync(async () => ({ rev: 1, changes: [], folders: [], conflicts: [] }), {}, db, transport);
+    expect(touched).toBe(false);
   });
 });

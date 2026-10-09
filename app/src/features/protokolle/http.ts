@@ -34,7 +34,10 @@ export async function loadConn(): Promise<ProtoConn> {
   return { url, token: await secure.get(PROTO_TOKEN_KEY) };
 }
 
-async function nativeRequest(method: string, url: string, headers: Record<string, string>, body: unknown, binary: boolean) {
+/** Wie lange eine Anfrage höchstens dauern darf (Millisekunden). Anhänge brauchen mehr. */
+const DEFAULT_TIMEOUT = 60_000;
+
+async function nativeRequest(method: string, url: string, headers: Record<string, string>, body: unknown, binary: boolean, timeoutMs: number) {
   const res = await CapacitorHttp.request({
     method,
     url,
@@ -43,17 +46,17 @@ async function nativeRequest(method: string, url: string, headers: Record<string
     data: body,
     responseType: binary ? 'blob' : 'json',
     connectTimeout: 15000,
-    readTimeout: 60000,
+    readTimeout: timeoutMs,
   });
   return { status: res.status, data: res.data as unknown };
 }
 
-async function webRequest(method: string, url: string, headers: Record<string, string>, body: unknown, binary: boolean) {
+async function webRequest(method: string, url: string, headers: Record<string, string>, body: unknown, binary: boolean, timeoutMs: number) {
   const res = await fetch(url, {
     method,
     headers: body !== undefined ? { ...headers, 'Content-Type': 'application/json' } : headers,
     body: body !== undefined ? JSON.stringify(body) : undefined,
-    signal: AbortSignal.timeout(60000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   if (binary && res.ok) {
     const buf = new Uint8Array(await res.arrayBuffer());
@@ -72,7 +75,7 @@ async function webRequest(method: string, url: string, headers: Record<string, s
 }
 
 /** Eine Anfrage an den Server. Binärantworten kommen als Base64-String zurück. */
-export async function request<T>(conn: ProtoConn, method: string, path: string, body?: unknown, binary = false): Promise<T> {
+export async function request<T>(conn: ProtoConn, method: string, path: string, body?: unknown, binary = false, opts: { timeoutMs?: number } = {}): Promise<T> {
   if (!conn.url) throw new ProtoError(IS_DEMO ? DEMO_NEEDS_SERVER : 'Kein Server eingerichtet.', 0);
   // Der Server erfährt, welche App-Version und welches Dokumentformat hier laufen, und kann zu alte Apps abweisen.
   const headers: Record<string, string> = { 'X-JFH-Client': __APP_VERSION__, 'X-JFH-Schema': String(SCHEMA_VERSION) };
@@ -81,7 +84,7 @@ export async function request<T>(conn: ProtoConn, method: string, path: string, 
   let res: { status: number; data: unknown };
   try {
     const send = Capacitor.isNativePlatform() ? nativeRequest : webRequest;
-    res = await send(method, conn.url + path, headers, body, binary);
+    res = await send(method, conn.url + path, headers, body, binary, opts.timeoutMs ?? DEFAULT_TIMEOUT);
   } catch {
     throw new ProtoError('Keine Verbindung zum Server.', 0);
   }
