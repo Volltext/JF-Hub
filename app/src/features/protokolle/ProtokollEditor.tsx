@@ -124,6 +124,10 @@ function EditorInner({ initial }: { initial: Protokoll }) {
 
   // Änderung von einem anderen Gerät (per Abgleich eingegangen) übernehmen, solange hier nichts offen ist.
   const live = useLiveQuery(() => db.protokolle.get(initial.id), [initial.id]);
+  // Ist das Protokoll inzwischen weg (jemand hat es zurückgezogen oder gelöscht), ginge Tippen ins Leere: nichts würde gespeichert.
+  const seenLive = useRef(false);
+  if (live) seenLive.current = true;
+  const gone = seenLive.current && (live === undefined || live.deleted === 1);
   useEffect(() => {
     if (!live || !editor || autosave.dirty || live.updatedAt === lastWritten.current || live.deleted) return;
     if (!schemaAccepts(live.content)) {
@@ -139,9 +143,9 @@ function EditorInner({ initial }: { initial: Protokoll }) {
   }, [live, editor, autosave]);
 
   useEffect(() => {
-    editor?.setEditable(!blocked);
-    if (blocked) autosave.cancel();
-  }, [editor, blocked, autosave]);
+    editor?.setEditable(!blocked && !gone);
+    if (blocked || gone) autosave.cancel();
+  }, [editor, blocked, gone, autosave]);
 
   const folders = useLiveQuery(liveFolders, []);
   // Ein dem Gerät unbekannter Ordner (von jemand anderem gelöscht) zählt als oberste Ebene, wie in der Liste.
@@ -217,6 +221,11 @@ function EditorInner({ initial }: { initial: Protokoll }) {
       {error && (
         <p role="alert" className="proto-error">
           {error}
+        </p>
+      )}
+      {gone && (
+        <p role="alert" className="proto-error">
+          Dieses Protokoll wurde gelöscht oder von jemand anderem zurückgezogen. Änderungen werden nicht mehr gespeichert.
         </p>
       )}
       {conflict && (

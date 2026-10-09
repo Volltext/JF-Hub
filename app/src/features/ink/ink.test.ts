@@ -71,8 +71,9 @@ describe('inkSvg', () => {
   });
 
   it('bleibt wortgleich mit der Kopie im Server', () => {
-    const server = fileURLToPath(new URL('../../../../jf-hub-server/src/inkSvg.ts', import.meta.url));
-    if (!existsSync(server)) return;
+    // Das Repository enthält beide Kopien (app/ und server/); fehlt die des Servers, soll der Test scheitern, nicht schweigen.
+    const server = fileURLToPath(new URL('../../../../server/src/inkSvg.ts', import.meta.url));
+    expect(existsSync(server)).toBe(true);
     const mine = readFileSync(fileURLToPath(new URL('./inkSvg.ts', import.meta.url)), 'utf8');
     expect(readFileSync(server, 'utf8').replace(/\r\n/g, '\n')).toBe(mine.replace(/\r\n/g, '\n'));
   });

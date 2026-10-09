@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useDeferredValue, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { ChevronRight, Folder, FolderPlus, MoreHorizontal, Plus, Search, Trash2 } from 'lucide-react';
@@ -35,12 +35,15 @@ export function ProtokollList() {
   const [q, setQ] = useState('');
   const [dialog, setDialog] = useState<Dialog>(null);
 
-  // Volltextindex: Reintext je Protokoll, nur neu berechnet, wenn sich die Daten ändern.
+  // Die Suche läuft mit leicht verzögertem Suchwort, damit das Tippen flüssig bleibt (bei vielen Protokollen dauert sie spürbar).
+  const query = useDeferredValue(q).trim();
+  const searching = query !== '';
+  // Volltextindex: Reintext je Protokoll. Er wird nur gebaut, wenn gesucht wird, und nur neu, wenn sich die Daten ändern.
   const index = useMemo(
-    () => (rows ?? []).map((p) => ({ id: p.id, title: p.title, ort: p.ort, leitung: p.leitung, text: extractText(p.content) })),
-    [rows],
+    () => (searching ? (rows ?? []).map((p) => ({ id: p.id, title: p.title, ort: p.ort, leitung: p.leitung, text: extractText(p.content) })) : []),
+    [rows, searching],
   );
-  const hits = useMemo(() => (q.trim() ? searchProtocols(index, q) : null), [index, q]);
+  const hits = useMemo(() => (searching ? searchProtocols(index, query) : null), [index, query, searching]);
 
   if (!rows || !folders) return null;
 

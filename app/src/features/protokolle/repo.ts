@@ -60,7 +60,12 @@ export async function exportPdf(id: string): Promise<void> {
   const p = await db.protokolle.get(id);
   if (!p) throw new ProtoError('Protokoll nicht gefunden.');
   await syncNow();
-  const after = await db.protokolle.get(id);
+  let after = await db.protokolle.get(id);
+  // Lief schon ein Abgleich, bekommt man dessen Ergebnis: Er kann vor dem letzten Speichern begonnen haben. Dann noch einmal.
+  if (after?.dirty === 1) {
+    await syncNow();
+    after = await db.protokolle.get(id);
+  }
   if (!after || after.dirty === 1) throw new ProtoError('Das PDF braucht eine Verbindung zum Server, damit die neueste Fassung verwendet wird.');
   const conn = await loadConn();
   const base64 = await request<string>(conn, 'GET', `/api/protocols/${encodeURIComponent(id)}/pdf`, undefined, true);

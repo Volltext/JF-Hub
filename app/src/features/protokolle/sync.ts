@@ -341,7 +341,8 @@ export function syncNow(opts: SyncOptions = {}): Promise<SyncResult | null> {
       if (result.reuploaded) again = true;
       return result;
     } catch (e) {
-      const err = e instanceof ProtoError ? e : new ProtoError('Abgleich fehlgeschlagen.');
+      // Was kein Verbindungs- oder Serverfehler ist (etwa ein Speicherfehler auf dem Gerät), soll nicht als „Offline“ untergehen.
+      const err = e instanceof ProtoError ? e : new ProtoError('Abgleich fehlgeschlagen.', 500);
       st.set({
         state: err.status === 0 ? 'offline' : err.status === 401 ? 'auth' : 'error',
         message: err.status === 0 ? '' : err.message,
