@@ -49,7 +49,7 @@ Es gibt **keine Analyse-Werkzeuge, keine Werbung und keine Weitergabe** an Dritt
 **Backups und Löschen**
 
 - **Backups:** Das Backup enthält die vollständigen Daten. Verschlüsselt und nicht in einer fremden Cloud ablegen. Der Server legt täglich automatische Backups in `/data/backups` an. Gelöschte Mitglieder oder Protokolle stecken dort noch bis zu 7 Tage (einstellbar) weiter drin, bis das Backup durch ein neueres ersetzt wird.
-- **Löschen:** Mitglieder löschen entfernt auch ihre Kleidergrößen. Frühere Dienste behalten eine Referenz auf die ID (ohne Namen), die Statistik ignoriert sie. Protokolle landen zuerst im Papierkorb (30 Tage, einstellbar) und werden dann endgültig gelöscht. Endgültiges Löschen gibt es auch sofort: *Admin → Protokolle → Papierkorb*.
+- **Löschen:** Mitglieder löschen entfernt auch ihre Kleidergrößen. Frühere Dienste behalten eine Referenz auf die ID (ohne Namen), die Statistik ignoriert sie. Protokolle landen zuerst im Papierkorb (30 Tage, einstellbar), aus dem jeder Betreuer seine eigenen in der App zurückholen kann. Danach werden sie endgültig geleert: Titel, Text, Ort und Leitung sind weg. Es bleibt ein leerer Eintrag mit Datum und Zeiten, mindestens 90 Tage lang, damit ein Gerät, das so lange kein Netz hatte, das Protokoll nicht wieder auftauchen lässt. Endgültiges Löschen gibt es auch sofort: *Admin → Protokolle → Papierkorb*.
 - **Auskunft/Export:** *Admin → Backup & Export* liefert alle Protokolle als PDF + JSON. Daten einzelner Personen stehen in der Datenbank (SQLite) und lassen sich auslesen.
 
 ## Technischer Schutz

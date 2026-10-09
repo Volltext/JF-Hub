@@ -4,6 +4,34 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/). Versionen 
 
 ## [Unreleased]
 
+## [2.1.0] – 2026-10-09
+
+Fundament für die Protokolle: Es geht nichts mehr still verloren, und die App sagt, was passiert ist. Ein Protokoll zu öffnen verändert es nicht mehr, gleichzeitiges Bearbeiten erzeugt eine Kopie statt einer Flut, Gelöschtes lässt sich zurückholen.
+
+### Neu
+
+- **Papierkorb in der App:** Gelöschte Protokolle holst du unter *Protokolle → Papierkorb* zurück (30 Tage, einstellbar). Betreuer sehen ihre eigenen, der Admin zusätzlich die veröffentlichten der anderen. Neu im Server: `GET /api/protocols/trash` und `POST /api/protocols/:id/restore`.
+- **Hinweis bei gleichzeitigem Bearbeiten:** Wurde ein Protokoll zur selben Zeit von jemand anderem geändert, steht oben in der Liste die Karte „Gleichzeitig bearbeitet“ mit einem Link zur Kopie „… (Konflikt)“, und die Kopie erklärt sich im Editor selbst. Vorher tauchte sie ohne Erklärung in der Liste auf.
+- **Schutz vor unbekannten Inhalten:** Enthält ein Protokoll Elemente, die diese App-Version nicht kennt (zum Beispiel aus einer künftigen Version), wird es nur gelesen und nie überschrieben. Ein Editor würde sie verwerfen, und der Autosave hätte die Fassung auf dem Server damit zerstört.
+- **Abgleich meldet Probleme im Klartext:** Fehler wie „Bitte die App aktualisieren“ stehen als Text im Abgleich-Symbol und in der Liste statt nur im Tooltip. Ein Protokoll, das der Server nicht annimmt, bekommt den Chip „abgelehnt“ und blockiert die übrigen nicht mehr.
+- **Handshake zwischen App und Server:** Jede Anfrage meldet App-Version und Dokumentformat (`X-JFH-Client`, `X-JFH-Schema`), der Server nennt `api` und `minSchema` (in `/api/status` und in der Abgleich-Antwort). Das legt den Grundstein dafür, zu alte Apps künftig gezielt aufzufordern, sich zu aktualisieren (Antwort 426), statt dass sie etwas beschädigen.
+
+### Behoben
+
+- **Öffnen veränderte Protokolle:** Ein Protokoll nur zu öffnen und zurückzugehen speicherte es neu (neue Revision, „nicht gesendet“, bei zwei Geräten Konflikte). Jetzt wird nur bei einer Änderung gespeichert.
+- **Konflikt-Flut:** Ein veralteter Stand legte bei jedem Abgleich eine weitere Kopie „(Konflikt)“ an. Jetzt entsteht je Konflikt eine Kopie (auch wenn eine Antwort verloren geht und der Abgleich wiederholt wird), und liegt der Inhalt auf dem Server schon genau so vor, ist es gar kein Konflikt. Die App übernimmt beim Abgleich nichts über lokal noch nicht gesendete Änderungen hinweg.
+- **Ein unbrauchbares Protokoll sperrte den Abgleich** des ganzen Geräts dauerhaft (zum Beispiel ein zu großes oder zu tief verschachteltes Dokument). Der Server nimmt Änderungen jetzt einzeln an und meldet abgelehnte, alle anderen gelten.
+- **Gelöscht blieb nicht gelöscht:** Ein Gerät ohne Netz konnte ein gelöschtes Protokoll durch eine Bearbeitung wieder aufleben lassen. Jetzt gewinnt das Löschen durch den Besitzer oder Admin; wegen des Papierkorbs ist es umkehrbar.
+- **Endgültig geleerte Protokolle** lassen einen leeren Eintrag (nur Datum und Zeiten, mindestens 90 Tage) stehen. So bringt ein Gerät, das lange kein Netz hatte, sie nicht wieder zurück.
+- Protokolle in einem Ordner, den es nicht (mehr) gibt, verschwanden aus der Liste. Sie stehen jetzt oben ohne Ordner.
+- Das Editor-Format bewahrt `blobId` und `mime` bei Fotos und Dateien (Vorbereitung auf ausgelagerte Anhänge), und ein Foto ohne Daten zeigt einen Platzhalter statt eines leeren Rahmens.
+- Der Editor sagt Bescheid, wenn das Protokoll währenddessen gelöscht oder zurückgezogen wurde, statt weiter zu „speichern“. Das PDF verlangt keine Verbindung mehr, nur weil gerade ein Abgleich lief, der das letzte Speichern noch nicht kannte: Die App gleicht dann noch einmal ab.
+- Startseite, Liste und Suche arbeiten bei vielen Protokollen flüssiger: Die Startseite lädt nur die drei jüngsten, der Suchindex entsteht erst bei einem Suchwort.
+
+### Hinweis zum Update
+
+Zuerst den Server aktualisieren, dann die Apps. Die Datenbank wird automatisch angepasst (zusätzliche Spalten, nichts geht verloren). Apps der Version 2.0.x arbeiten weiter mit dem neuen Server; Papierkorb, Hinweise und Schutz vor unbekannten Inhalten bringt erst die App 2.1.0 mit. Für die Entwicklung gilt jetzt Node ≥ 22.13, weil die App-Tests den Abgleich des Servers (`node:sqlite`) mitlaufen lassen.
+
 ## [2.0.4] – 2026-10-09
 
 Sicherheits-Update. **Bitte sofort aktualisieren** (betroffen: 2.0.0 bis 2.0.3). Eine ausführliche Beschreibung folgt im GitHub-Security-Advisory.

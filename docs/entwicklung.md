@@ -8,7 +8,7 @@ Für alle, die an JF Hub mitarbeiten. Wie du Fehler meldest und Code beiträgst,
 
 ## Voraussetzungen
 
-Node 22 (der Server nutzt das eingebaute `node:sqlite`), npm. Für die Android-App zusätzlich JDK 21 und das Android SDK ([Android-App](android-app.md)). Docker nur zum Testen des Images.
+Node ≥ 22.13 (der Server nutzt das eingebaute `node:sqlite`, das ab dieser Version ohne Flag läuft; die App-Tests laden es ebenfalls), npm. Für die Android-App zusätzlich JDK 21 und das Android SDK ([Android-App](android-app.md)). Docker nur zum Testen des Images.
 
 ## Starten
 
@@ -42,7 +42,7 @@ cd app    && npm run typecheck && npm test
 cd server && npm run typecheck && npm test
 ```
 
-Dazu kommt ein **Rauchtest im Browser** (Playwright, Ordner `e2e/`): Er startet den echten Server mit der gebauten Web-App, meldet zwei Betreuer an, schreibt ein Protokoll, veröffentlicht es und nimmt es wieder zurück. Ein zweiter Server läuft im [Demo-Modus](demo.md) und prüft die Anmeldung per Knopf und die Beispieldaten; die [Demo im Browser](demo.md#demo-im-browser) wird wie auf GitHub Pages unter einem Unterpfad ausgeliefert und geprüft.
+Dazu kommt ein **Rauchtest im Browser** (Playwright, Ordner `e2e/`): Er startet den echten Server mit der gebauten Web-App, meldet zwei Betreuer an, schreibt ein Protokoll, veröffentlicht es und nimmt es wieder zurück. Ein zweiter Server läuft im [Demo-Modus](demo.md) und prüft die Anmeldung per Knopf und die Beispieldaten; die [Demo im Browser](demo.md#demo-im-browser) wird wie auf GitHub Pages unter einem Unterpfad ausgeliefert und geprüft. Ein dritter Server (Port 8096, eigene Daten) gehört `e2e/tests/protokolle.spec.ts`: Öffnen verändert nichts, Papierkorb, gleichzeitiges Bearbeiten mit einem Gerät ohne Netz, Schutz vor unbekannten Editor-Inhalten und der Zugriffsschutz der Routen. Er ist getrennt, weil die Anmeldung je Adresse begrenzt ist (8 je 15 Minuten) und der Rauchtest sie sonst aufbraucht.
 
 ```bash
 cd server && npm run build && cd ../app && npm run build:web && npm run build:demo     # Voraussetzung: Server, Web-App und Demo gebaut
@@ -53,6 +53,11 @@ cd ../e2e && npm ci && npx playwright install chromium && npm test
 Die CI (`.github/workflows/ci.yml`) führt alles aus, baut die PWA und startet das Docker-Image als Rauchtest.
 
 Was getestet wird: Wertungslogik und Regeln (reine Funktionen), Datenbank-Schema, Abgleich (Konflikte, Sichtbarkeit, Löschhinweise), Dienst-Rhythmus, Web-Push-Client, Service Worker (in einer nachgebauten Umgebung), Server-API (Anmeldung, Benutzer, Sichtbarkeit, Push, PDF, Migration einer Alt-Datenbank).
+
+Zwei Tests haben eine besondere Rolle:
+
+- **`server/src/security.test.ts`** sammelt über einen `onRoute`-Hook alle Routen des Servers und prüft für jede nicht öffentliche, dass sie ohne Anmeldung 401 liefert (`/api/admin/*` für Betreuer 403), auch bei abweichender Schreibweise des Pfads. Eine neue Route ist damit automatisch abgedeckt; sie muss nur ein Muster haben, das zur Zugriffsregel passt.
+- **`app/src/features/protokolle/twoClients.test.ts`** lässt zwei Geräte (zwei Dexie-Datenbanken) gegen das **echte** `applySync` des Servers laufen. Die App-Tests importieren dafür Code aus `server/src`; das Docker-Image ist davon nicht betroffen (die Web-App baut Vite, `*.test.ts` liegt in `.dockerignore`).
 
 ## Aufbau
 
@@ -98,7 +103,12 @@ e2e/              Playwright-Rauchtest (Server + gebaute Web-App)
 ## Wie der Abgleich funktioniert
 
 - Daten liegen lokal (Dexie) und auf dem Server (SQLite). Der Client **schreibt zuerst lokal** und gleicht danach ab (beim Start, nach Änderungen, bei Netzrückkehr, jede Minute).
-- **Protokolle** haben eine Server-Revision (`rev`). Eine Änderung gilt, wenn sie auf der aktuellen Revision aufbaut; sonst bleibt die Server-Fassung und die Client-Fassung wird als „(Konflikt)“-Kopie gesichert.
+- **Protokolle** haben eine Server-Revision (`rev`). Eine Änderung gilt, wenn sie auf der aktuellen Revision aufbaut oder dem Server schon genau so vorliegt. Sonst bleibt die Server-Fassung und die Client-Fassung wird als „(Konflikt)“-Kopie gesichert. Die Kopie hat eine feste Kennung aus Nutzer, Dokument und veralteter Basis: Wer auf dem alten Stand weitertippt oder eine verlorene Antwort wiederholt, schreibt dieselbe Kopie fort. Die Antwort nennt die Konflikte (`conflicts`), die App zeigt sie als Karte (`conflicts.ts`, gemerkt in `kv 'protokolle.conflicts'`).
+- **Löschen gewinnt:** Löscht der Besitzer oder der Admin ein Protokoll, setzt sich das auch gegen eine Bearbeitung auf veralteter Basis durch. Gelöschte Protokolle liegen `trashDays` im Papierkorb (`GET /api/protocols/trash`, `POST /api/protocols/:id/restore`); danach leert `purgeProtocol` den Inhalt und lässt einen Grabstein (`purgedAt`, neue Revision) stehen, den `sweepTrash` erst nach `max(tokenDays, 90)` Tagen entfernt. So lässt ein Gerät, das lange kein Netz hatte, nichts wiederauferstehen.
+- **Fehlerisolation:** Jede Änderung läuft in einem `SAVEPOINT`. Was der Server nicht annehmen kann (zu groß, zu tief verschachtelt, kein gültiges Dokument), steht in `rejected` der Antwort; alles andere gilt. Der Client markiert das Protokoll (`rejected`, Chip „abgelehnt“) und schickt es erst wieder, wenn es geändert wurde.
+- **Übernehmen:** Der Client überspringt Dokumente mit lokal noch nicht gesendeten Änderungen und hält den Cursor davor an (`min(res.rev, kleinste übersprungene Revision − 1)`). Beim nächsten Lauf kommt die Server-Fassung erneut; das ist idempotent.
+- **Handshake:** Jede Anfrage trägt `X-JFH-Client` (App-Version) und `X-JFH-Schema` (Stand des Dokumentformats, `features/protokolle/schemaVersion.ts`). Der Server nennt in `/api/status` und in der Abgleich-Antwort `api` und `minSchema` und weist Apps unterhalb von `MIN_SCHEMA` mit 426 („Bitte die App aktualisieren“) ab; die App prüft umgekehrt `api >= MIN_SERVER_API`. Kommen im Editor neue Knoten oder Markierungen dazu, steigt `SCHEMA_VERSION`. `editorSchema.ts` (`schemaAccepts`) erkennt Inhalte, die diese App-Version nicht kennt (etwa aus einer neueren): Solche Protokolle öffnen nur lesend, denn ein Editor würde die unbekannten Teile verwerfen und der Autosave damit die Server-Fassung überschreiben.
+- **Speichern nur bei Änderung:** `autosave.ts` schreibt nur, wenn sich etwas geändert hat, und `repo.save` ist ohne Änderung ein No-Op. Öffnen und Zurückgehen erzeugt deshalb weder Revision noch Abgleich.
 - **Mitglieder, Dienste, Aufgaben, Kleidung** laufen als allgemeine „Records“ (`records`-Tabelle, JSON je Eintrag): letzte Änderung gewinnt. Lokale Änderungen merkt die **Outbox** vor.
 - Jede Änderung bekommt eine globale, steigende Revision. Der Client fragt „alles seit Revision X“.
 - Die **Epoche** erkennt eine ausgetauschte Server-Datenbank: Passt sie nicht, lädt der Client alles neu und sendet hoch, was dem Server fehlt.
@@ -117,12 +127,14 @@ Dass die Termin-Logik im Client bleibt (Ferien, Saison-Zeiten), hält den Server
 
 ## API in Kürze
 
-Öffentlich: `GET /api/health`, `GET /api/status` (im Demo-Modus mit `demo: { resetAt, accounts }`), `POST /api/setup`, `/api/login`, `/api/invite/accept`.
-Angemeldet (Bearer-Token oder Cookie mit `X-JFH: 1`): `/api/me`, `/api/logout`, `/api/account/{password,sessions…}`, `POST /api/sync`, `GET /api/protocols/:id/pdf`, `POST /api/clothing/pdf`, `GET /api/export.zip`, `GET /api/holidays`, `/api/push/{key,subscribe,unsubscribe,reminders,test}`.
+Öffentlich: `GET /api/health`, `GET /api/status` (mit `api`, `minSchema`, `features`; im Demo-Modus zusätzlich `demo: { resetAt, accounts }`), `POST /api/setup`, `/api/login`, `/api/invite/accept`.
+Angemeldet (Bearer-Token oder Cookie mit `X-JFH: 1`): `/api/me`, `/api/logout`, `/api/account/{password,sessions…}`, `POST /api/sync`, `GET /api/protocols/trash`, `POST /api/protocols/:id/restore`, `GET /api/protocols/:id/pdf`, `POST /api/clothing/pdf`, `GET /api/export.zip`, `GET /api/holidays`, `/api/push/{key,subscribe,unsubscribe,reminders,test}`.
 Nur Admins: `/api/admin/{info,settings,users…,sessions…,protocols…,backup,backups…,restore,preview.pdf}`.
+
+Die Zugriffsregel entscheidet der Server am **Routenmuster** (`req.routeOptions.url`), nie am rohen Pfad, denn Fastify dekodiert Pfade erst beim Routing. Pfade mit unnötig kodierten Zeichen weist ein Hook mit 400 ab, und `security.test.ts` prüft jede neue Route.
 
 ## Release
 
-1. Versionen erhöhen: `app/package.json`, `app/android/app/build.gradle` (`versionCode` + `versionName`), `server/package.json`, `VERSION` in `server/src/app.ts`; `CHANGELOG.md` ergänzen.
+1. Versionen erhöhen: `app/package.json`, `app/android/app/build.gradle` (`versionCode` + `versionName`), `server/package.json`, beide `package-lock.json` (Zeile 3 und 9) und `VERSION` in `server/src/app.ts`; `CHANGELOG.md` ergänzen.
 2. Auf `main` mergen, dann den Tag auf dem Merge-Commit setzen: `git tag vX.Y.Z && git push --tags`.
 3. GitHub Actions baut das Docker-Image (`ghcr.io/volltext/jf-hub:X.Y.Z`, `:X.Y`, `:latest`) und die APK und legt sie ans Release.

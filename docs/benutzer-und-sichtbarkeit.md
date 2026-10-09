@@ -68,7 +68,12 @@ Zurückgenommene Einträge verschwinden bei den anderen Betreuern beim nächsten
 
 - Veröffentlichte Einträge dürfen **alle bearbeiten** (Text ändern, Aufgabe abhaken). Aufgaben zeigen, wer sie erledigt hat.
 - **Sichtbarkeit ändern und löschen** darf nur der **Besitzer** (löschen zusätzlich der Admin, z. B. wenn jemand die Gruppe verlässt).
-- Bearbeiten zwei Personen dasselbe Protokoll gleichzeitig, bleibt die zuerst gespeicherte Fassung und die andere wird als Kopie „… (Konflikt)“ gesichert. **Es geht nichts verloren.** Bei Aufgaben gilt die letzte Änderung.
+- Bearbeiten zwei Personen dasselbe Protokoll gleichzeitig (etwa weil eine gerade kein Netz hat), bleibt die zuerst gespeicherte Fassung und die andere wird als Kopie „… (Konflikt)“ gesichert. Die App sagt es dir: Oben in der Protokollliste steht die Karte **Gleichzeitig bearbeitet** mit **Kopie öffnen**, und sie bleibt, bis du **Verstanden** tippst. **Es geht nichts verloren.** Bei Aufgaben gilt die letzte Änderung.
+- **Löschen gewinnt:** Hat der Besitzer (oder der Admin) ein Protokoll gelöscht, bleibt es gelöscht, auch wenn ein anderes Gerät ohne Netz noch daran weitergeschrieben hat. Zurückholen geht über den Papierkorb.
+
+## Papierkorb
+
+Gelöschte Protokolle landen im **Papierkorb**: in der Protokollliste oben auf das Papierkorb-Symbol tippen. Dort steht, wie viele Tage ein Protokoll noch bleibt (30, der Admin kann das ändern). **Zurückholen** legt es mit dem ganzen Inhalt wieder an. Du siehst deine eigenen gelöschten Protokolle, der Admin zusätzlich die veröffentlichten der anderen. Der Papierkorb liegt auf dem Server und braucht eine Verbindung.
 
 ## Geteilte Geräte
 
