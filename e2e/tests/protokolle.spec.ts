@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
-import { ADMIN, adminTokens, BEN, createBen, PNG_1X1, SCHEMA, serverDoc, sessions, syncNow, writeProtocol } from './helpers';
+import * as Y from 'yjs';
+import { ADMIN, adminTokens, BEN, createBen, foreignParagraph, PNG_1X1, putForeignText, serverDoc, serverHasText, sessions, syncNow, writeProtocol } from './helpers';
 
 // Eigener Server (siehe playwright.config.ts), damit die Anmeldungen dieser Tests das Anmelde-Limit des Rauchtests nicht aufbrauchen.
 test.use({ baseURL: 'http://127.0.0.1:8096' });
@@ -14,8 +15,7 @@ test.describe.serial('Protokolle: Fundament', () => {
     const { context, page } = await open(browser, ADMIN);
     await writeProtocol(page, title, 'Dieser Text bleibt unberührt.');
     await syncNow(page);
-    const before = await serverDoc(request, token, title);
-    expect(before).toBeTruthy();
+    const before = await serverHasText(request, token, title, 'Dieser Text bleibt unberührt.');
 
     // Liste öffnen, Protokoll öffnen, wieder zurück.
     await page.getByRole('link', { name: /Protokolle/ }).first().click();
@@ -25,16 +25,18 @@ test.describe.serial('Protokolle: Fundament', () => {
     await syncNow(page); // schickt alles, was als geändert vorgemerkt wäre
 
     const after = await serverDoc(request, token, title);
-    expect(after!.rev).toBe(before!.rev);
-    expect(after!.updatedAt).toBe(before!.updatedAt);
+    expect(after!.rev).toBe(before.rev);
+    expect(after!.updatedAt).toBe(before.updatedAt);
     await context.close();
   });
 
-  test('Gelöschtes Protokoll liegt im Papierkorb und lässt sich zurückholen', async ({ browser }) => {
+  test('Gelöschtes Protokoll liegt im Papierkorb und lässt sich zurückholen', async ({ browser, request }) => {
     const title = 'Aus Versehen gelöscht';
+    const token = await adminToken(request);
     const { context, page } = await open(browser, ADMIN);
     await writeProtocol(page, title, 'Wichtiger Inhalt.');
     await syncNow(page); // erst was der Server kennt, landet im Papierkorb
+    await serverHasText(request, token, title, 'Wichtiger Inhalt.');
 
     await page.getByRole('button', { name: 'Protokoll löschen' }).click();
     await page.getByRole('button', { name: 'Löschen', exact: true }).click();
@@ -54,68 +56,22 @@ test.describe.serial('Protokolle: Fundament', () => {
     await expect(page.getByLabel('Protokolltext')).toContainText('Wichtiger Inhalt.');
     await context.close();
   });
-
-  test('Gleichzeitiges Bearbeiten: Hinweis und Kopie statt stillem Verlust', async ({ browser, request }) => {
-    const title = 'Betreuerbesprechung live';
-    await createBen(request, await adminToken(request));
-
-    const admin = await open(browser, ADMIN);
-    await writeProtocol(admin.page, title, 'Ausgangstext.');
-    await admin.page.getByRole('button', { name: 'Sichtbarkeit: privat' }).click();
-    await admin.page.getByRole('button', { name: 'Für alle Betreuer veröffentlichen' }).click();
-    await expect(admin.page.getByRole('button', { name: 'Sichtbarkeit: für alle Betreuer' })).toBeVisible();
-    await syncNow(admin.page);
-
-    const ben = await open(browser, BEN);
-    await ben.page.goto('/#/protokolle');
-    await ben.page.getByText(title).click({ timeout: 30_000 });
-    await expect(ben.page.getByLabel('Protokolltext')).toContainText('Ausgangstext.');
-
-    // Ben schreibt ohne Netz weiter, der Admin gleichzeitig mit Netz.
-    await ben.context.setOffline(true);
-    await ben.page.getByLabel('Protokolltext').click();
-    await ben.page.keyboard.press('Control+End');
-    await ben.page.keyboard.type(' Bens Ergänzung.');
-    await expect(ben.page.getByText('Gespeichert')).toBeVisible();
-
-    await admin.page.getByLabel('Protokolltext').click();
-    await admin.page.keyboard.press('Control+End');
-    await admin.page.keyboard.type(' Ergänzung des Admins.');
-    await expect(admin.page.getByText('Gespeichert')).toBeVisible();
-    await syncNow(admin.page);
-
-    // Ben ist wieder online: sein Gerät übernimmt die Fassung des Servers und sagt, wo seine liegt.
-    await ben.context.setOffline(false);
-    await syncNow(ben.page);
-    const notice = ben.page.getByRole('status').filter({ hasText: 'zur selben Zeit von jemand anderem geändert' });
-    await expect(notice).toBeVisible({ timeout: 30_000 });
-    await expect(ben.page.getByLabel('Protokolltext')).toContainText('Ergänzung des Admins.');
-    await ben.page.screenshot({ path: 'test-results/konflikt-hinweis.png', fullPage: true });
-
-    await notice.getByRole('link', { name: 'Kopie öffnen' }).click();
-    await expect(ben.page.getByLabel('Titel', { exact: true })).toHaveValue(`${title} (Konflikt)`);
-    await expect(ben.page.getByLabel('Protokolltext')).toContainText('Bens Ergänzung.');
-    await expect(ben.page.getByRole('status').filter({ hasText: 'Das ist deine Fassung' })).toBeVisible();
-
-    await admin.context.close();
-    await ben.context.close();
-  });
 });
 
 test.describe.serial('Protokolle: Schutz vor unbekannten Inhalten', () => {
   test('Ein Protokoll mit Elementen aus einer neueren Version wird nur gelesen und nie überschrieben', async ({ browser, request }) => {
     const title = 'Mit Hinweisfeld aus der Zukunft';
     const token = await adminToken(request);
-    const p = (text: string) => ({ type: 'paragraph', content: [{ type: 'text', text }] });
     // „callout“ kennt keine App-Version (Tabellen, Links und Hervorhebung gibt es seit 2.3.0).
-    const content = { type: 'doc', content: [p('Davor'), { type: 'callout', attrs: { tone: 'info' }, content: [p('Wichtiger Hinweis')] }, p('Danach')] };
-    const sent = await request.post('/api/sync', {
-      headers: { Authorization: `Bearer ${token}`, ...SCHEMA },
-      data: { since: 0, changes: [{ id: 'zukunft-0001', baseRev: 0, title, datum: '2026-10-01', beginn: '', ende: '', ort: '', leitung: '', content, updatedAt: Date.now(), deleted: false }] },
+    await putForeignText(request, token, 'zukunft-0001', title, (frag) => {
+      const callout = new Y.XmlElement('callout');
+      callout.setAttribute('tone', 'info');
+      callout.insert(0, [foreignParagraph('Wichtiger Hinweis')]);
+      frag.insert(0, [foreignParagraph('Davor'), callout, foreignParagraph('Danach')]);
     });
-    expect(sent.ok()).toBeTruthy();
     const before = await serverDoc(request, token, title);
     expect(before).toBeTruthy();
+    const beforeJson = JSON.stringify(before!.content);
 
     const { context, page } = await open(browser, ADMIN);
     await page.goto('/#/protokolle');
@@ -129,7 +85,8 @@ test.describe.serial('Protokolle: Schutz vor unbekannten Inhalten', () => {
     await syncNow(page);
     const after = await serverDoc(request, token, title);
     expect(after!.rev).toBe(before!.rev);
-    expect(after!.content).toEqual(content); // unverändert, das Hinweisfeld ist noch da
+    expect(JSON.stringify(after!.content)).toBe(beforeJson); // unverändert, das Hinweisfeld ist noch da
+    expect(beforeJson).toContain('callout');
     await context.close();
   });
 });
@@ -167,9 +124,9 @@ test.describe.serial('Protokolle: Fotos als Anhänge', () => {
     await syncNow(admin.page);
 
     // Auf dem Server liegt nur ein Verweis im Protokoll, das Bild als eigener Anhang.
-    const doc = await serverDoc(request, token, title);
+    const doc = await serverHasText(request, token, title, '"blobId"');
     expect(doc).toBeTruthy();
-    const json = JSON.stringify(doc!.content);
+    const json = JSON.stringify(doc.content);
     expect(json).not.toContain('data:image');
     const blobId = /"blobId":"([^"]+)"/.exec(json)?.[1];
     expect(blobId).toBeTruthy();
@@ -179,7 +136,7 @@ test.describe.serial('Protokolle: Fotos als Anhänge', () => {
     expect([...(await blob.body()).subarray(0, 3)]).toEqual([0xff, 0xd8, 0xff]);
 
     // Das PDF enthält das Foto.
-    const pdf = await request.get(`/api/protocols/${doc!.id}/pdf`, { headers: { Authorization: `Bearer ${token}` } });
+    const pdf = await request.get(`/api/protocols/${doc.id}/pdf`, { headers: { Authorization: `Bearer ${token}` } });
     expect(pdf.status()).toBe(200);
     expect((await pdf.body()).toString('latin1')).toContain('/DCTDecode');
 
@@ -196,8 +153,8 @@ test.describe.serial('Protokolle: Fotos als Anhänge', () => {
     await ben.page.getByRole('link', { name: /Protokolle/ }).first().click();
     await syncNow(ben.page);
     const after = await serverDoc(request, token, title);
-    expect(after!.rev).toBe(doc!.rev);
-    expect(after!.updatedAt).toBe(doc!.updatedAt);
+    expect(after!.rev).toBe(doc.rev);
+    expect(after!.updatedAt).toBe(doc.updatedAt);
 
     await admin.context.close();
     await ben.context.close();

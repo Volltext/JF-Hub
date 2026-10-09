@@ -1,5 +1,6 @@
 import type { JSONContent } from '@tiptap/core';
-import { db, type HubDb, type SyncCollection } from '@/core/db/db';
+import * as Y from 'yjs';
+import { db, type HubDb, type SyncCollection, type YDocRow } from '@/core/db/db';
 import { saveDirectory, type DirectoryUser } from '@/core/account/account';
 import { rejectedBlobCount, requeueBlobs, retryBlobsNow } from '@/core/db/blobs';
 import { BASE_COLLECTIONS, SYNC_COLLECTIONS, seedOutboxOnce } from '@/core/db/outbox';
@@ -7,7 +8,7 @@ import { jsonEqual } from '@/core/domain/equal';
 import { httpTransport, uploadPendingBlobs, type BlobTransport } from './blobSync';
 import { ensureBases, exchangeInBackground, type BackgroundResult } from './collab/background';
 import { saveLocalCopy } from './collab/localCopy';
-import { isSessionOpen } from './collab/session';
+import { getOpenSession, isSessionOpen, openSessions } from './collab/session';
 import { EPOCH_KEY, httpExchange, type ExchangeTransport } from './collab/wire';
 import { noteConflicts } from './conflicts';
 import { ProtoError, loadConn, request } from './http';
@@ -173,6 +174,16 @@ function valueOf(p: Pick<Protokoll, MetaField>, f: MetaField): string | number {
 }
 
 /**
+ * Bevor der Zustand eines Textes verworfen wird: Was ein offener Editor noch nicht gesichert hat, kommt dazu (es steht nur im Speicher
+ * des Editors). Liefert 1, wenn der Text ungesendete Änderungen hat und eine Kopie verdient, sonst 0.
+ */
+async function withPendingOfEditor(id: string, text: YDocRow, store: HubDb): Promise<0 | 1> {
+  const extra = getOpenSession(id)?.takePending();
+  if (extra) await store.ydocs.put({ ...text, update: Y.mergeUpdates([text.update, extra]), dirty: 1, seq: text.seq + 1 });
+  return extra || text.dirty === 1 ? 1 : 0;
+}
+
+/**
  * Führt die Kopfdaten eines Server-Dokuments mit der lokalen Zeile zusammen, Feld für Feld wie der Server: Es gewinnt die jüngere
  * Änderung, bei Gleichstand der größere Wert (damit alle Geräte gleich entscheiden). Ist die lokale Zeile nicht vorgemerkt, gilt der Server.
  * `pending` sagt, ob lokal noch etwas steht, das der Server nicht hat.
@@ -282,7 +293,7 @@ export async function performSync(
       if (doc.deleted) {
         // Gelöscht oder zurückgezogen. Ungesendete Änderungen am Text bleiben als eigenes, privates Protokoll erhalten
         // (ein Protokoll, das hier selbst gelöscht wurde, zählt nicht).
-        if (text?.dirty === 1 && local && local.deleted !== 1) await saveLocalCopy(doc.id, {}, store);
+        if (text && local && local.deleted !== 1 && (await withPendingOfEditor(doc.id, text, store)) === 1) await saveLocalCopy(doc.id, {}, store);
         await store.protokolle.delete(doc.id);
         await store.ydocs.delete(doc.id);
         continue;
@@ -290,11 +301,12 @@ export async function performSync(
       if (local?.deleted === 1 && !sentDeleted.has(doc.id)) continue; // hier gerade gelöscht, der nächste Abgleich meldet es
       if (epochChanged && text) {
         // Eine andere Datenbank: Der Text des Servers gilt, nicht der hier gemerkte Stand (sonst käme zurück, was die Wiederherstellung entfernt hat).
-        if (text.dirty === 1 && local && local.deleted !== 1) await saveLocalCopy(doc.id, {}, store);
+        if (local && local.deleted !== 1 && (await withPendingOfEditor(doc.id, text, store)) === 1) await saveLocalCopy(doc.id, {}, store);
         await store.ydocs.delete(doc.id);
       }
       const merged = mergeHeader(local?.deleted === 1 ? undefined : local, doc);
-      const keepsText = isSessionOpen(doc.id) || (!epochChanged && text?.dirty === 1);
+      // Der Schnappschuss des Servers ersetzt den lokalen nur, wenn hier nichts Ungesendetes oder in Arbeit ist (bei einer neuen Datenbank immer).
+      const keepsText = !epochChanged && (isSessionOpen(doc.id) || text?.dirty === 1);
       await store.protokolle.put({
         id: doc.id,
         ...merged.fields,
@@ -391,6 +403,8 @@ export async function performSync(
   // Kopfdaten, der gerade gelungen ist, nicht ungeschehen.
   let text: BackgroundResult | null = null;
   try {
+    // Ein offener Editor tauscht seinen Text selbst aus; wer „Abgleichen“ wählt, erwartet aber, dass auch er jetzt ankommt.
+    for (const open of openSessions()) await open.exchangeNow().catch(() => undefined);
     text = await exchangeInBackground({ store, transport: textTransport });
   } catch (e) {
     if (e instanceof ProtoError && e.status !== 0) throw e;

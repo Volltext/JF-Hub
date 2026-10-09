@@ -1,10 +1,11 @@
 import { execFileSync } from 'node:child_process';
 import { expect, type APIRequestContext, type Browser, type BrowserContext, type BrowserContextOptions, type Page } from '@playwright/test';
+import * as Y from 'yjs';
 
 export const ADMIN = { username: 'admin', password: 'e2e-admin-passwort' };
 export const BEN = { username: 'ben', password: 'ben-hat-ein-passwort' };
 /** Direkte Anfragen an den Abgleich melden das Dokumentformat wie die App (ohne Angabe gilt eine Anfrage als Version 2.0.x und wird abgewiesen). */
-export const SCHEMA = { 'X-JFH-Schema': '4' };
+export const SCHEMA = { 'X-JFH-Schema': '5' };
 
 /** Ein 1×1-Pixel-PNG: Die App macht daraus ein verkleinertes JPEG. */
 export const PNG_1X1 = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
@@ -94,7 +95,48 @@ export async function writeProtocol(page: Page, title: string, text: string) {
 
 /** Das Protokoll mit diesem Titel, wie der Server es gerade hat. */
 export async function serverDoc(request: APIRequestContext, token: string, title: string) {
-  const r = await request.post('/api/sync', { headers: { Authorization: `Bearer ${token}`, ...SCHEMA }, data: { since: 0, changes: [] } });
+  const r = await request.post('/api/sync', { headers: { Authorization: `Bearer ${token}`, ...SCHEMA }, data: { since: 0, protocols: [] } });
   const res = (await r.json()) as { changes: { id: string; title: string; rev: number; updatedAt: number; deleted: boolean; content: unknown }[] };
   return res.changes.find((c) => c.title === title);
+}
+
+/**
+ * Wartet, bis der Text des Protokolls beim Server angekommen ist. Der Text geht getrennt von den Kopfdaten über den Austausch des
+ * Yjs-Dokuments (alle paar Sekunden aus dem offenen Editor, sonst beim Abgleich), nicht mit dem Speichern.
+ */
+export async function serverHasText(request: APIRequestContext, token: string, title: string, text: string, timeout = 30_000) {
+  await expect
+    .poll(async () => JSON.stringify((await serverDoc(request, token, title))?.content ?? ''), { timeout, message: `Der Server hat „${text}“ in „${title}“` })
+    .toContain(text);
+  return (await serverDoc(request, token, title))!;
+}
+
+/**
+ * Legt ein Protokoll mit einem Text an, den die App nicht bauen würde (anderes Vokabular, feindliche Werte): Die Kopfdaten gehen wie von
+ * einer App in den Abgleich, der Text wie von einem Client mit eigenem Schema in den Austausch (`fill` füllt das Yjs-Dokument).
+ */
+export async function putForeignText(request: APIRequestContext, token: string, id: string, title: string, fill: (fragment: Y.XmlFragment) => void) {
+  const auth = { Authorization: `Bearer ${token}`, ...SCHEMA };
+  const now = Date.now();
+  const metaAt = Object.fromEntries(['title', 'datum', 'beginn', 'ende', 'ort', 'leitung', 'folderId', 'shared'].map((f) => [f, now]));
+  const sent = await request.post('/api/sync', {
+    headers: auth,
+    data: { since: 0, protocols: [{ id, baseRev: 0, title, datum: '2026-10-01', beginn: '', ende: '', ort: '', leitung: '', metaAt, updatedAt: now, deleted: false, shared: true }] },
+  });
+  expect(sent.ok()).toBeTruthy();
+  const doc = new Y.Doc();
+  fill(doc.getXmlFragment('body'));
+  const b64 = (u: Uint8Array) => Buffer.from(u).toString('base64');
+  const exchanged = await request.post('/api/collab/exchange', { headers: auth, data: { docs: [{ id, sv: b64(Y.encodeStateVector(doc)), update: b64(Y.encodeStateAsUpdate(doc)), create: true }] } });
+  expect(exchanged.ok()).toBeTruthy();
+  expect(((await exchanged.json()) as { docs: { status: string }[] }).docs[0]?.status).toBe('ok');
+}
+
+/** Ein Absatz mit Text für `putForeignText`. */
+export function foreignParagraph(text: string): Y.XmlElement {
+  const p = new Y.XmlElement('paragraph');
+  const t = new Y.XmlText();
+  t.insert(0, text);
+  p.insert(0, [t]);
+  return p;
 }

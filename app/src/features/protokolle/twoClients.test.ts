@@ -34,8 +34,8 @@ const serverText = (id: string): string => {
   return (j.content ?? []).map((b) => (b.content ?? []).map((t) => t.text ?? '').join('')).join('\n');
 };
 
-async function open(store: HubDb, user: SyncUser, id: string): Promise<CollabSession> {
-  const r = await openProtocol(id, { store, transport: server.transport(user), hasServer: async () => true });
+async function open(store: HubDb, user: SyncUser, id: string, session: Parameters<typeof openProtocol>[1]['session'] = {}): Promise<CollabSession> {
+  const r = await openProtocol(id, { store, transport: server.transport(user), hasServer: async () => true, session });
   if (r.kind !== 'edit') throw new Error(`nicht zu öffnen: ${r.reason}`);
   return r.session;
 }
@@ -254,6 +254,32 @@ describe('zurückgezogen, gelöscht, ersetzt', () => {
     // aber was Anna nicht mehr abgeben konnte, ist nicht verloren
     const copy = (await anna.protokolle.toArray()).find((p) => p.title.endsWith('(lokale Fassung)'))!;
     expect(textOf((await loadDoc(copy.id, anna))!.doc)).toBe('Stand der Sicherung und später geschrieben (nur hier)');
+  });
+
+  it('wird die Datenbank ersetzt, während ein Editor offen ist: er lädt neu, auch der noch nicht gesicherte Text aus dem Speicher des Editors bleibt als Kopie', async () => {
+    const id = await sharedDoc('Stand der Sicherung');
+    let replaced = 0;
+    const a = await open(anna, ANNA, id, { onReplaced: () => replaced++ });
+    a.start();
+    typeInto(a.doc, ' (noch nicht gesichert)'); // steht nur im Speicher des Editors
+    server.replaceDatabase();
+    server.put({ id, title: 'Sitzung', ownerId: ANNA.id, shared: true, content: doc(para('Stand der Sicherung')) });
+
+    await server.syncOf(anna, ANNA); // erkennt die neue Datenbank: Kopie, Zustand verworfen
+    const copy = (await anna.protokolle.toArray()).find((p) => p.title.endsWith('(lokale Fassung)'))!;
+    expect(textOf((await loadDoc(copy.id, anna))!.doc)).toBe('Stand der Sicherung (noch nicht gesichert)');
+
+    await a.exchangeNow(); // der Editor merkt, dass sein Zustand verworfen wurde
+    expect(a.getInfo().status).toBe('replaced');
+    expect(replaced).toBe(1);
+    await a.destroy();
+    expect(await anna.ydocs.get(id)).toBeUndefined(); // kein Zustand aus den Resten des Speichers
+
+    // neu geöffnet zeigt er den Stand des Servers
+    const again = await open(anna, ANNA, id);
+    expect(textOf(again.doc)).toBe('Stand der Sicherung');
+    // und das Original hat den Text der neuen Datenbank als Schnappschuss
+    expect(JSON.stringify((await anna.protokolle.get(id))!.content)).not.toContain('noch nicht gesichert');
   });
 
   it('der Server verliert den Text eines Protokolls, das nur dieses Gerät kennt: er geht mit dem ganzen Zustand hoch', async () => {

@@ -85,6 +85,9 @@ export const isSessionOpen = (id: string): boolean => sessions.has(id);
 /** Die offene Bearbeitung dieses Protokolls (zum Beispiel, um vor dem PDF-Export den Text zu senden). */
 export const getOpenSession = (id: string): CollabSession | undefined => sessions.get(id);
 
+/** Alle offenen Bearbeitungen. */
+export const openSessions = (): CollabSession[] => [...sessions.values()];
+
 type Timer = ReturnType<typeof setTimeout>;
 
 export class CollabSession {
@@ -115,14 +118,19 @@ export class CollabSession {
     if (this.isVisible()) this.nudge(0);
   };
 
+  /** Dieses Gerät hat einen gespeicherten Zustand zu diesem Protokoll (gehabt). Verschwindet er unter uns, wurde er verworfen. */
+  private hadState: boolean;
+
   constructor(
     readonly id: string,
     doc: Y.Doc,
     knownRev: number | undefined,
+    hadState: boolean,
     private readonly opts: SessionOptions,
   ) {
     this.doc = doc;
     this.knownRev = knownRev;
+    this.hadState = hadState;
     this.store = opts.store ?? db;
     this.interval = opts.intervalMs ?? 2500;
     this.nudgeDelay = opts.nudgeMs ?? 800;
@@ -161,6 +169,19 @@ export class CollabSession {
     sessions.set(this.id, this);
     if (typeof document !== 'undefined') document.addEventListener('visibilitychange', this.onVisible);
     this.schedule(0);
+  }
+
+  /**
+   * Die noch nicht gesicherten Änderungen (zusammengefasst), und sie gelten als abgegeben: Der Aufrufer sichert sie selbst. Gebraucht, wenn
+   * der Abgleich der Protokolle den Zustand verwirft, während jemand tippt, und vorher eine Kopie anlegt.
+   */
+  takePending(): Uint8Array | undefined {
+    if (!this.pending.length) return undefined;
+    const merged = Y.mergeUpdates(this.pending);
+    this.pending = [];
+    clearTimeout(this.persistTimer);
+    this.setInfo({ saved: true });
+    return merged;
   }
 
   /** Sichert alles Offene auf dem Gerät und schreibt den Schnappschuss. */
@@ -218,6 +239,7 @@ export class CollabSession {
       if (!(await this.store.protokolle.get(this.id))) return;
       try {
         await putLocal(this.id, Y.mergeUpdates(batch), this.store);
+        this.hadState = true;
       } catch (e) {
         this.pending = [...batch, ...this.pending]; // nicht verlieren: Der nächste Versuch schreibt es mit
         this.setInfo({ saved: false, message: 'Speichern auf diesem Gerät fehlgeschlagen. Das Protokoll bleibt geöffnet, der Abgleich mit dem Server läuft weiter.' });
@@ -300,6 +322,14 @@ export class CollabSession {
       return;
     }
     const row = await getYRow(this.id, this.store);
+    if (!row && this.hadState) {
+      // Der Zustand wurde unter uns verworfen: Die Datenbank des Servers ist eine andere (ersetzt oder wiederhergestellt), und der Abgleich
+      // der Protokolle hat die Fassung dieses Geräts, soweit ungesendet, als Kopie gesichert. Dieses Dokument im Speicher ist veraltet.
+      this.pending = [];
+      this.stop('replaced', 'Die Datenbank des Servers wurde ersetzt. Dieses Protokoll wird neu geladen; ungesendete Änderungen liegen als Kopie „(lokale Fassung)“ vor.');
+      this.opts.onReplaced?.();
+      return;
+    }
     const sentSeq = row?.seq ?? 0;
     const sending = (row?.dirty === 1 && !row.rejected) || this.pending.length > 0;
     const req: ExchangeDocRequest = { id: this.id, live: true, sv: bytesToBase64(Y.encodeStateVector(this.doc)) };
@@ -415,6 +445,11 @@ export class CollabSession {
   /** Hört auf auszutauschen. `lock`: Der Editor wird schreibgeschützt. */
   private stop(status: SessionStatus, message: string, lock = true): void {
     this.setInfo({ status, message });
+    if (status === 'replaced') {
+      // Das Dokument im Speicher ist veraltet: Es darf nicht als Schnappschuss in die Zeile des Protokolls geschrieben werden.
+      this.snapshotDue = false;
+      clearTimeout(this.snapshotTimer);
+    }
     if (lock) {
       this.stopped = true;
       clearTimeout(this.exchangeTimer);

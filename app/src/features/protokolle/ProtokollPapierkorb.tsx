@@ -37,7 +37,8 @@ export function ProtokollPapierkorb() {
     setNote('');
     try {
       await request(await loadConn(), 'POST', `/api/protocols/${encodeURIComponent(id)}/restore`);
-      await syncNow();
+      // Lief schon ein Abgleich, bekommt `syncNow` dessen Ergebnis, und er kann vor dem Zurückholen begonnen haben: dann noch einmal.
+      for (let round = 0; round < 2 && !(await db.protokolle.get(id)); round++) await syncNow();
       if (await db.protokolle.get(id)) {
         navigate(`/protokolle/${id}`);
         return;

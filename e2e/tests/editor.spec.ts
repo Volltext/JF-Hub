@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
-import { ADMIN, adminTokens, PNG_1X1, pdfText, SCHEMA, serverDoc, sessions, syncNow, writeProtocol } from './helpers';
+import * as Y from 'yjs';
+import { ADMIN, adminTokens, foreignParagraph, PNG_1X1, pdfText, putForeignText, serverDoc, serverHasText, sessions, syncNow, writeProtocol } from './helpers';
 
 // Eigener Server (siehe playwright.config.ts): Die Anmeldung ist je Adresse begrenzt, und diese Datei soll weder das Limit des
 // Rauchtests noch das der Protokoll-Tests aufbrauchen.
@@ -97,8 +98,8 @@ test.describe.serial('Protokolle: Tabellen, Links und Hervorhebung', () => {
     await syncNow(page);
 
     // Auf dem Server liegen Tabelle, Link und Hervorhebung im Inhalt
-    const doc = await serverDoc(request, token, title);
-    const json = JSON.stringify(doc!.content);
+    const doc = await serverHasText(request, token, title, 'https://www.example.de/seite');
+    const json = JSON.stringify(doc.content);
     for (const part of ['"type":"table"', '"type":"tableHeader"', '"type":"tableCell"', '"type":"link"', '"type":"highlight"', 'https://www.example.de/seite']) expect(json, part).toContain(part);
 
     // Nach dem Neuladen ist alles noch da
@@ -108,7 +109,7 @@ test.describe.serial('Protokolle: Tabellen, Links und Hervorhebung', () => {
     await expect(editor.locator('a')).toHaveAttribute('href', 'https://www.example.de/seite');
 
     // Das PDF enthält die Tabelle (Text) und den anklickbaren Link
-    const pdf = await request.get(`/api/protocols/${doc!.id}/pdf`, { headers: { Authorization: `Bearer ${token}` } });
+    const pdf = await request.get(`/api/protocols/${doc.id}/pdf`, { headers: { Authorization: `Bearer ${token}` } });
     expect(pdf.status()).toBe(200);
     const bytes = (await pdf.body()).toString('latin1');
     expect(bytes.startsWith('%PDF-')).toBe(true);
@@ -275,14 +276,17 @@ test.describe.serial('Protokolle: feindliche Tabellen', () => {
   test('ein Protokoll mit absurder Zellspanne wird nur gelesen, statt den Editor lahmzulegen', async ({ browser, request }) => {
     const title = 'Tabelle mit Riesenspanne';
     const token = await adminToken(request);
-    const p = (text: string) => ({ type: 'paragraph', content: [{ type: 'text', text }] });
-    const cell = (colspan: number) => ({ type: 'tableCell', attrs: { colspan, rowspan: 1, colwidth: null, align: null }, content: [p('Zelle')] });
-    const content = { type: 'doc', content: [p('Davor'), { type: 'table', content: [{ type: 'tableRow', content: [cell(1_000_000)] }] }] };
-    const sent = await request.post('/api/sync', {
-      headers: { Authorization: `Bearer ${token}`, ...SCHEMA },
-      data: { since: 0, changes: [{ id: 'spanne-0001', baseRev: 0, title, datum: '2026-10-01', beginn: '', ende: '', ort: '', leitung: '', content, updatedAt: Date.now(), deleted: false }] },
+    await putForeignText(request, token, 'spanne-0001', title, (frag) => {
+      const cell = new Y.XmlElement('tableCell');
+      cell.setAttribute('colspan', 1_000_000 as never);
+      cell.setAttribute('rowspan', 1 as never);
+      cell.insert(0, [foreignParagraph('Zelle')]);
+      const row = new Y.XmlElement('tableRow');
+      row.insert(0, [cell]);
+      const table = new Y.XmlElement('table');
+      table.insert(0, [row]);
+      frag.insert(0, [foreignParagraph('Davor'), table]);
     });
-    expect(sent.ok()).toBeTruthy();
 
     const { context, page } = await open(browser, ADMIN);
     await page.goto('/#/protokolle');

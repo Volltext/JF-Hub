@@ -61,7 +61,7 @@ export async function openProtocol(id: string, deps: OpenDeps): Promise<Opened> 
   const hasState = !!(await store.ydocs.get(id));
   const plan = planOpen(row, hasState, await deps.hasServer());
   const readonly = (reason: ReadonlyReason, message: string): Opened => ({ kind: 'readonly', reason, message });
-  const session = (doc: Y.Doc, rev: number | undefined): Opened => ({ kind: 'edit', session: new CollabSession(id, doc, rev, { ...deps.session, store, transport: deps.transport }) });
+  const session = (doc: Y.Doc, rev: number | undefined, hadState = true): Opened => ({ kind: 'edit', session: new CollabSession(id, doc, rev, hadState, { ...deps.session, store, transport: deps.transport }) });
 
   switch (plan) {
     case 'gone':
@@ -69,7 +69,7 @@ export async function openProtocol(id: string, deps: OpenDeps): Promise<Opened> 
     case 'legacy':
       return readonly('legacy', 'Der Server hat den Text dieses Protokolls noch nicht für das gemeinsame Bearbeiten umgestellt. Es wird nur gelesen.');
     case 'empty':
-      return session(new Y.Doc(), undefined);
+      return session(new Y.Doc(), undefined, false);
     case 'base': {
       const problem = baseProblem(row!.content);
       if (problem) return readonly('unreadable', UNREADABLE(problem));
@@ -99,7 +99,7 @@ export async function openProtocol(id: string, deps: OpenDeps): Promise<Opened> 
   }
 }
 
-function fromState(update: Uint8Array, rev: number | undefined, session: (doc: Y.Doc, rev: number | undefined) => Opened, readonly: (reason: ReadonlyReason, message: string) => Opened): Opened {
+function fromState(update: Uint8Array, rev: number | undefined, session: (doc: Y.Doc, rev: number | undefined, hadState?: boolean) => Opened, readonly: (reason: ReadonlyReason, message: string) => Opened): Opened {
   const doc = new Y.Doc();
   Y.applyUpdate(doc, update);
   const problem = docProblem(doc);
