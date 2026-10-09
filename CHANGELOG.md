@@ -4,6 +4,33 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/). Versionen 
 
 ## [Unreleased]
 
+## [2.3.0] – 2026-10-09
+
+Der Protokoll-Editor bekommt **Tabellen**, **Links** und **Hervorhebung**, alle drei auch im PDF.
+
+### Wichtig beim Update
+
+- **Erst den Server aktualisieren, dann die Apps.** Ein älterer Server speichert Tabellen, Links und Markierungen zwar, setzt sie im PDF aber nicht richtig (Tabellenzellen stehen untereinander, Links sind nicht anklickbar).
+- **Apps bis 2.2.x lesen solche Protokolle nur.** Enthält ein Protokoll eine Tabelle, einen Link oder eine Hervorhebung, zeigt die ältere App den Text mit dem Hinweis „Bitte die App aktualisieren“ und schreibt nichts zurück; es geht nichts verloren. Die Web-App lädt sich selbst, die Android-App braucht die neue APK.
+- Es gibt keinen Datenumbau und keine neue Sperre. Das Dokumentformat steigt auf 4, der Server nimmt weiter Apps ab 2.1.0 an.
+
+### Neu
+
+- **Tabellen:** Unter **＋ Einfügen → Tabelle** legst du Zeilen und Spalten (bis 20 × 6) mit oder ohne Kopfzeile an. Steht der Cursor in einer Tabelle, erscheint die Leiste „Tabelle“: Zeile oben oder unten einfügen, Spalte links oder rechts einfügen, Zeile oder Spalte löschen, Kopfzeile ein oder aus, Tabelle löschen. Am Rechner springt Tab von Zelle zu Zelle (in der letzten Zelle legt es eine neue Zeile an). Zellen nehmen Text und Listen auf. Bei vielen Spalten scrollt die Tabelle waagerecht, statt die Spalten zu zerquetschen.
+- **Links:** Die Link-Taste macht Text zum Link oder fügt einen neuen ein. Erlaubt sind Webadressen, E-Mail-Adressen und Telefonnummern: „beispiel.de“ wird zu `https://beispiel.de`, „name@beispiel.de“ zu einem Mail-Link. Steht der Cursor in einem Link, zeigt eine Leiste **Öffnen**, **Ändern** und **Entfernen**; am Rechner öffnet auch Strg+Klick. Eingefügte Webadressen und eingetippte Adressen mit `https://` werden von selbst zum Link. Andere Ziele (zum Beispiel `javascript:`) setzt der Editor nie, zeigt sie nicht an und öffnet sie nicht.
+- **Hervorheben:** Die Marker-Taste (Strg+Umschalt+H) hinterlegt Text gelb.
+- **PDF:** Tabellen mit Kopfzeile (auf jeder Seite wiederholt) und verbundenen Zellen, anklickbare Links, hervorgehobener Text. Eine Tabelle über 400 Zeilen, 24 Spalten oder 4000 Zellen ersetzt ein Hinweis; eine Zeile, die höher ist als eine Seite, läuft über den Seitenumbruch.
+- **Suche** findet auch Text in Tabellen. Die Beispieldaten der Demo zeigen eine Tabelle, einen Link und eine Hervorhebung.
+
+### Geändert
+
+- **Die Werkzeugleiste ist aufgeräumt:** Zitat, Trennlinie und Handschrift (Zeichenfläche und Seite) stehen jetzt unter **＋ Einfügen**, Marker und Link sind neu in der Leiste. Foto und Datei bleiben einen Tipp entfernt. Link- und Tabellen-Leiste erscheinen nur, wenn der Cursor im Link oder in der Tabelle steht, am Handy über der Leiste, am Rechner darunter.
+- Neue Abhängigkeiten: `@tiptap/extension-table`, `@tiptap/extension-highlight` und `@tiptap/extension-link` (alle MIT). Die Web-App wird dadurch um rund 18 kB (komprimiert) größer.
+
+### Behoben
+
+- **PDF:** Ein Protokoll mit sehr vielen Absätzen oder Tabellenzellen konnte den PDF-Bau mit einem Fehler abbrechen.
+
 ## [2.2.0] – 2026-10-09
 
 Fotos und Dateien liegen nicht mehr im Text der Protokolle, sondern als eigene Anhänge auf dem Server. Protokolle bleiben dadurch klein: Abgleich, Liste, Suche und Konfliktkopien tragen keine Bilder mehr mit.

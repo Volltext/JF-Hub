@@ -36,7 +36,7 @@ Protokolle, Dienste, Aufgaben, Kleidergrößen und Wettkampf-Training – auf Ha
 
 | | Bereich | Das gibt es |
 | :---: | --- | --- |
-| 📝 | **Protokolle** | Editor mit Überschriften, Listen und Checklisten, **Fotos**, Anhänge und **Handschrift**, Ordner, Volltextsuche, **PDF** im eigenen Layout (Logo, Fußzeile, Farbe) |
+| 📝 | **Protokolle** | Editor mit Überschriften, Listen und Checklisten, **Tabellen**, **Links**, Hervorhebung, **Fotos**, Anhänge und **Handschrift**, Ordner, Volltextsuche, **PDF** im eigenen Layout (Logo, Fußzeile, Farbe) |
 | 📅 | **Dienste** | Anwesenheit per Antippen erfassen, Statistik, wöchentliche **Erinnerung** (mit Ferien-Rhythmus je Bundesland) |
 | ✅ | **Aufgaben** | Eigene Aufgaben oder für alle Betreuer **veröffentlichen**, mit Fälligkeit und Erinnerung |
 | 👕 | **Kleidung** | Kleidergrößen je Mitglied, „eine Größe größer“ vormerken, fertige PDF-Liste für den Kleiderwart |

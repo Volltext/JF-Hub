@@ -94,11 +94,13 @@ Unter **Dienste** siehst du alle bisherigen Abende. Bei **Mitglieder** steht pro
 
 1. Unter **Protokolle** auf **+** tippen
 2. **Titel** vergeben, optional einen **Ordner** wählen
-3. Losschreiben. Die Leiste unten bietet Überschriften, **fett**, *kursiv*, Listen und Checklisten
+3. Losschreiben. Die Leiste unten bietet Überschriften, **fett**, *kursiv*, Hervorheben, **Links**, Listen und Checklisten. Unter **＋** findest du **Tabellen**, Zitate, Trennlinien und Handschrift. Steht der Cursor in einer Tabelle oder in einem Link, erscheint eine Leiste mit den passenden Handgriffen (Zeile hinzufügen, Link öffnen …)
 4. Fotos (werden automatisch verkleinert) und Dateien bis 10 MB hängst du als Anhang an. Sie laden beim nächsten Abgleich hoch, auch wenn du sie ohne Netz einfügst. Auf Android gibt es zusätzlich **Handschrift** mit Stift
 5. Gespeichert wird **automatisch**. Oben steht „Gespeichert“
 
 Das Symbol mit den zwei Personen macht das Protokoll **für alle Betreuer sichtbar**. Das Download-Symbol erzeugt ein **PDF** im Layout deiner Gruppe. Die Suche oben in der Liste durchsucht alle Protokolle im Volltext. Versehentlich gelöscht? Im **Papierkorb** (Symbol oben in der Liste) holst du es 30 Tage lang zurück.
+
+Tabellen, Links und Hervorhebung gibt es ab Version 2.3.0. Ältere Apps zeigen solche Protokolle nur zum Lesen: Dann einfach die App aktualisieren.
 
 </td>
 <td width="36%">
