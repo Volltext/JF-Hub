@@ -17,6 +17,7 @@ import { EXTENSIONS, schemaAccepts } from './editorSchema';
 import { EditorToolbar } from './EditorToolbar';
 import { FolderPicker } from './FolderPicker';
 import { folderPathLabel, liveFolders, shownFolder } from './folders';
+import { openLink } from './openLink';
 import { SyncBadge } from './SyncBadge';
 import type { Protokoll } from './model';
 import { exportPdf, protokolleRepo } from './repo';
@@ -101,7 +102,20 @@ function EditorInner({ initial }: { initial: Protokoll }) {
   const editor = useEditor({
     extensions: [...EXTENSIONS, Placeholder.configure({ placeholder: 'Protokoll schreiben …' })],
     content: initial.content,
-    editorProps: { attributes: { class: 'ed-content', 'aria-label': 'Protokolltext', lang: 'de', spellcheck: 'true' } },
+    editorProps: {
+      attributes: { class: 'ed-content', 'aria-label': 'Protokolltext', lang: 'de', spellcheck: 'true' },
+      handleDOMEvents: {
+        // Strg/Cmd+Klick öffnet einen Link (am Handy dient dazu die Link-Leiste); ein einfacher Klick setzt nur den Cursor.
+        click: (_view, event) => {
+          if (!(event.ctrlKey || event.metaKey)) return false;
+          const href = (event.target as Element | null)?.closest?.('a[href]')?.getAttribute('href');
+          if (!href) return false;
+          event.preventDefault();
+          openLink(href);
+          return true;
+        },
+      },
+    },
     onUpdate: () => autosave.markDirty(),
     onFocus: () => document.body.classList.add('editing'),
     onBlur: () => document.body.classList.remove('editing'),

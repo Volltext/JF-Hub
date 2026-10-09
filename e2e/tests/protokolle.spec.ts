@@ -5,7 +5,7 @@ test.use({ baseURL: 'http://127.0.0.1:8096' });
 
 const ADMIN = { username: 'admin', password: 'e2e-admin-passwort' };
 /** Direkte Anfragen an den Abgleich melden das Dokumentformat wie die App (ohne Angabe gilt eine Anfrage als Version 2.0.x und wird abgewiesen). */
-const SCHEMA = { 'X-JFH-Schema': '3' };
+const SCHEMA = { 'X-JFH-Schema': '4' };
 const BEN = { username: 'ben', password: 'ben-hat-ein-passwort' };
 
 /** Ein Anmelde-Token für alle Tests (die Anmeldung ist je Adresse begrenzt). */
@@ -167,10 +167,11 @@ test.describe.serial('Protokolle: Fundament', () => {
 
 test.describe.serial('Protokolle: Schutz vor unbekannten Inhalten', () => {
   test('Ein Protokoll mit Elementen aus einer neueren Version wird nur gelesen und nie überschrieben', async ({ browser, request }) => {
-    const title = 'Mit Tabelle aus der Zukunft';
+    const title = 'Mit Hinweisfeld aus der Zukunft';
     const token = await adminToken(request);
     const p = (text: string) => ({ type: 'paragraph', content: [{ type: 'text', text }] });
-    const content = { type: 'doc', content: [p('Davor'), { type: 'table', content: [{ type: 'tableRow', content: [{ type: 'tableCell', content: [p('Zelle A1')] }] }] }, p('Danach')] };
+    // „callout“ kennt keine App-Version (Tabellen, Links und Hervorhebung gibt es seit 2.3.0).
+    const content = { type: 'doc', content: [p('Davor'), { type: 'callout', attrs: { tone: 'info' }, content: [p('Wichtiger Hinweis')] }, p('Danach')] };
     const sent = await request.post('/api/sync', {
       headers: { Authorization: `Bearer ${token}`, ...SCHEMA },
       data: { since: 0, changes: [{ id: 'zukunft-0001', baseRev: 0, title, datum: '2026-10-01', beginn: '', ende: '', ort: '', leitung: '', content, updatedAt: Date.now(), deleted: false }] },
@@ -184,7 +185,7 @@ test.describe.serial('Protokolle: Schutz vor unbekannten Inhalten', () => {
     await page.goto('/#/protokolle');
     await page.getByText(title).click();
     await expect(page.getByRole('alert')).toContainText('Elemente, die diese App-Version nicht kennt');
-    await expect(page.getByText('Zelle A1')).toBeVisible(); // als Text lesbar
+    await expect(page.getByText('Wichtiger Hinweis')).toBeVisible(); // als Text lesbar
     await expect(page.getByLabel('Protokolltext', { exact: true })).toHaveCount(0); // aber kein Editor
     await page.screenshot({ path: 'test-results/unbekannte-elemente.png', fullPage: true });
 
@@ -192,7 +193,142 @@ test.describe.serial('Protokolle: Schutz vor unbekannten Inhalten', () => {
     await syncNow(page);
     const after = await serverDoc(request, token, title);
     expect(after!.rev).toBe(before!.rev);
-    expect(after!.content).toEqual(content); // unverändert, die Tabelle ist noch da
+    expect(after!.content).toEqual(content); // unverändert, das Hinweisfeld ist noch da
+    await context.close();
+  });
+});
+
+test.describe.serial('Protokolle: Tabellen, Links und Hervorhebung', () => {
+  test('Tabelle, Link und Hervorhebung einfügen, speichern und im PDF finden', async ({ browser, request }) => {
+    const title = 'Aufgaben mit Tabelle';
+    const token = await adminToken(request);
+    const { context, page } = await newSession(browser);
+    await signIn(page, ADMIN);
+    await writeProtocol(page, title, 'Aufgaben für den Herbst.');
+    const editor = page.getByLabel('Protokolltext', { exact: true });
+    // Links öffnen den Browser; hier wird nur aufgezeichnet, was geöffnet würde.
+    await page.evaluate(() => {
+      (window as unknown as { __opened: string[] }).__opened = [];
+      window.open = (url) => {
+        (window as unknown as { __opened: string[] }).__opened.push(String(url));
+        return null;
+      };
+    });
+
+    // Tabelle über Einfügen → Tabelle: 2 × 2 mit Kopfzeile, danach mit Tab durch die Zellen
+    await page.getByRole('button', { name: 'Einfügen', exact: true }).click();
+    await page.getByRole('dialog', { name: 'Einfügen' }).getByRole('button', { name: /^Tabelle/ }).click();
+    await page.getByLabel(/^Zeilen/).fill('2');
+    await page.getByLabel(/^Spalten/).fill('2');
+    await page.getByRole('button', { name: 'Tabelle einfügen', exact: true }).click();
+    await expect(editor.locator('table')).toHaveCount(1);
+    await expect(editor.locator('th')).toHaveCount(2);
+    for (const cell of ['Wer', 'Aufgabe', 'Anna', 'Schläuche']) {
+      await page.keyboard.type(cell);
+      await page.keyboard.press('Tab');
+    }
+    // Tab in der letzten Zelle legt eine neue Zeile an und springt hinein
+    await page.keyboard.type('Ben');
+    await page.keyboard.press('Tab');
+    await page.keyboard.type('Material');
+    await expect(editor.locator('tr')).toHaveCount(3);
+
+    // Tabellen-Leiste: Zeile unten einfügen, wieder löschen, Kopfzeile aus- und einschalten
+    const tableBar = page.getByRole('toolbar', { name: 'Tabelle' });
+    await expect(tableBar).toBeVisible();
+    await tableBar.getByRole('button', { name: 'Zeile unten einfügen' }).click();
+    await expect(editor.locator('tr')).toHaveCount(4);
+    await page.keyboard.press('Tab'); // in die neue Zeile
+    await tableBar.getByRole('button', { name: 'Zeile löschen' }).click();
+    await expect(editor.locator('tr')).toHaveCount(3);
+    await expect(editor).toContainText('Material');
+    await tableBar.getByRole('button', { name: 'Kopfzeile ein oder aus' }).click();
+    await expect(editor.locator('th')).toHaveCount(0);
+    await tableBar.getByRole('button', { name: 'Kopfzeile ein oder aus' }).click();
+    await expect(editor.locator('th')).toHaveCount(2);
+
+    // Hervorheben: das Wort in der letzten Zelle markieren
+    await editor.getByText('Material', { exact: true }).click(); // der Absatz ist breiter als das Wort: Der Cursor landet am Zeilenende
+    await page.keyboard.press('Shift+Home');
+    await expect.poll(() => page.evaluate(() => String(getSelection()))).toBe('Material'); // erst weiter, wenn der Editor die Auswahl kennt
+    await page.getByRole('button', { name: 'Hervorheben', exact: true }).click();
+    await expect(editor.locator('mark')).toHaveText('Material');
+
+    // Link: im ersten Absatz, danach weitertippen verlängert den Link nicht
+    await editor.locator('p').first().click(); // rechts vom Text geklickt: Der Cursor steht am Zeilenende
+    await page.keyboard.type(' Mehr unter ');
+    await page.getByRole('button', { name: 'Link', exact: true }).click();
+    await page.getByLabel('Adresse').fill('beispiel.de');
+    await page.getByLabel(/^Text/).fill('Webseite');
+    await page.getByRole('button', { name: 'Link einfügen', exact: true }).click();
+    await page.keyboard.type(' und mehr');
+    const link = editor.locator('a');
+    await expect(link).toHaveCount(1);
+    await expect(link).toHaveText('Webseite');
+    await expect(link).toHaveAttribute('href', 'https://beispiel.de');
+    await expect(editor.locator('p').first()).toContainText('Mehr unter Webseite und mehr');
+
+    // Ein Klick in den Link zeigt die Link-Leiste: Öffnen, Ändern, Entfernen
+    await link.click();
+    const linkBar = page.getByRole('toolbar', { name: 'Link' });
+    await expect(linkBar).toContainText('beispiel.de');
+    await linkBar.getByRole('button', { name: 'Öffnen' }).click();
+    expect(await page.evaluate(() => (window as unknown as { __opened: string[] }).__opened)).toEqual(['https://beispiel.de']);
+    await linkBar.getByRole('button', { name: 'Ändern' }).click();
+    await expect(page.getByLabel('Adresse')).toHaveValue('https://beispiel.de');
+    await page.getByLabel('Adresse').fill('javascript:alert(1)');
+    await page.getByRole('button', { name: 'Übernehmen' }).click();
+    await expect(page.getByRole('alert')).toContainText('keine gültige Adresse'); // unzulässige Ziele werden abgelehnt
+    await page.getByLabel('Adresse').fill('www.example.de/seite');
+    await page.getByRole('button', { name: 'Übernehmen' }).click();
+    await expect(link).toHaveAttribute('href', 'https://www.example.de/seite');
+
+    await expect(page.getByText('Gespeichert')).toBeVisible();
+    await page.screenshot({ path: 'test-results/tabelle-link-marker.png', fullPage: true });
+    await syncNow(page);
+
+    // Auf dem Server liegen Tabelle, Link und Hervorhebung im Inhalt
+    const doc = await serverDoc(request, token, title);
+    const json = JSON.stringify(doc!.content);
+    for (const part of ['"type":"table"', '"type":"tableHeader"', '"type":"tableCell"', '"type":"link"', '"type":"highlight"', 'https://www.example.de/seite']) expect(json, part).toContain(part);
+
+    // Nach dem Neuladen ist alles noch da
+    await page.reload();
+    await expect(editor.locator('table')).toHaveCount(1);
+    await expect(editor.locator('mark')).toHaveText('Material');
+    await expect(editor.locator('a')).toHaveAttribute('href', 'https://www.example.de/seite');
+
+    // Das PDF enthält die Tabelle (Text) und den anklickbaren Link
+    const pdf = await request.get(`/api/protocols/${(doc as unknown as { id: string }).id}/pdf`, { headers: { Authorization: `Bearer ${token}` } });
+    expect(pdf.status()).toBe(200);
+    const bytes = (await pdf.body()).toString('latin1');
+    expect(bytes.startsWith('%PDF-')).toBe(true);
+    expect(bytes).toContain('https://www.example.de/seite');
+    await context.close();
+  });
+
+  test('am Handy: Leiste, Tabelle und Link passen auf den Bildschirm', async ({ browser, request }) => {
+    const title = 'Handy mit Tabelle';
+    await adminToken(request);
+    const context = await browser.newContext({ viewport: { width: 390, height: 780 }, hasTouch: true, isMobile: true });
+    const page = await context.newPage();
+    await signIn(page, ADMIN);
+    await writeProtocol(page, title, 'Kurz.');
+    const editor = page.getByLabel('Protokolltext', { exact: true });
+    await page.getByRole('button', { name: 'Einfügen', exact: true }).tap();
+    await page.getByRole('dialog', { name: 'Einfügen' }).getByRole('button', { name: /^Tabelle/ }).tap();
+    await page.getByLabel(/^Spalten/).fill('6');
+    await page.getByRole('button', { name: 'Tabelle einfügen', exact: true }).tap();
+    await expect(editor.locator('th')).toHaveCount(6);
+    await expect(page.getByRole('toolbar', { name: 'Tabelle' })).toBeVisible();
+    // Sechs Spalten à mindestens 96 px sind breiter als der Bildschirm: Die Tabelle scrollt im Rahmen, die Seite nicht.
+    const sizes = await page.evaluate(() => {
+      const wrapper = document.querySelector('.tableWrapper') as HTMLElement;
+      return { wrapperScrolls: wrapper.scrollWidth > wrapper.clientWidth, pageWidth: document.documentElement.scrollWidth, viewport: window.innerWidth };
+    });
+    expect(sizes.wrapperScrolls).toBe(true);
+    expect(sizes.pageWidth).toBeLessThanOrEqual(sizes.viewport);
+    await page.screenshot({ path: 'test-results/tabelle-am-handy.png' });
     await context.close();
   });
 });

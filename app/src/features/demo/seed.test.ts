@@ -3,6 +3,7 @@ import { db } from '@/core/db/db';
 import { loadAccount } from '@/core/account/account';
 import { memberRepo } from '@/core/db/repos';
 import { DEFAULT_ITEMS } from '@/features/kleidung/model';
+import { schemaAccepts } from '@/features/protokolle/editorSchema';
 import { DEMO_ACCOUNT, isDemoSeeded, seedDemo } from './seed';
 
 describe('Browser-Demo', () => {
@@ -33,6 +34,14 @@ describe('Browser-Demo', () => {
     // Der letzte Dienst lag am Montag davor.
     const last = (await db.sessions.orderBy('date').last())!;
     expect(last.date).toBe('2026-10-05');
+  });
+
+  it('die Beispielprotokolle zeigen Tabelle, Link und Hervorhebung und sind für den Editor lesbar', async () => {
+    await seedDemo(new Date(2026, 9, 6));
+    const docs = await db.protokolle.toArray();
+    const json = JSON.stringify(docs.map((p) => p.content));
+    for (const part of ['"type":"table"', '"type":"tableHeader"', '"type":"tableCell"', '"type":"link"', '"type":"highlight"']) expect(json, part).toContain(part);
+    for (const p of docs) expect(schemaAccepts(p.content), p.title).toBe(true);
   });
 
   it('Zurücksetzen entfernt eigene Änderungen und datiert neu', async () => {

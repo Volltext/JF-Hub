@@ -18,7 +18,7 @@ interface Node {
   type?: string;
   text?: string;
   attrs?: Record<string, unknown>;
-  marks?: { type: string }[];
+  marks?: { type: string; attrs?: Record<string, unknown> }[];
   content?: Node[];
 }
 
@@ -40,7 +40,19 @@ export const TEXT = '#1c1e22';
 export const MUTED = '#6b7280';
 export const RULE = '#d9dce1';
 
-function runs(nodes: Node[] | undefined): Any[] {
+// eslint-disable-next-line no-control-regex
+const CONTROL = /[\u0000-\u001f\u007f]/;
+const LINK = /^(?:https?:\/\/[^\s/?#\\@]\S*|mailto:\S+|tel:\+?[0-9().-]*[0-9][0-9().-]*)$/i;
+
+/** Nur http(s), mailto und tel kommen als anklickbarer Link ins PDF (dieselbe Allowlist wie im Editor), alles andere bleibt Text. */
+function safeLink(href: unknown): string | null {
+  return typeof href === 'string' && href.length <= 2000 && !CONTROL.test(href) && LINK.test(href) ? href : null;
+}
+
+const hexColor = (v: unknown): string | null => (typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v) ? v.toLowerCase() : null);
+const MARKER = '#fff2a8';
+
+function runs(nodes: Node[] | undefined, st: PdfStyle): Any[] {
   const out: Any[] = [];
   for (const n of nodes ?? []) {
     if (n.type === 'hardBreak') {
@@ -55,6 +67,11 @@ function runs(nodes: Node[] | undefined): Any[] {
       else if (m.type === 'underline') run.decoration = 'underline';
       else if (m.type === 'strike') run.decoration = 'lineThrough';
       else if (m.type === 'code') run.background = '#eef0f3';
+      else if (m.type === 'highlight') run.background = hexColor(m.attrs?.color) ?? MARKER;
+      else if (m.type === 'link') {
+        const href = safeLink(m.attrs?.href);
+        if (href) Object.assign(run, { link: href, decoration: 'underline', color: st.accent });
+      }
     }
     out.push(run);
   }
@@ -87,20 +104,125 @@ export interface PdfOptions {
   image?: ImageLoader;
 }
 
-function blocks(nodes: Node[] | undefined, st: PdfStyle, depth = 0, image?: ImageLoader): Any[] {
+// Grenzen für Tabellen im PDF: Was darüber liegt, ersetzt ein Hinweis (feindliche oder versehentlich riesige Eingaben).
+const TABLE_MAX_ROWS = 400;
+const TABLE_MAX_COLS = 24;
+const TABLE_MAX_CELLS = 4000;
+const TABLE_MAX_HEADER_ROWS = 3;
+const HEAD_FILL = '#eef0f3';
+
+const isCell = (n: Node | undefined): n is Node => n?.type === 'tableCell' || n?.type === 'tableHeader';
+/** Spannweite einer Zelle: ganze Zahl ab 1, höchstens `max`; alles andere zählt als 1. */
+const spanOf = (v: unknown, max: number): number => (typeof v === 'number' && Number.isInteger(v) && v >= 1 ? Math.min(v, max) : 1);
+
+function tableNotice(rows: number, cols: number): Any {
+  return { text: [{ text: `Tabelle zu groß für das PDF (${rows} Zeilen × ${cols} Spalten).`, italics: true }], color: MUTED, fontSize: 9.5, margin: [0, 4, 0, 8] };
+}
+
+interface Placed {
+  cell: Node;
+  /** Die Zelle beginnt hier; sonst wird die Stelle nur von einer verbundenen Zelle (colSpan/rowSpan) überdeckt. */
+  origin: boolean;
+  colSpan: number;
+  rowSpan: number;
+}
+
+/**
+ * Eine Tabelle als pdfmake-Tabelle. Die Zellen werden auf ein Raster gelegt wie in HTML (verbundene Zellen belegen mehrere Plätze,
+ * pdfmake verlangt dafür leere Platzhalter), fehlende Zellen aufgefüllt. Liefert null bei einer leeren Tabelle.
+ */
+function tableBlock(n: Node, st: PdfStyle, depth: number, image?: ImageLoader): Any | null {
+  const rows = (n.content ?? []).filter((r) => r?.type === 'tableRow');
+  if (!rows.length) return null;
+  if (rows.length > TABLE_MAX_ROWS) {
+    let widest = 0;
+    for (const r of rows) widest = Math.max(widest, r.content?.length ?? 0);
+    return tableNotice(rows.length, widest);
+  }
+
+  const grid: (Placed | undefined)[][] = rows.map(() => []);
+  let cols = 0;
+  let count = 0;
+  for (let r = 0; r < rows.length; r++) {
+    let c = 0;
+    for (const cell of (rows[r]!.content ?? []).filter(isCell)) {
+      while (grid[r]![c]) c++; // Plätze überspringen, die eine Zelle von oben belegt
+      if (c >= TABLE_MAX_COLS || ++count > TABLE_MAX_CELLS) return tableNotice(rows.length, Math.max(cols, c + 1));
+      const colSpan = spanOf(cell.attrs?.colspan, TABLE_MAX_COLS - c);
+      const rowSpan = spanOf(cell.attrs?.rowspan, rows.length - r);
+      for (let dr = 0; dr < rowSpan; dr++) {
+        for (let dc = 0; dc < colSpan; dc++) grid[r + dr]![c + dc] = { cell, origin: dr === 0 && dc === 0, colSpan, rowSpan };
+      }
+      c += colSpan;
+      cols = Math.max(cols, c);
+    }
+  }
+  if (!cols) return null;
+
+  // Kopfzeilen: die führenden Zeilen, die nur aus Kopfzellen bestehen (wiederholt auf jeder Seite). Eine Kopfzelle, die über die
+  // Kopfzeilen hinausreicht, macht aus der Kopfzeile gewöhnliche Zeilen: pdfmake kann das nicht wiederholen.
+  let headerRows = 0;
+  while (headerRows < Math.min(rows.length - 1, TABLE_MAX_HEADER_ROWS)) {
+    const cells = (rows[headerRows]!.content ?? []).filter(isCell);
+    if (!cells.length || !cells.every((c) => c.type === 'tableHeader')) break;
+    headerRows++;
+  }
+  for (let r = 0; r < headerRows; r++) if (grid[r]!.some((p) => p?.origin && r + p.rowSpan > headerRows)) headerRows = 0;
+
+  const body = grid.map((line) =>
+    Array.from({ length: cols }, (_, c): Any => {
+      const p = line[c];
+      if (!p) return { text: ' ' }; // Lücke: pdfmake braucht überall eine Zelle
+      if (!p.origin) return {}; // von einer verbundenen Zelle überdeckt
+      const content = blocks(p.cell.content, st, depth + 1, image, true);
+      return {
+        stack: content.length ? content : [{ text: ' ' }],
+        ...(p.cell.type === 'tableHeader' ? { bold: true, fillColor: HEAD_FILL } : {}),
+        ...(p.colSpan > 1 ? { colSpan: p.colSpan } : {}),
+        ...(p.rowSpan > 1 ? { rowSpan: p.rowSpan } : {}),
+      };
+    }),
+  );
+
+  // Bewusst kein `dontBreakRows`: pdfmake lässt eine Zeile, die höher ist als eine Seite, damit stumm komplett weg (geprüft mit 300
+  // Absätzen in einer Zelle); eine Zeile über den Seitenumbruch zu teilen sieht schlechter aus, verliert aber keinen Text.
+  return {
+    table: { headerRows, widths: Array.from({ length: cols }, () => '*'), body },
+    layout: {
+      hLineWidth: () => 0.6,
+      vLineWidth: () => 0.6,
+      hLineColor: () => RULE,
+      vLineColor: () => RULE,
+      paddingLeft: () => 5,
+      paddingRight: () => 5,
+      paddingTop: () => 3,
+      paddingBottom: () => 3,
+    },
+    margin: [0, 2, 0, 8],
+  };
+}
+
+/**
+ * Wandelt Knoten in pdfmake-Blöcke. `inCell`: Der Inhalt steht in einer Tabellenzelle (Tabellen werden dort nicht verschachtelt,
+ * Seitenumbrüche entfallen, Bilder werden kleiner, damit eine feindliche Eingabe das Layout nicht sprengt).
+ */
+function blocks(nodes: Node[] | undefined, st: PdfStyle, depth = 0, image?: ImageLoader, inCell = false): Any[] {
   const out: Any[] = [];
+  const add = (items: Any[]) => {
+    for (const item of items) out.push(item); // eine Schleife statt push(...items): große Dokumente sprengen sonst den Stack
+  };
   for (const n of nodes ?? []) {
     switch (n.type) {
       case 'paragraph': {
-        const r = runs(n.content);
-        out.push({ text: r.length ? r : ' ', margin: [0, 0, 0, 5], lineHeight: 1.25 });
+        const r = runs(n.content, st);
+        out.push({ text: r.length ? r : ' ', margin: [0, 0, 0, inCell ? 2 : 5], lineHeight: 1.25 });
         break;
       }
       case 'heading': {
         const level = Number(n.attrs?.level) || 1;
         const size = level === 1 ? 16 : level === 2 ? 13 : 11.5;
         out.push({
-          text: runs(n.content),
+          text: runs(n.content, st),
           bold: true,
           fontSize: size,
           color: level === 1 ? st.accent : TEXT,
@@ -111,10 +233,10 @@ function blocks(nodes: Node[] | undefined, st: PdfStyle, depth = 0, image?: Imag
       }
       case 'bulletList':
       case 'orderedList': {
-        const items = (n.content ?? []).map((li) => ({ stack: blocks(li.content, st, depth + 1, image) }));
+        const items = (n.content ?? []).map((li) => ({ stack: blocks(li.content, st, depth + 1, image, inCell) }));
         out.push({
           [n.type === 'bulletList' ? 'ul' : 'ol']: items,
-          margin: [depth ? 4 : 2, 0, 0, 5],
+          margin: [depth ? 4 : 2, 0, 0, inCell ? 2 : 5],
           markerColor: st.accent,
         });
         break;
@@ -122,7 +244,7 @@ function blocks(nodes: Node[] | undefined, st: PdfStyle, depth = 0, image?: Imag
       case 'taskList': {
         for (const item of n.content ?? []) {
           out.push({
-            columns: [checkbox(item.attrs?.checked === true, st.accent), { width: '*', stack: blocks(item.content, st, depth + 1, image) }],
+            columns: [checkbox(item.attrs?.checked === true, st.accent), { width: '*', stack: blocks(item.content, st, depth + 1, image, inCell) }],
             columnGap: 4,
             margin: [depth ? 4 : 2, 0, 0, 2],
           });
@@ -131,7 +253,7 @@ function blocks(nodes: Node[] | undefined, st: PdfStyle, depth = 0, image?: Imag
       }
       case 'blockquote':
         out.push({
-          table: { widths: [3, '*'], body: [[{ text: '', fillColor: st.accent, border: [false, false, false, false] }, { stack: blocks(n.content, st, depth, image), italics: true, color: MUTED, border: [false, false, false, false] }]] },
+          table: { widths: [3, '*'], body: [[{ text: '', fillColor: st.accent, border: [false, false, false, false] }, { stack: blocks(n.content, st, depth, image, inCell), italics: true, color: MUTED, border: [false, false, false, false] }]] },
           layout: { hLineWidth: () => 0, vLineWidth: () => 0, paddingLeft: (i: number) => (i === 1 ? 10 : 0), paddingRight: () => 0, paddingTop: () => 2, paddingBottom: () => 2 },
           margin: [0, 2, 0, 6],
         });
@@ -139,13 +261,22 @@ function blocks(nodes: Node[] | undefined, st: PdfStyle, depth = 0, image?: Imag
       case 'codeBlock':
         out.push({ text: (n.content ?? []).map((c) => c.text ?? '').join(''), background: '#eef0f3', fontSize: 9.5, margin: [0, 2, 0, 6] });
         break;
+      case 'table': {
+        if (inCell) {
+          add(blocks(n.content, st, depth, image, true)); // nicht verschachteln: nur der Text bleibt
+          break;
+        }
+        const table = tableBlock(n, st, depth, image);
+        if (table) out.push(table);
+        break;
+      }
       case 'ink': {
         const ink = inkDocOf(n.attrs);
         if (!ink) break;
-        const page = n.attrs?.variant === 'page';
+        const page = n.attrs?.variant === 'page' && !inCell;
         const svg = inkSvg(ink, { fixedSize: true });
         // Seiten füllen eine eigene PDF-Seite (A4-Verhältnis); Zeichenflächen laufen mit dem Text mit.
-        out.push({ svg, fit: [495, page ? 700 : 600], margin: [0, page ? 0 : 4, 0, page ? 0 : 8], ...(page ? { pageBreak: 'before' } : {}) });
+        out.push({ svg, fit: inCell ? [120, 160] : [495, page ? 700 : 600], margin: [0, page ? 0 : 4, 0, page ? 0 : 8], ...(page ? { pageBreak: 'before' } : {}) });
         break;
       }
       case 'photo': {
@@ -158,7 +289,7 @@ function blocks(nodes: Node[] | undefined, st: PdfStyle, depth = 0, image?: Imag
           if (blobId) out.push({ text: [{ text: 'Foto nicht verfügbar', italics: true }, ...(caption ? [{ text: `  (${caption})` }] : [])], color: MUTED, fontSize: 9.5, alignment: 'center', margin: [0, 4, 0, 8] });
           break;
         }
-        out.push({ image: src, fit: [495, 600], alignment: 'center', margin: [0, 4, 0, caption ? 2 : 8] });
+        out.push({ image: src, fit: inCell ? [120, 160] : [495, 600], alignment: 'center', margin: [0, 4, 0, caption ? 2 : 8] });
         if (caption) out.push({ text: caption, color: MUTED, fontSize: 9, alignment: 'center', margin: [0, 0, 0, 8] });
         break;
       }
@@ -173,7 +304,7 @@ function blocks(nodes: Node[] | undefined, st: PdfStyle, depth = 0, image?: Imag
         out.push({ canvas: [{ type: 'line', x1: 0, y1: 0, x2: 495, y2: 0, lineWidth: 0.7, lineColor: RULE }], margin: [0, 6, 0, 8] });
         break;
       default:
-        if (n.content) out.push(...blocks(n.content, st, depth, image));
+        if (n.content) add(blocks(n.content, st, depth, image, inCell));
     }
   }
   return out;
@@ -203,7 +334,7 @@ export function buildDocDefinition(doc: ServerDoc, st: PdfStyle, opts: PdfOption
     });
   }
   content.push(accentRule(st));
-  content.push(...blocks((doc.content as Node)?.content, st, 0, opts.image));
+  for (const block of blocks((doc.content as Node)?.content, st, 0, opts.image)) content.push(block);
 
   return { ...pageFrame(st, doc.title || 'Protokoll'), content };
 }

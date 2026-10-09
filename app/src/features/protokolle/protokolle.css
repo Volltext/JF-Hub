@@ -32,9 +32,10 @@ body.web .icon-btn { cursor: pointer; }
 .proto-meta__wide { grid-column: 1 / -1; }
 @media (min-width: 720px) { .proto-meta__wide { grid-column: span 2; } }
 
-/* Formatierungsleiste */
-.ed-toolbar { display: flex; align-items: center; gap: 2px; padding: var(--s-1); overflow-x: auto; scrollbar-width: none; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); z-index: 5; }
-.ed-toolbar::-webkit-scrollbar { display: none; }
+/* Formatierungsleiste: ein „Dock“ aus Werkzeugleiste und Kontextzeile (Link, Tabelle) */
+.ed-dock { display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); z-index: 5; }
+.ed-toolbar { display: flex; align-items: center; gap: 2px; padding: var(--s-1); overflow-x: auto; scrollbar-width: none; }
+.ed-toolbar::-webkit-scrollbar, .ed-context::-webkit-scrollbar { display: none; }
 .ed-tool { flex: 0 0 auto; width: 44px; height: 44px; display: grid; place-items: center; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text); cursor: pointer; }
 .ed-tool:hover { background: var(--surface-2); }
 .ed-tool[aria-pressed='true'] { background: var(--primary); color: var(--on-primary); }
@@ -42,10 +43,24 @@ body.web .icon-btn { cursor: pointer; }
 .ed-tool:focus-visible, .proto-title:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
 .ed-toolbar__sep { flex: 0 0 1px; align-self: stretch; margin: 8px 4px; background: var(--border); }
 
-/* Maus/Tastatur: Leiste haftet oben. Touch: Leiste haftet unten, direkt über der Bildschirmtastatur. */
-@media (pointer: fine) { .ed-toolbar { position: sticky; top: var(--s-2); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18); } }
+/* Kontextzeile: Link-Leiste oder Tabellen-Leiste, je nachdem, wo der Cursor steht */
+.ed-context { display: flex; align-items: center; gap: var(--s-2); padding: var(--s-1) var(--s-2); overflow-x: auto; scrollbar-width: none; background: var(--surface-2); border-radius: var(--r-md) var(--r-md) 0 0; border-bottom: 1px solid var(--border); }
+.ed-context__label { flex: 1 1 6rem; min-width: 0; display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 0.9rem; }
+.ed-context__label > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ed-chip { flex: 0 0 auto; min-height: 44px; padding: 0 var(--s-3); border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--text); font-size: 0.9rem; font-weight: 600; white-space: nowrap; cursor: pointer; }
+.ed-chip:hover { background: color-mix(in srgb, var(--text) 8%, var(--surface)); }
+.ed-chip[aria-pressed='true'] { background: var(--primary); border-color: transparent; color: var(--on-primary); }
+.ed-chip:disabled { opacity: 0.35; cursor: default; }
+.ed-chip--danger { color: var(--danger); }
+.ed-chip:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+
+/* Maus/Tastatur: Dock haftet oben, die Kontextzeile steht unter der Leiste. Touch: Dock haftet unten, direkt über der Bildschirmtastatur, die Kontextzeile steht über der Leiste. */
+@media (pointer: fine) {
+  .ed-dock { position: sticky; top: var(--s-2); flex-direction: column-reverse; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18); }
+  .ed-context { border-radius: 0 0 var(--r-md) var(--r-md); border-bottom: 0; border-top: 1px solid var(--border); }
+}
 @media (pointer: coarse) {
-  .ed-toolbar { order: 5; position: sticky; bottom: 0; border-radius: var(--r-md) var(--r-md) 0 0; box-shadow: 0 -4px 14px rgba(0, 0, 0, 0.25); }
+  .ed-dock { order: 5; position: sticky; bottom: 0; border-radius: var(--r-md) var(--r-md) 0 0; box-shadow: 0 -4px 14px rgba(0, 0, 0, 0.25); }
   .proto-sheet--body { order: 4; }
   body.editing .nav { display: none; }
 }
@@ -67,6 +82,19 @@ body.web .icon-btn { cursor: pointer; }
 .ed-content hr { border: 0; border-top: 1px solid var(--border); margin: 1.2em 0; }
 .ed-content code { background: var(--surface-2); padding: 0.1em 0.35em; border-radius: 4px; font-family: var(--font-mono); font-size: 0.92em; }
 .ed-content u { text-underline-offset: 3px; }
+.ed-content a { color: var(--primary); text-decoration: underline; text-underline-offset: 3px; }
+.ed-content mark { background: color-mix(in srgb, #facc15 38%, transparent); color: inherit; padding: 0 0.12em; border-radius: 3px; }
+:root[data-theme='light'] .ed-content mark { background: #fff1a6; }
+
+/* Tabellen: gleich breite Spalten, mindestens 96 px (Tiptap setzt `min-width` an der Tabelle): Bei vielen Spalten scrollt der Rahmen waagerecht statt die Spalten zu zerquetschen. */
+.ed-content .tableWrapper { overflow-x: auto; margin-block: 0.7em; }
+.ed-content table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.ed-content th, .ed-content td { position: relative; padding: 0.35em 0.55em; border: 1px solid color-mix(in srgb, var(--muted) 45%, transparent); vertical-align: top; text-align: left; }
+.ed-content th { background: var(--surface-2); font-weight: 700; }
+.ed-content th > *:first-child, .ed-content td > *:first-child { margin-top: 0; }
+.ed-content th > * + *, .ed-content td > * + * { margin-top: 0.3em; }
+.ed-content th ul, .ed-content td ul, .ed-content th ol, .ed-content td ol { padding-left: 1.2em; margin-block: 0.15em; }
+.ed-content .selectedCell::after { content: ''; position: absolute; inset: 0; background: color-mix(in srgb, var(--primary) 18%, transparent); pointer-events: none; }
 
 .ed-content ul[data-type='taskList'] { list-style: none; padding-left: 0.1em; }
 .ed-content ul[data-type='taskList'] li { display: flex; align-items: flex-start; gap: 0.6em; }
