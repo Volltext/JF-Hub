@@ -50,7 +50,7 @@ import { exchange, type ExchangeRequest } from './collab/exchange.js';
 import { createPeers } from './collab/peers.js';
 import { collabStats, migrateYjs } from './collab/migrate.js';
 
-export const VERSION = '2.3.0';
+export const VERSION = '3.0.0';
 export { API_VERSION, MIN_SCHEMA };
 const COOKIE = 'jfh_session';
 

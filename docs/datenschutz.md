@@ -18,7 +18,8 @@
 | Mitglieder: **Name**, Jugendlicher/Betreuer, aktiv | Server + Geräte | **keine** Geburtsdaten, Adressen, Kontakte |
 | Dienste: Datum, wer anwesend/abwesend war | Server + Geräte | |
 | Kleidergrößen und Bestellwünsche je Mitglied | Server + Geräte | |
-| Protokolle (Text, Fotos, Anhänge, Handschrift), Aufgaben | Server + Geräte | Inhalt bestimmen die Betreuer – denkt an Fotos von Kindern |
+| Protokolle (Text, Fotos, Anhänge, Handschrift), Aufgaben | Server + Geräte | Inhalt bestimmen die Betreuer – denkt an Fotos von Kindern. Der Text liegt in der Datenbank zweimal vor (als gemeinsames Dokument zum Mitschreiben und als lesbarer Inhalt für Liste, Suche und PDF) |
+| Wer ein Protokoll gerade geöffnet hat | nur im Arbeitsspeicher des Servers, etwa 15 Sekunden | Die Namen sehen alle, die das Protokoll sehen dürfen („Anna ist auch hier“). Gespeichert wird nichts davon, nach einem Neustart ist es weg |
 | Push-Abonnements: technische Adresse des Push-Dienstes deines Browsers, geplante Erinnerungen | Server | werden beim Abmelden gelöscht |
 | Wettkampf-Läufe (mit Namen der aufgestellten Mitglieder) und Aufstellungs-Vorlagen | Server + Geräte | für alle Betreuer sichtbar |
 | Laufende Stoppuhr, aktuelle Aufstellung | nur Gerät | Arbeitsstand, wird nicht an den Server gesendet |
@@ -49,7 +50,7 @@ Es gibt **keine Analyse-Werkzeuge, keine Werbung und keine Weitergabe** an Dritt
 **Backups und Löschen**
 
 - **Backups:** Das Backup enthält die vollständigen Daten. Verschlüsselt und nicht in einer fremden Cloud ablegen. Der Server legt täglich automatische Backups in `/data/backups` an. Gelöschte Mitglieder oder Protokolle stecken dort noch bis zu 7 Tage (einstellbar) weiter drin, bis das Backup durch ein neueres ersetzt wird.
-- **Löschen:** Mitglieder löschen entfernt auch ihre Kleidergrößen. Frühere Dienste behalten eine Referenz auf die ID (ohne Namen), die Statistik ignoriert sie. Protokolle landen zuerst im Papierkorb (30 Tage, einstellbar), aus dem jeder Betreuer seine eigenen in der App zurückholen kann. Danach werden sie endgültig geleert: Titel, Text, Ort und Leitung sind weg. Es bleibt ein leerer Eintrag mit Datum und Zeiten, mindestens 90 Tage lang, damit ein Gerät, das so lange kein Netz hatte, das Protokoll nicht wieder auftauchen lässt. Fotos und Dateien eines endgültig geleerten Protokolls entfernt der Server nach spätestens etwa einer Woche. Endgültiges Löschen gibt es auch sofort: *Admin → Protokolle → Papierkorb*.
+- **Löschen:** Mitglieder löschen entfernt auch ihre Kleidergrößen. Frühere Dienste behalten eine Referenz auf die ID (ohne Namen), die Statistik ignoriert sie. Protokolle landen zuerst im Papierkorb (30 Tage, einstellbar), aus dem jeder Betreuer seine eigenen in der App zurückholen kann. Danach werden sie endgültig geleert: Titel, Text (auch das gemeinsame Dokument), Ort und Leitung sind weg. Es bleibt ein leerer Eintrag mit Datum und Zeiten, mindestens 90 Tage lang, damit ein Gerät, das so lange kein Netz hatte, das Protokoll nicht wieder auftauchen lässt. Fotos und Dateien eines endgültig geleerten Protokolls entfernt der Server nach spätestens etwa einer Woche. Endgültiges Löschen gibt es auch sofort: *Admin → Protokolle → Papierkorb*.
 - **Auskunft/Export:** *Admin → Backup & Export* liefert alle Protokolle als PDF + JSON. Daten einzelner Personen stehen in der Datenbank (SQLite) und lassen sich auslesen.
 
 ## Technischer Schutz

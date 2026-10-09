@@ -35,6 +35,9 @@ Die App ist **nicht** im Play Store.
 
 Neue APK einfach drüberinstallieren. Das klappt nur, wenn sie mit **demselben Schlüssel** signiert ist. Releases dieses Projekts sind immer mit dem Schlüssel des Projekts signiert. Selbst gebaute APKs tragen deine eigene Signatur und lassen sich nicht über die Release-APK installieren (und umgekehrt). Dann vorher die Daten sichern bzw. neu anmelden (sie liegen auf dem Server).
 
+> [!IMPORTANT]
+> **Ab Version 3.0.0 gehört zu einem aktualisierten Server immer die neue APK.** Der Server schreibt den Text der Protokolle jetzt gemeinsam mit allen Geräten fort und lässt ältere Apps nicht mehr ran: Sie melden „Bitte die App aktualisieren“. Ihre Daten bleiben unberührt; ungesendete Änderungen aus der alten App legt die neue als Protokoll „… (lokale Fassung)“ an. Auf eine ältere APK zurückzugehen, ist nach dem Update nicht möglich: Die Datenbank der App wird nur vorwärts umgebaut.
+
 ## Selbst bauen
 
 Voraussetzungen: Node 22, JDK 21 (z. B. das von Android Studio), Android SDK.

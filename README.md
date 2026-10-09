@@ -36,12 +36,12 @@ Protokolle, Dienste, Aufgaben, Kleidergrößen und Wettkampf-Training – auf Ha
 
 | | Bereich | Das gibt es |
 | :---: | --- | --- |
-| 📝 | **Protokolle** | Editor mit Überschriften, Listen und Checklisten, **Tabellen**, **Links**, Hervorhebung, **Fotos**, Anhänge und **Handschrift**, Ordner, Volltextsuche, **PDF** im eigenen Layout (Logo, Fußzeile, Farbe) |
+| 📝 | **Protokolle** | Editor mit Überschriften, Listen und Checklisten, **Tabellen**, **Links**, Hervorhebung, **Fotos**, Anhänge und **Handschrift**, **gemeinsames Schreiben** (mehrere Betreuer gleichzeitig, auch mit Geräten ohne Netz), Ordner, Volltextsuche, **PDF** im eigenen Layout (Logo, Fußzeile, Farbe) |
 | 📅 | **Dienste** | Anwesenheit per Antippen erfassen, Statistik, wöchentliche **Erinnerung** (mit Ferien-Rhythmus je Bundesland) |
 | ✅ | **Aufgaben** | Eigene Aufgaben oder für alle Betreuer **veröffentlichen**, mit Fälligkeit und Erinnerung |
 | 👕 | **Kleidung** | Kleidergrößen je Mitglied, „eine Größe größer“ vormerken, fertige PDF-Liste für den Kleiderwart |
 | ⏱️ | **Wettkampf** | Bundeswettbewerb und Leistungsspange: Aufstellung, Stoppuhr, Fehlerwertung, Analyse, Wissensdatenbank |
-| 👥 | **Mehrere Betreuer** | Eigenes Konto je Person (Einladung per Link), Protokolle und Aufgaben **privat oder für alle** |
+| 👥 | **Mehrere Betreuer** | Eigenes Konto je Person (Einladung per Link), Protokolle und Aufgaben **privat oder für alle**, Protokolle auch **gleichzeitig bearbeiten** |
 | 📱 | **Überall nutzbar** | Als **App im Browser** (iPhone, Android, Windows, Mac, Linux) oder als **Android-App** mit Stift-Handschrift |
 | 📴 | **Offline** | Alles liegt lokal auf dem Gerät und wird abgeglichen, sobald wieder Netz da ist |
 | 🔒 | **Deine Daten** | Alles liegt auf **deinem** Server, nicht bei einem Anbieter. Keine Werbung, keine Analyse |
