@@ -105,7 +105,7 @@ async function openFile(attrs: Record<string, unknown>, name: string, mime: stri
   try {
     const blobId = String(attrs.blobId ?? '');
     if (blobId) {
-      const { data } = await ensureBlob({ id: blobId, kind: 'file', mime, name });
+      const { data } = await ensureBlob({ id: blobId, kind: 'file', mime, name, size: Number(attrs.size) || undefined });
       await shareBinaryFile(name, bytesToBase64(data), mime);
       return;
     }

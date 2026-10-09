@@ -1,4 +1,4 @@
-import { CACHE_LIMIT_BYTES, evictBlobs, markRejected, markSynced, pendingBlobs, readBlob, saveDownloaded } from '@/core/db/blobs';
+import { CACHE_LIMIT_BYTES, evictBlobs, markFailed, markRejected, markSynced, pendingBlobs, readBlob, saveDownloaded } from '@/core/db/blobs';
 import { db, type HubDb, type LocalBlob } from '@/core/db/db';
 import { base64ToBytes, bytesToBase64 } from '@/core/domain/base64';
 import { ProtoError, loadConn, request } from './http';
@@ -34,21 +34,23 @@ export const httpTransport: BlobTransport = {
   },
 };
 
-/** Der Server lehnt diese Anhänge dauerhaft ab (zu groß, kein JPEG, Kennung vergeben, in der Demo nicht erlaubt …). */
+/** Der Server lehnt diesen Anhang ab (zu groß, kein JPEG, Kennung vergeben, in der Demo nicht erlaubt …): kein weiterer Versuch, bis jemand „Alles neu abgleichen“ wählt. */
 const REFUSED = new Set([400, 403, 409, 413, 415, 422]);
-/** Bei diesen Antworten hat weiteres Versuchen keinen Sinn: keine Verbindung, abgemeldet, zu viele Anfragen. Der Abgleich bricht ab. */
-const ABORT = new Set([0, 401, 408, 429]);
 
 /**
- * Lädt alle wartenden Anhänge hoch. Was der Server dauerhaft ablehnt, wird vermerkt und nicht erneut versucht. Fehlt die Verbindung
- * (oder gilt die Anmeldung nicht mehr), bricht der Lauf ab und mit ihm der ganze Abgleich. Ein Serverfehler bei einem einzelnen
- * Anhang hält die Protokolle nicht auf: Er bleibt wartend und kommt beim nächsten Abgleich wieder dran (`failed`).
+ * Lädt die wartenden Anhänge hoch, die kleinsten zuerst. Das darf die Protokolle nie aufhalten, deshalb wirft es nur, wenn der Server
+ * diese App-Version gar nicht kennt (426: dorthin soll nichts gesendet werden). Sonst gilt:
+ * - Der Server lehnt den Anhang ab: vermerkt und nicht erneut versucht (`rejected`).
+ * - Offline, abgemeldet oder gedrosselt: weitere Versuche in diesem Lauf sind zwecklos, die übrigen bleiben wartend.
+ * - Zeitlimit oder Serverfehler: Der Anhang pausiert mit wachsender Pause (bis zu einer Stunde) und blockiert so weder den Abgleich
+ *   noch bei jedem Lauf zwei Minuten Wartezeit (`failed`).
  */
-export async function uploadPendingBlobs(transport: BlobTransport = httpTransport, store: HubDb = db): Promise<{ uploaded: number; rejected: number; failed: number }> {
+export async function uploadPendingBlobs(transport: BlobTransport = httpTransport, store: HubDb = db, now = Date.now()): Promise<{ uploaded: number; rejected: number; failed: number }> {
   let uploaded = 0;
   let rejected = 0;
   let failed = 0;
-  for (const meta of await pendingBlobs(store)) {
+  const queue = (await pendingBlobs(store, now)).sort((a, b) => a.size - b.size);
+  for (const meta of queue) {
     const row = await store.blobData.get(meta.id);
     if (!row) {
       await store.blobs.delete(meta.id); // beschädigt: keine Bytes, nichts hochzuladen
@@ -59,13 +61,16 @@ export async function uploadPendingBlobs(transport: BlobTransport = httpTranspor
       await markSynced(meta.id, store);
       uploaded++;
     } catch (e) {
-      if (!(e instanceof ProtoError) || ABORT.has(e.status)) throw e;
+      if (!(e instanceof ProtoError)) throw e;
+      if (e.status === 426) throw e;
       if (REFUSED.has(e.status)) {
         await markRejected(meta.id, e.message, store);
         rejected++;
-      } else {
-        failed++;
+        continue;
       }
+      failed++;
+      if (e.status === 401 || e.status === 429 || (e.status === 0 && !e.timedOut)) break;
+      await markFailed(meta.id, store, now);
     }
   }
   return { uploaded, rejected, failed };
@@ -85,7 +90,10 @@ export class BlobUnavailable extends Error {
 
 function explain(e: unknown): BlobUnavailable {
   if (e instanceof ProtoError) {
-    if (e.status === 0) return e.message.startsWith('Keine Verbindung') ? new BlobUnavailable('Keine Verbindung zum Server.', 'offline') : new BlobUnavailable(e.message, 'no-server');
+    if (e.status === 0) {
+      if (e.timedOut) return new BlobUnavailable(e.message, 'offline');
+      return e.message.startsWith('Keine Verbindung') ? new BlobUnavailable('Keine Verbindung zum Server.', 'offline') : new BlobUnavailable(e.message, 'no-server');
+    }
     if (e.status === 404) return new BlobUnavailable('Der Server hat diesen Anhang nicht (mehr).', 'missing');
     return new BlobUnavailable(e.message, 'error');
   }
@@ -97,6 +105,14 @@ export interface BlobInfo {
   kind: 'photo' | 'file';
   mime: string;
   name: string;
+  /** Die Größe, die das Protokoll angibt (Dateien): Eine Antwort, die nicht passt, ist keine Datei, sondern etwa eine Fehlerseite. */
+  size?: number;
+}
+
+/** Ist das, was der Server geliefert hat, plausibel? Sonst würde zum Beispiel eine Fehlerseite eines Proxys dauerhaft als Foto gemerkt. */
+function plausible(info: BlobInfo, data: Uint8Array): boolean {
+  if (info.kind === 'photo') return data.length >= 4 && data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff;
+  return data.length > 0 && (!info.size || data.length === info.size);
 }
 
 const inflight = new Map<string, Promise<{ meta: LocalBlob; data: Uint8Array }>>();
@@ -115,6 +131,7 @@ export async function ensureBlob(info: BlobInfo, transport: BlobTransport = http
       } catch (e) {
         throw explain(e);
       }
+      if (!plausible(info, data)) throw new BlobUnavailable(info.kind === 'photo' ? 'Der Server hat kein gültiges Foto geliefert.' : 'Die Datei ist nicht vollständig angekommen.', 'error');
       const meta = await saveDownloaded(info, data, store);
       void evictBlobs(CACHE_LIMIT_BYTES, store).catch(() => undefined);
       return { meta, data };

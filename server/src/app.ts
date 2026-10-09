@@ -140,8 +140,12 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
       app.log.error({ err: e }, 'Fotos und Dateien konnten nicht aus den Protokollen ausgelagert werden');
     }
     // Die Verweise (wer braucht welchen Anhang) sind abgeleitet; hier werden sie gegen den Inhalt geprüft, bevor aufgeräumt wird.
-    const fixed = reindexBlobRefs(db);
-    if (fixed) app.log.warn(`Anhang-Verweise von ${fixed} Protokoll(en) neu aufgebaut`);
+    try {
+      const fixed = reindexBlobRefs(db);
+      if (fixed) app.log.warn(`Anhang-Verweise von ${fixed} Protokoll(en) neu aufgebaut`);
+    } catch (e) {
+      app.log.error({ err: e }, 'Anhang-Verweise konnten nicht geprüft werden');
+    }
   }
   const demoAt = opts.demo ? parseResetAt(opts.demo.resetAt) : undefined;
   if (opts.demo) {
@@ -388,8 +392,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
     const photo = meta.kind === 'photo';
     reply.header('Content-Type', photo ? 'image/jpeg' : 'application/octet-stream');
     reply.header('Content-Disposition', photo ? 'inline' : `attachment; filename*=UTF-8''${encodeURIComponent(safeFileName(meta.name, 'Datei', 120))}`);
-    if (req.method === 'HEAD') return reply.header('Content-Length', meta.size).send();
-    return reply.send(readBlobData(db, meta.id));
+    return reply.send(readBlobData(db, meta.id)); // bei HEAD lässt Fastify den Inhalt weg, die Länge stimmt
   });
 
   app.get<{ Params: { id: string } }>('/api/protocols/:id/pdf', async (req, reply) => {

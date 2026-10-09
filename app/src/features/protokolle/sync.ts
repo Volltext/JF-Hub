@@ -1,7 +1,7 @@
 import type { JSONContent } from '@tiptap/core';
 import { db, type HubDb, type SyncCollection } from '@/core/db/db';
 import { saveDirectory, type DirectoryUser } from '@/core/account/account';
-import { requeueBlobs } from '@/core/db/blobs';
+import { rejectedBlobCount, requeueBlobs, retryBlobsNow } from '@/core/db/blobs';
 import { BASE_COLLECTIONS, SYNC_COLLECTIONS, seedOutboxOnce } from '@/core/db/outbox';
 import { httpTransport, uploadPendingBlobs, type BlobTransport } from './blobSync';
 import { noteConflicts } from './conflicts';
@@ -157,7 +157,9 @@ export async function performSync(
   store: HubDb = db,
   blobTransport: BlobTransport = httpTransport,
 ): Promise<SyncResult> {
-  // Zuerst die Anhänge: Ein Protokoll soll beim Server nie auf einen Anhang zeigen, den es noch nicht gibt.
+  // Zuerst die Anhänge: Ein Protokoll soll beim Server möglichst nie auf einen Anhang zeigen, den es noch nicht gibt. Was sich nicht
+  // hochladen lässt, hält die Protokolle aber nicht auf. Mit „Alles neu abgleichen“ bekommen auch abgelehnte Anhänge einen neuen Versuch.
+  if (opts.full) await retryBlobsNow(store);
   const blobs = await uploadPendingBlobs(blobTransport, store);
 
   const storedEpoch = (await store.kv.get(EPOCH_KEY))?.value as string | undefined;
@@ -346,6 +348,7 @@ export function syncNow(opts: SyncOptions = {}): Promise<SyncResult | null> {
       st.set({ state: 'syncing', message: '' });
       await seedOutboxOnce();
       const result = await performSync((req) => request<SyncResponse>(conn, 'POST', '/api/sync', req), opts);
+      const stuck = await rejectedBlobCount(); // bleibt im Hinweis stehen, solange es solche Anhänge gibt, nicht nur in dem Lauf, der sie abgelehnt hat
       st.set({
         state: 'idle',
         lastSyncAt: Date.now(),
@@ -353,8 +356,8 @@ export function syncNow(opts: SyncOptions = {}): Promise<SyncResult | null> {
         message: [
           result.conflicts ? `${result.conflicts} Konflikt(e): Kopie mit „(Konflikt)“ im Titel angelegt.` : '',
           result.rejected ? `${result.rejected} Protokoll(e) vom Server abgelehnt (zu groß oder ungültig).` : '',
-          result.blobs.rejected ? `${result.blobs.rejected} Anhang/Anhänge vom Server abgelehnt (zu groß oder kein gültiges Foto).` : '',
-          result.blobs.failed ? `${result.blobs.failed} Anhang/Anhänge konnten noch nicht hochgeladen werden (Serverfehler), der nächste Abgleich versucht es erneut.` : '',
+          stuck ? `${stuck} Anhang/Anhänge vom Server abgelehnt (zu groß oder kein gültiges Foto; bei einem eigenen Proxy die maximale Anfragegröße prüfen). „Alles neu abgleichen“ versucht es erneut.` : '',
+          result.blobs.failed ? `${result.blobs.failed} Anhang/Anhänge konnten noch nicht hochgeladen werden, der Abgleich versucht es später erneut.` : '',
         ]
           .filter(Boolean)
           .join(' '),

@@ -16,12 +16,12 @@ Fotos und Dateien liegen nicht mehr im Text der Protokolle, sondern als eigene A
 
 ### Neu
 
-- **Anhänge als eigene Einträge:** Die App legt ein Foto oder eine Datei zuerst auf dem Gerät ab und lädt es beim Abgleich **vor** dem Protokoll hoch. Eingefügt ist es sofort zu sehen, auch ohne Netz. Die anderen Betreuer bekommen ein Foto erst, wenn sie es anschauen (und dann bleibt es auf dem Gerät; der Zwischenspeicher fasst 300 MB, die ältesten Kopien weichen zuerst, nie ein Anhang, der nur auf dem Gerät liegt).
+- **Anhänge als eigene Einträge:** Die App legt ein Foto oder eine Datei zuerst auf dem Gerät ab und lädt es beim Abgleich **vor** dem Protokoll hoch. Eingefügt ist es sofort zu sehen, auch ohne Netz. Die anderen Betreuer bekommen ein Foto erst, wenn sie es anschauen (und dann bleibt es auf dem Gerät; der Zwischenspeicher fasst 300 MB, die ältesten Kopien weichen zuerst, nie ein Anhang, der nur auf dem Gerät liegt, und keiner, auf den ein noch nicht gesendetes Protokoll verweist).
 - **Dateien bis 10 MB** (vorher 3 MB, und 8 MB je Protokoll insgesamt). Fotos werden wie bisher auf 1600 Pixel verkleinert.
 - **Wer ein Foto sieht, bestimmt das Protokoll:** Es ist für den sichtbar, der es hochgeladen hat, und für jeden, der ein sichtbares Protokoll sieht, das darauf verweist. Nimmt der Besitzer ein Protokoll zurück oder löscht es, sehen die anderen auch das Foto nicht mehr.
 - **PDF und ZIP-Export** holen die Fotos aus den Anhängen. Fehlt eines, steht an seiner Stelle „Foto nicht verfügbar“, und das PDF entsteht trotzdem. Das ZIP enthält die Fotos und Dateien zusätzlich unter `attachments/`; das JSON verweist mit derselben Kennung darauf.
 - **Verwaltung:** Die Übersicht zeigt, wie viele Fotos und Anhänge der Server hält und wie viel Platz sie belegen; die Größe eines Protokolls zählt sie mit.
-- **Hinweise bei Problemen:** Lehnt der Server einen Anhang ab (zu groß, kein gültiges JPEG), steht das im Abgleich-Symbol, und der Anhang wird nicht erneut versucht. Ein Serverfehler bei einem einzelnen Anhang hält die Protokolle nicht auf.
+- **Hinweise bei Problemen:** Lehnt der Server einen Anhang ab (zu groß, kein gültiges JPEG), steht das im Abgleich-Symbol und bleibt dort stehen, solange ein Protokoll den Anhang noch braucht (wer das Foto wieder entfernt, ist den Hinweis los); der Anhang wird nicht erneut versucht. Scheitert ein Upload an einem Serverfehler oder einem Zeitlimit (zum Beispiel bei langsamem Mobilfunk), pausiert nur dieser Anhang, mit wachsender Pause von einer bis zu 60 Minuten. Die Protokolle gehen in jedem Fall durch. **„Alles neu abgleichen“** gibt abgelehnten und pausierten Anhängen einen neuen Versuch. Leere Dateien werden nicht angehängt, und ein unvollständig angekommenes Foto wird nicht gemerkt, sondern neu geladen.
 - **Sicherung (Version 7) und Abmelden** berücksichtigen Anhänge: Die Sicherung enthält die, die nur auf dem Gerät liegen; die Warnung vor dem Abmelden zählt sie als nicht abgeglichen.
 
 ### Geändert
@@ -29,7 +29,8 @@ Fotos und Dateien liegen nicht mehr im Text der Protokolle, sondern als eigene A
 - **Schnittstelle 3, Dokumentformat 3.** Der Server nimmt Apps erst ab dem Dokumentformat 2 an (2.1.0 und neuer).
 - Fotos und Dateien aus Apps bis 2.1.x, die noch im Text stecken, lagert der Server beim Speichern selbst aus. Dasselbe Foto in mehreren Protokollen (auch die vielen Konfliktkopien, die frühere Versionen angelegt haben) ergibt einen einzigen Anhang, die Datenbank kann dadurch kleiner werden.
 - **Demo:** nur Fotos bis 2 MB, keine Dateianhänge. Das tägliche Zurücksetzen räumt jetzt alle Tabellen ab, auch die hochgeladenen Anhänge der Besucher.
-- Anhänge, auf die kein Protokoll mehr verweist, räumt der Server nach sieben Tagen auf; nach dem endgültigen Löschen eines Protokolls sind seine Anhänge also spätestens nach etwa einer Woche weg.
+- Anhänge, auf die kein Protokoll mehr verweist, räumt der Server sieben Tage nach dem Wegfall des letzten Verweises auf (er prüft alle sechs Stunden). Nach dem endgültigen Löschen eines Protokolls sind seine Anhänge also nach gut einer Woche weg; ein Gerät, das lange offline war und dann ein Protokoll mit altem Verweis schickt, kommt innerhalb der Frist noch an sein Foto.
+- Kennungen der Form `p-…` und `f-…` mit 40 Hexzeichen vergibt der Server beim Auslagern aus alten Protokollen selbst (sie ergeben sich aus dem Inhalt). Ein Upload darf so eine Kennung nur tragen, wenn der Inhalt dazu passt.
 - Wird ein Backup aus einer älteren Version wiederhergestellt, lagert der Server die Anhänge dabei ebenfalls aus.
 
 ## [2.1.0] – 2026-10-09

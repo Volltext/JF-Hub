@@ -17,9 +17,17 @@ export class ProtoError extends Error {
     message: string,
     /** HTTP-Status; 0 = keine Verbindung. */
     readonly status = 0,
+    /** Bei Status 0: Die Anfrage hat zu lange gedauert (eine Verbindung gibt es, sie ist aber zu langsam oder bricht ab), das Gerät ist nicht offline. */
+    readonly timedOut = false,
   ) {
     super(message);
   }
+}
+
+/** Hat die Anfrage das Zeitlimit überschritten? (Browser: `TimeoutError`; die native HTTP-Schicht meldet es im Text.) */
+function isTimeout(e: unknown): boolean {
+  if ((e as { name?: unknown } | null)?.name === 'TimeoutError') return true;
+  return /time(d)?[ -]?out/i.test(String((e as { message?: unknown } | null)?.message ?? e));
 }
 
 export interface ProtoConn {
@@ -85,8 +93,9 @@ export async function request<T>(conn: ProtoConn, method: string, path: string, 
   try {
     const send = Capacitor.isNativePlatform() ? nativeRequest : webRequest;
     res = await send(method, conn.url + path, headers, body, binary, opts.timeoutMs ?? DEFAULT_TIMEOUT);
-  } catch {
-    throw new ProtoError('Keine Verbindung zum Server.', 0);
+  } catch (e) {
+    const timedOut = isTimeout(e);
+    throw new ProtoError(timedOut ? 'Zeitüberschreitung: Die Verbindung ist zu langsam oder wurde unterbrochen.' : 'Keine Verbindung zum Server.', 0, timedOut);
   }
   if (res.status >= 200 && res.status < 300) return res.data as T;
   const msg = (res.data as { error?: string } | null)?.error;

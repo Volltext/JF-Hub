@@ -511,12 +511,33 @@ describe('Anhänge im Abgleich', () => {
     expect(await db.blobs.get('foto-0001')).toMatchObject({ state: 'synced' });
   });
 
-  it('scheitert der Upload, bleibt das Protokoll unverändert vorgemerkt und der Server hört nichts', async () => {
+  it('lässt sich ein Anhang nicht hochladen (offline), hält das die Protokolle nicht auf; der Anhang bleibt wartend', async () => {
     await photoBlob('foto-0001');
     const p = { ...newProtokoll(), title: 'Mit Foto', content: withPhoto('foto-0001') };
     await db.protokolle.add(p);
     let called = false;
     const transport: BlobTransport = { upload: async () => Promise.reject(new ProtoError('Keine Verbindung zum Server.', 0)), download: noDownload };
+    const res = await performSync(
+      async () => {
+        called = true;
+        return { rev: 2, changes: [serverDoc(p.id, { title: 'Mit Foto', updatedAt: p.updatedAt, rev: 2 })], folders: [], conflicts: [] };
+      },
+      {},
+      db,
+      transport,
+    );
+    expect(called).toBe(true);
+    expect(res.blobs).toEqual({ uploaded: 0, rejected: 0, failed: 1 });
+    expect(await db.protokolle.get(p.id)).toMatchObject({ dirty: 0 });
+    expect(await db.blobs.get('foto-0001')).toMatchObject({ state: 'local' });
+  });
+
+  it('ein Server, der diese App-Version nicht kennt (426 beim Anhang), bekommt auch das Protokoll nicht', async () => {
+    await photoBlob('foto-0001');
+    const p = { ...newProtokoll(), title: 'Mit Foto', content: withPhoto('foto-0001') };
+    await db.protokolle.add(p);
+    let called = false;
+    const transport: BlobTransport = { upload: async () => Promise.reject(new ProtoError('Der Server ist zu alt für diese App-Version. Bitte den Server aktualisieren.', 426)), download: noDownload };
     await expect(
       performSync(
         async () => {
@@ -527,10 +548,24 @@ describe('Anhänge im Abgleich', () => {
         db,
         transport,
       ),
-    ).rejects.toMatchObject({ status: 0 });
+    ).rejects.toMatchObject({ status: 426 });
     expect(called).toBe(false);
-    expect(await db.protokolle.get(p.id)).toMatchObject({ dirty: 1, rev: 0 });
-    expect(await db.blobs.get('foto-0001')).toMatchObject({ state: 'local' });
+    expect(await db.protokolle.get(p.id)).toMatchObject({ dirty: 1 });
+  });
+
+  it('„Alles neu abgleichen“ versucht einen abgelehnten Anhang erneut', async () => {
+    await photoBlob('foto-0001');
+    await db.blobs.update('foto-0001', { rejected: 'Payload Too Large' }); // zum Beispiel ein Proxy mit zu kleiner Anfragegröße, inzwischen behoben
+    const uploaded: string[] = [];
+    const transport: BlobTransport = { upload: async (meta) => void uploaded.push(meta.id), download: noDownload };
+    const answer = async () => ({ rev: 1, changes: [], folders: [], conflicts: [] });
+    await performSync(answer, {}, db, transport);
+    expect(uploaded).toEqual([]); // sonst käme jeder Lauf erneut gegen die Wand
+    const res = await performSync(answer, { full: true }, db, transport);
+    expect(uploaded).toEqual(['foto-0001']);
+    expect(res.blobs.uploaded).toBe(1);
+    expect(await db.blobs.get('foto-0001')).toMatchObject({ state: 'synced' });
+    expect(await db.blobs.get('foto-0001')).not.toHaveProperty('rejected');
   });
 
   it('ein vom Server abgelehnter Anhang hält den Abgleich nicht auf und wird gemeldet', async () => {

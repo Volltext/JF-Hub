@@ -16,6 +16,10 @@ async function insertAll(editor: Editor, kind: Kind, files: File[]): Promise<voi
   const skipped: string[] = [];
   for (const file of files) {
     try {
+      if (file.size === 0) {
+        skipped.push(`${file.name || 'Datei'}: leer`);
+        continue;
+      }
       if (kind === 'file') {
         if (file.size > MAX_FILE_BYTES) {
           skipped.push(`${file.name}: größer als ${formatBytes(MAX_FILE_BYTES)}`);

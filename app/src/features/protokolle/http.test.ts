@@ -56,4 +56,29 @@ describe('request', () => {
     await expect(request(conn, 'GET', '/api/me')).rejects.toMatchObject({ status: 0, message: 'Keine Verbindung zum Server.' });
     await expect(request({ url: '', token: null }, 'GET', '/api/me')).rejects.toBeInstanceOf(ProtoError);
   });
+
+  it('ein Zeitlimit ist nicht „offline“: Status 0, aber als Zeitüberschreitung erkennbar', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => Promise.reject(new DOMException('The operation timed out.', 'TimeoutError'))));
+    const timedOut = await request(conn, 'PUT', '/api/blobs/x', {}).catch((e: unknown) => e);
+    expect(timedOut).toBeInstanceOf(ProtoError);
+    expect(timedOut).toMatchObject({ status: 0, timedOut: true, message: expect.stringContaining('Zeitüberschreitung') });
+    vi.stubGlobal('fetch', vi.fn(async () => Promise.reject(new TypeError('Failed to fetch'))));
+    expect(await request(conn, 'GET', '/api/me').catch((e: unknown) => e)).toMatchObject({ status: 0, timedOut: false });
+  });
+
+  it('lässt Anhänge länger dauern als normale Anfragen', async () => {
+    const signals: AbortSignal[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init: RequestInit) => {
+        signals.push(init.signal as AbortSignal);
+        return new Response('{}', { status: 200 });
+      }),
+    );
+    const spy = vi.spyOn(AbortSignal, 'timeout');
+    await request(conn, 'GET', '/api/me');
+    await request(conn, 'PUT', '/api/blobs/x', {}, false, { timeoutMs: 120_000 });
+    expect(spy.mock.calls.map((c) => c[0])).toEqual([60_000, 120_000]);
+    spy.mockRestore();
+  });
 });

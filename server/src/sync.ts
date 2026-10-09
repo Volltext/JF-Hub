@@ -221,7 +221,8 @@ const EMPTY_DOC = { type: 'doc', content: [] };
  * (Apps bis 2.1.x, Altbestand), werden dabei in Blobs ausgelagert; ist das nicht möglich, wirft es und die Änderung wird abgelehnt.
  */
 function write(db: DatabaseSync, id: string, c: ClientChange, deleted: boolean, meta: Meta): number {
-  const normalized = normalizeContent(c.content ?? EMPTY_DOC, true);
+  // Streng nur, wenn etwas Neues gespeichert wird. Ein Löschen darf nie an einem Altinhalt scheitern, der sich nicht auslagern ließ.
+  const normalized = normalizeContent(c.content ?? EMPTY_DOC, !deleted);
   const content = JSON.stringify(normalized.content);
   if (content.length > MAX_CONTENT) throw new Error('Protokoll zu groß');
   const now = Date.now();

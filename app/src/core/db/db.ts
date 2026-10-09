@@ -32,8 +32,11 @@ export interface LocalBlob {
   size: number;
   /** `local`: nur auf diesem Gerät, wartet auf den Upload. `synced`: der Server hat ihn; diese Kopie darf verdrängt werden. */
   state: 'local' | 'synced';
-  /** Grund, wenn der Server den Upload endgültig abgelehnt hat (zu groß, kein JPEG …). Ohne neuen Anhang gibt es keinen neuen Versuch. */
+  /** Grund, wenn der Server den Upload abgelehnt hat (zu groß, kein JPEG …). Bis „Alles neu abgleichen“ gibt es keinen neuen Versuch. */
   rejected?: string;
+  /** Wie oft der Upload an einem Serverfehler oder Zeitlimit gescheitert ist; danach wartet er mit wachsender Pause (`retryAt`). */
+  failures?: number;
+  retryAt?: number;
   createdAt: number;
   /** Letzte Nutzung, für das Verdrängen der ältesten Kopien. */
   lastUsedAt: number;

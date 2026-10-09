@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { HubDb } from './db';
-import { evictBlobs, localBlobCount, markRejected, markSynced, pendingBlobs, putLocalBlob, readBlob, requeueBlobs, saveDownloaded } from './blobs';
+import { newProtokoll } from '@/features/protokolle/model';
+import { evictBlobs, localBlobCount, markFailed, markRejected, markSynced, pendingBlobs, putLocalBlob, readBlob, rejectedBlobCount, requeueBlobs, saveDownloaded } from './blobs';
 
 let store: HubDb;
 let n = 0;
@@ -31,15 +32,31 @@ describe('lokaler Anhang-Speicher', () => {
     expect(await store.blobs.get(meta.id)).toMatchObject({ kind: 'file', mime: 'application/pdf', name: 'Plan.pdf', size: 10 });
   });
 
+  const refTo = (id: string) => ({ type: 'doc', content: [{ type: 'photo', attrs: { blobId: id } }] });
+
   it('wartende Anhänge: nur lokale, die der Server nicht abgelehnt hat', async () => {
     const a = await photo(bytes(5), 'anh-000001');
     const b = await photo(bytes(5), 'anh-000002');
     const c = await photo(bytes(5), 'anh-000003');
+    await store.protokolle.add({ ...newProtokoll(), content: refTo(b.id) });
     await markSynced(a.id, store);
     await markRejected(b.id, 'zu groß', store);
     expect((await pendingBlobs(store)).map((x) => x.id)).toEqual([c.id]);
-    expect(await localBlobCount(store)).toBe(2); // b und c liegen nur hier: beim Abmelden gingen sie verloren
+    expect(await localBlobCount(store)).toBe(2); // b (im Protokoll) und c liegen nur hier: beim Abmelden gingen sie verloren
+    expect(await rejectedBlobCount(store)).toBe(1);
     expect(await store.blobs.get(b.id)).toMatchObject({ state: 'local', rejected: 'zu groß' });
+  });
+
+  it('ein abgelehnter Anhang, den kein Protokoll mehr braucht, löst weder Hinweis noch Abmelde-Warnung aus', async () => {
+    const b = await photo(bytes(5), 'anh-000002');
+    const doc = await store.protokolle.add({ ...newProtokoll(), content: refTo(b.id) });
+    await markRejected(b.id, 'zu groß', store);
+    expect(await rejectedBlobCount(store)).toBe(1);
+    expect(await localBlobCount(store)).toBe(1);
+    await store.protokolle.update(doc, { content: { type: 'doc', content: [{ type: 'paragraph' }] } }); // das Foto wurde wieder entfernt
+    expect(await rejectedBlobCount(store)).toBe(0);
+    expect(await localBlobCount(store)).toBe(0);
+    expect(await store.blobData.get(b.id)).toBeDefined(); // die Bytes bleiben, es wird nichts gelöscht
   });
 
   it('der Server meldet einen Anhang als fehlend: er wird erneut hochgeladen, wenn wir ihn haben', async () => {
@@ -80,6 +97,31 @@ describe('lokaler Anhang-Speicher', () => {
     expect(await store.blobs.get(young.id)).toBeUndefined();
     expect(await store.blobs.get(mine.id)).toBeDefined(); // der lokale Anhang bleibt, auch über dem Limit
     expect(await store.blobData.get(mine.id)).toBeDefined();
+  });
+
+  it('behält bei der Verdrängung Anhänge, auf die ein noch nicht gesendetes Protokoll verweist', async () => {
+    const keep = await saveDownloaded({ id: 'ung-000001', kind: 'photo', mime: 'image/jpeg', name: '' }, bytes(100), store);
+    const drop = await saveDownloaded({ id: 'abg-000001', kind: 'photo', mime: 'image/jpeg', name: '' }, bytes(100), store);
+    await store.blobs.update(keep.id, { lastUsedAt: 1 }); // der älteste, aber noch gebraucht
+    await store.blobs.update(drop.id, { lastUsedAt: 2 });
+    const content = (id: string) => ({ type: 'doc', content: [{ type: 'photo', attrs: { blobId: id } }] });
+    await store.protokolle.add({ ...newProtokoll(), title: 'Ungesendet', content: content(keep.id), dirty: 1 });
+    await store.protokolle.add({ ...newProtokoll(), title: 'Gesendet', content: content(drop.id), dirty: 0 });
+
+    expect(await evictBlobs(0, store)).toBe(1);
+    expect(await store.blobs.get(keep.id)).toBeDefined();
+    expect(await store.blobData.get(keep.id)).toBeDefined();
+    expect(await store.blobs.get(drop.id)).toBeUndefined();
+  });
+
+  it('ein Anhang in der Pause nach einem Fehlschlag wartet, bis sie vorbei ist', async () => {
+    const meta = await photo(bytes(5), 'anh-000001');
+    await markFailed(meta.id, store, 1_000);
+    expect((await store.blobs.get(meta.id))!.retryAt).toBe(1_000 + 60_000);
+    expect(await pendingBlobs(store, 30_000)).toEqual([]);
+    expect((await pendingBlobs(store, 61_000)).map((b) => b.id)).toEqual([meta.id]);
+    await markSynced(meta.id, store);
+    expect(await store.blobs.get(meta.id)).not.toHaveProperty('retryAt');
   });
 
   it('Lesen merkt die Nutzung, aber höchstens einmal pro Stunde', async () => {

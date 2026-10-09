@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { HubDb } from '@/core/db/db';
-import { markSynced, putLocalBlob, readBlob } from '@/core/db/blobs';
+import { markFailed, markRejected, markSynced, pendingBlobs, putLocalBlob, readBlob, rejectedBlobCount, retryBlobsNow, retryDelay } from '@/core/db/blobs';
 import { BlobUnavailable, ensureBlob, uploadPendingBlobs, type BlobTransport } from './blobSync';
 import { ProtoError } from './http';
+import { newProtokoll } from './model';
 
 let store: HubDb;
 let n = 0;
@@ -15,6 +16,8 @@ afterEach(async () => {
 });
 
 const bytes = (size: number, fill = 7) => new Uint8Array(size).fill(fill);
+/** Beginnt wie ein JPEG: So etwas nimmt die App als Foto an. */
+const jpegLike = (...rest: number[]) => Uint8Array.from([0xff, 0xd8, 0xff, ...rest]);
 const local = (id: string, size = 5) => putLocalBlob({ id, kind: 'photo', mime: 'image/jpeg', name: '', data: bytes(size) }, store);
 const info = (id: string) => ({ id, kind: 'photo' as const, mime: 'image/jpeg', name: '' });
 
@@ -25,7 +28,7 @@ function transport(over: Partial<BlobTransport> = {}) {
     upload: async (meta) => void uploaded.push(meta.id),
     download: async (id) => {
       downloads.push(id);
-      return bytes(4, 9);
+      return jpegLike(9);
     },
     ...over,
   };
@@ -68,33 +71,75 @@ describe('Anhänge hochladen', () => {
     expect(await uploadPendingBlobs(t, store)).toEqual({ uploaded: 0, rejected: 0, failed: 0 }); // kein neuer Versuch
   });
 
-  it('keine Verbindung, ungültige Anmeldung oder zu viele Anfragen stoppen den Lauf; die Anhänge bleiben wartend', async () => {
+  it('offline, abgemeldet oder gedrosselt: der Lauf hört auf, wirft aber nicht, und die Anhänge bleiben ohne Pause wartend', async () => {
     await local('anh-000001');
     await local('anh-000002');
-    for (const status of [0, 401, 408, 429]) {
-      const { t } = transport({ upload: async () => Promise.reject(new ProtoError('Fehler', status)) });
-      await expect(uploadPendingBlobs(t, store)).rejects.toMatchObject({ status });
+    for (const [status, timedOut] of [[0, false], [401, false], [429, false]] as const) {
+      const attempts: string[] = [];
+      const { t } = transport({
+        upload: async (meta) => {
+          attempts.push(meta.id);
+          throw new ProtoError('Fehler', status, timedOut);
+        },
+      });
+      expect(await uploadPendingBlobs(t, store)).toEqual({ uploaded: 0, rejected: 0, failed: 1 });
+      expect(attempts).toHaveLength(1); // der zweite Versuch wäre zwecklos
       expect(await store.blobs.where('state').equals('local').count()).toBe(2);
-      expect(await store.blobs.get('anh-000001')).not.toHaveProperty('rejected');
+      expect(await store.blobs.get('anh-000001')).not.toHaveProperty('retryAt'); // ohne Pause: Sobald es wieder geht, geht es weiter
     }
   });
 
-  it('ein Serverfehler bei einem Anhang hält die übrigen nicht auf; er kommt beim nächsten Mal wieder dran', async () => {
-    await local('anh-kaputt01');
-    await local('anh-gut-001');
+  it('ein Zeitlimit oder Serverfehler lässt den Anhang mit wachsender Pause pausieren; die übrigen kommen dran', async () => {
+    await local('anh-kaputt01', 50);
+    await local('anh-gut-001', 5);
     let broken = true;
     const { t, uploaded } = transport({
       upload: async (meta) => {
-        if (meta.id === 'anh-kaputt01' && broken) throw new ProtoError('Serverfehler 500.', 500);
+        if (meta.id === 'anh-kaputt01' && broken) throw new ProtoError('Zeitüberschreitung', 0, true);
         uploaded.push(meta.id);
       },
     });
-    expect(await uploadPendingBlobs(t, store)).toEqual({ uploaded: 1, rejected: 0, failed: 1 });
-    expect(await store.blobs.get('anh-kaputt01')).toMatchObject({ state: 'local' });
+    const now = 1_000_000;
+    expect(await uploadPendingBlobs(t, store, now)).toEqual({ uploaded: 1, rejected: 0, failed: 1 });
+    expect(uploaded).toEqual(['anh-gut-001']); // die kleinen zuerst
+    expect(await store.blobs.get('anh-kaputt01')).toMatchObject({ state: 'local', failures: 1, retryAt: now + 60_000 });
     expect(await store.blobs.get('anh-kaputt01')).not.toHaveProperty('rejected');
+
+    // In der Pause wird nicht versucht, danach wieder, mit der nächsten längeren Pause.
+    expect(await uploadPendingBlobs(t, store, now + 30_000)).toEqual({ uploaded: 0, rejected: 0, failed: 0 });
+    expect(await uploadPendingBlobs(t, store, now + 61_000)).toEqual({ uploaded: 0, rejected: 0, failed: 1 });
+    expect(await store.blobs.get('anh-kaputt01')).toMatchObject({ failures: 2, retryAt: now + 61_000 + 120_000 });
+
     broken = false;
-    expect(await uploadPendingBlobs(t, store)).toEqual({ uploaded: 1, rejected: 0, failed: 0 });
-    expect(uploaded).toEqual(['anh-gut-001', 'anh-kaputt01']);
+    expect(await uploadPendingBlobs(t, store, now + 400_000)).toEqual({ uploaded: 1, rejected: 0, failed: 0 });
+    expect(await store.blobs.get('anh-kaputt01')).toMatchObject({ state: 'synced' });
+    expect(await store.blobs.get('anh-kaputt01')).not.toHaveProperty('retryAt');
+    expect(await store.blobs.get('anh-kaputt01')).not.toHaveProperty('failures');
+  });
+
+  it('die Pause wächst bis höchstens eine Stunde', () => {
+    expect([1, 2, 3, 4, 7, 20].map((n) => retryDelay(n) / 60_000)).toEqual([1, 2, 4, 8, 60, 60]);
+  });
+
+  it('ein Server, der diese App-Version nicht kennt (426), bekommt nichts: der Fehler geht nach oben', async () => {
+    await local('anh-000001');
+    const { t } = transport({ upload: async () => Promise.reject(new ProtoError('Der Server ist zu alt für diese App-Version. Bitte den Server aktualisieren.', 426)) });
+    await expect(uploadPendingBlobs(t, store)).rejects.toMatchObject({ status: 426 });
+    expect(await store.blobs.get('anh-000001')).toMatchObject({ state: 'local' });
+  });
+
+  it('„Alles neu abgleichen“ gibt abgelehnten und pausierten Anhängen einen neuen Versuch', async () => {
+    await local('anh-000001');
+    await local('anh-000002');
+    await local('anh-000003');
+    await store.protokolle.add({ ...newProtokoll(), content: { type: 'doc', content: [{ type: 'photo', attrs: { blobId: 'anh-000001' } }] } });
+    await markRejected('anh-000001', 'zu groß', store);
+    await markFailed('anh-000002', store);
+    expect(await rejectedBlobCount(store)).toBe(1);
+    expect(await pendingBlobs(store)).toHaveLength(1);
+    expect(await retryBlobsNow(store)).toBe(2);
+    expect(await rejectedBlobCount(store)).toBe(0);
+    expect(await pendingBlobs(store)).toHaveLength(3);
   });
 
   it('ein Anhang ohne Bytes (beschädigt) wird übergangen statt den Abgleich zu blockieren', async () => {
@@ -119,7 +164,7 @@ describe('Anhänge holen', () => {
   it('lädt Fehlendes vom Server, merkt es als Kopie und holt es danach nicht mehr', async () => {
     const { t, downloads } = transport();
     const got = await ensureBlob({ id: 'fremd-0001', kind: 'file', mime: 'application/pdf', name: 'Plan.pdf' }, t, store);
-    expect(Array.from(got.data)).toEqual([9, 9, 9, 9]);
+    expect(Array.from(got.data)).toEqual([0xff, 0xd8, 0xff, 9]);
     expect(await store.blobs.get('fremd-0001')).toMatchObject({ state: 'synced', kind: 'file', name: 'Plan.pdf', mime: 'application/pdf', size: 4 });
     await ensureBlob({ id: 'fremd-0001', kind: 'file', mime: 'application/pdf', name: 'Plan.pdf' }, t, store);
     expect(downloads).toEqual(['fremd-0001']);
@@ -130,7 +175,7 @@ describe('Anhänge holen', () => {
     const { t, downloads } = transport({
       download: (id) => {
         downloads.push(id);
-        return new Promise<Uint8Array>((resolve) => (release = () => resolve(bytes(4))));
+        return new Promise<Uint8Array>((resolve) => (release = () => resolve(jpegLike(1))));
       },
     });
     const first = ensureBlob(info('fremd-0001'), t, store);
@@ -154,6 +199,29 @@ describe('Anhänge holen', () => {
     // Nach einem Fehler gibt es beim nächsten Versuch eine neue Anfrage.
     const ok = transport();
     expect((await ensureBlob(info('fremd-0001'), ok.t, store)).data.length).toBe(4);
+  });
+
+  it('speichert nichts, was kein Foto ist (zum Beispiel eine Fehlerseite eines Proxys), und fragt beim nächsten Mal erneut', async () => {
+    const html = new TextEncoder().encode('<html>Bitte anmelden</html>');
+    const bad = transport({ download: async () => html });
+    await expect(ensureBlob(info('fremd-0001'), bad.t, store)).rejects.toMatchObject({ reason: 'error' });
+    expect(await store.blobs.get('fremd-0001')).toBeUndefined();
+    const good = transport();
+    expect((await ensureBlob(info('fremd-0001'), good.t, store)).data.length).toBe(4);
+  });
+
+  it('bei Dateien zählt die Größe, die das Protokoll nennt', async () => {
+    const short = transport({ download: async () => bytes(3) });
+    await expect(ensureBlob({ id: 'datei-0001', kind: 'file', mime: 'application/pdf', name: 'a.pdf', size: 10 }, short.t, store)).rejects.toMatchObject({ reason: 'error' });
+    const exact = transport({ download: async () => bytes(10) });
+    expect((await ensureBlob({ id: 'datei-0001', kind: 'file', mime: 'application/pdf', name: 'a.pdf', size: 10 }, exact.t, store)).data.length).toBe(10);
+    expect((await ensureBlob({ id: 'datei-0002', kind: 'file', mime: 'application/pdf', name: 'b.pdf' }, exact.t, store)).data.length).toBe(10); // ohne Angabe nur: nicht leer
+    await expect(ensureBlob({ id: 'datei-0003', kind: 'file', mime: 'application/pdf', name: 'c.pdf' }, transport({ download: async () => new Uint8Array() }).t, store)).rejects.toMatchObject({ reason: 'error' });
+  });
+
+  it('ein Zeitlimit beim Laden gilt wie „offline“ (die Anzeige versucht es wieder, sobald Netz da ist)', async () => {
+    const slow = transport({ download: () => Promise.reject(new ProtoError('Zeitüberschreitung', 0, true)) });
+    await expect(ensureBlob(info('fremd-0001'), slow.t, store)).rejects.toMatchObject({ reason: 'offline' });
   });
 
   it('hochgeladene Anhänge bleiben als Kopie lesbar', async () => {

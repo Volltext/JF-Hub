@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import type { DatabaseSync } from 'node:sqlite';
@@ -93,12 +93,14 @@ describe('Blob-Schnittstelle', () => {
     expect(Buffer.compare(g.rawPayload, bytes)).toBe(0);
   });
 
-  it('HEAD sagt, ob es das Foto gibt, ohne es zu senden', async () => {
+  it('HEAD sagt, ob es das Foto gibt, und nennt seine Länge, ohne es zu senden', async () => {
     const anna = await betreuer(await adminToken(), 'anna');
-    await put(anna, 'foto-0001', jpeg());
+    const bytes = jpeg(300);
+    await put(anna, 'foto-0001', bytes);
     const h = await app.inject({ method: 'HEAD', url: '/api/blobs/foto-0001', headers: auth(anna) });
     expect(h.statusCode).toBe(200);
     expect(h.body).toBe('');
+    expect(h.headers['content-length']).toBe(String(bytes.length));
     expect((await app.inject({ method: 'HEAD', url: '/api/blobs/gibt-es-nicht', headers: auth(anna) })).statusCode).toBe(404);
   });
 
@@ -121,6 +123,21 @@ describe('Blob-Schnittstelle', () => {
     expect((await put(anna, 'foto-0002', Buffer.from('<html>kein Bild</html>'), { mime: 'image/jpeg' })).statusCode).toBe(400);
     expect((await put(anna, 'foto-0003', Buffer.alloc(0))).statusCode).toBe(400);
     expect(db.prepare('SELECT COUNT(*) AS n FROM blobs').get()).toEqual({ n: 0 });
+  });
+
+  it('Kennungen, die der Server aus dem Inhalt bildet, tragen nur passenden Inhalt', async () => {
+    const anna = await betreuer(await adminToken(), 'anna');
+    const bytes = jpeg(200);
+    const hash = createHash('sha256').update(bytes).digest('hex').slice(0, 40);
+    // Eine App darf einen solchen Anhang erneut hochladen (zum Beispiel nach einer ersetzten Datenbank) …
+    expect((await put(anna, `p-${hash}`, bytes)).statusCode).toBe(200);
+    // … aber niemand kann die Kennung mit anderem Inhalt besetzen oder als andere Art ausgeben.
+    expect((await put(anna, `p-${hash}`, jpeg(200))).statusCode).toBe(400);
+    const other = jpeg(50);
+    const otherHash = createHash('sha256').update(other).digest('hex').slice(0, 40);
+    expect((await put(anna, `p-${otherHash.replace(/.$/, '0')}`, other)).statusCode).toBe(400); // andere Kennung als der Hash
+    expect((await put(anna, `f-${otherHash}`, other)).statusCode).toBe(400); // Kennung einer Datei, aber als Foto hochgeladen
+    expect((await put(anna, `f-${otherHash}`, other, { kind: 'file', name: 'x.bin', mime: 'application/octet-stream' })).statusCode).toBe(200);
   });
 
   it('begrenzt Fotos und Dateien', async () => {

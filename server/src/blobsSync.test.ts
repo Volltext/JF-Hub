@@ -163,37 +163,96 @@ describe('Anhänge beim Speichern auslagern', () => {
 });
 
 describe('Müllsammlung für Blobs', () => {
-  it('entfernt Blobs ohne Verweis nach sieben Tagen, nie solche mit Verweis', () => {
+  it('entfernt Blobs erst, wenn seit sieben Tagen nichts mehr auf sie verweist; nie solche mit Verweis', () => {
     const t0 = Date.now();
     upload('alt-ohne-1', { now: t0 });
     upload('alt-mit-01', { now: t0 });
-    upload('jung-ohne1', { now: t0 + 8 * DAY });
     send([change('doc-0001', doc(photoRef('alt-mit-01')))]);
 
-    expect(sweepBlobs(db, t0 + 6 * DAY)).toBe(0); // noch Schonfrist
+    expect(sweepBlobs(db, t0 + 1 * DAY)).toBe(0); // merkt sich, dass alt-ohne-1 ohne Verweis dasteht
+    expect(sweepBlobs(db, t0 + 7 * DAY)).toBe(0); // erst sechs Tage
     expect(sweepBlobs(db, t0 + 8 * DAY + 1000)).toBe(1);
-    expect((db.prepare('SELECT id FROM blobs ORDER BY id').all() as { id: string }[]).map((r) => r.id)).toEqual(['alt-mit-01', 'jung-ohne1']);
-    expect(sweepBlobs(db, t0 + 20 * DAY)).toBe(1); // jung-ohne1 ist inzwischen alt genug
     expect((db.prepare('SELECT id FROM blobs').all() as { id: string }[]).map((r) => r.id)).toEqual(['alt-mit-01']);
+    expect(sweepBlobs(db, t0 + 100 * DAY)).toBe(0); // der mit Verweis bleibt
   });
 
-  it('ein erneutes Hochladen verlängert die Schonfrist', () => {
+  it('ein Foto, das erst jetzt seinen letzten Verweis verliert, bleibt noch sieben Tage, auch wenn es uralt ist', () => {
+    const t0 = Date.now();
+    upload('foto-0001', { now: t0 - 270 * DAY });
+    const first = send([change('doc-0001', doc(photoRef('foto-0001')))]);
+    expect(sweepBlobs(db, t0)).toBe(0);
+    // Ein anderes Gerät entfernt das Foto aus dem Text.
+    send([change('doc-0001', doc(p('ohne Foto')), { baseRev: first.changes[0]!.rev })], first.rev);
+    expect(sweepBlobs(db, t0 + 1 * DAY)).toBe(0);
+    expect(sweepBlobs(db, t0 + 7 * DAY)).toBe(0);
+    expect(count('blobs')).toBe(1); // ein Gerät, das lange offline war, kann noch darauf verweisen
+    expect(sweepBlobs(db, t0 + 9 * DAY)).toBe(1);
+  });
+
+  it('ein neuer Verweis hebt die Markierung auf', () => {
+    const t0 = Date.now();
+    upload('foto-0001', { now: t0 });
+    expect(sweepBlobs(db, t0 + 1 * DAY)).toBe(0); // ohne Verweis markiert
+    send([change('doc-0001', doc(photoRef('foto-0001')))]);
+    expect(sweepBlobs(db, t0 + 10 * DAY)).toBe(0); // inzwischen gebraucht
+    expect((db.prepare('SELECT orphanedAt FROM blobs').get() as { orphanedAt: number | null }).orphanedAt).toBeNull();
+  });
+
+  it('ein erneutes Hochladen verlängert die Frist', () => {
     const t0 = Date.now();
     const bytes = jpeg();
     storeBlob(db, { id: 'foto-0001', kind: 'photo', name: '', mime: 'image/jpeg', data: bytes, uploaderId: 'u1', now: t0 });
+    expect(sweepBlobs(db, t0 + 1 * DAY)).toBe(0);
     storeBlob(db, { id: 'foto-0001', kind: 'photo', name: '', mime: 'image/jpeg', data: bytes, uploaderId: 'u1', now: t0 + 6 * DAY });
-    expect(sweepBlobs(db, t0 + 8 * DAY)).toBe(0);
-    expect(sweepBlobs(db, t0 + 14 * DAY)).toBe(1);
+    expect(sweepBlobs(db, t0 + 8 * DAY)).toBe(0); // markiert den Blob von Neuem
+    expect(sweepBlobs(db, t0 + 14 * DAY)).toBe(0);
+    expect(sweepBlobs(db, t0 + 16 * DAY)).toBe(1);
   });
 
-  it('nach dem endgültigen Leeren eines Protokolls werden seine Blobs frei', () => {
+  it('nach dem endgültigen Leeren eines Protokolls werden seine Blobs nach einer Woche frei', () => {
     const t0 = Date.now();
     const first = send([change('doc-0001', doc(photoInline(jpeg())))]);
     send([change('doc-0001', doc(), { baseRev: first.changes[0]!.rev, deleted: true })], first.rev);
     expect(sweepBlobs(db, t0 + 30 * DAY)).toBe(0); // liegt noch im Papierkorb
     purgeProtocol(db, 'doc-0001');
-    expect(sweepBlobs(db, t0 + 30 * DAY)).toBe(1);
+    expect(sweepBlobs(db, t0 + 31 * DAY)).toBe(0); // merkt es sich
+    expect(sweepBlobs(db, t0 + 39 * DAY)).toBe(1);
     expect(count('blobs')).toBe(0);
+  });
+});
+
+describe('Altbestand und Namen', () => {
+  const legacyRow = (id: string, content: unknown) =>
+    db
+      .prepare(
+        `INSERT INTO protocols(id, title, folderId, datum, beginn, ende, ort, leitung, content, ownerId, shared, hiddenRev, rev, updatedAt, deletedAt)
+         VALUES(?, 'Alt', '', '2026-01-01', '', '', '', '', ?, 'u1', 1, NULL, 1, 1234, NULL)`,
+      )
+      .run(id, JSON.stringify(content));
+
+  it('ein Protokoll, dessen Altinhalt sich nicht auslagern ließ, lässt sich trotzdem löschen und zurückholen', () => {
+    // Ein Foto, das kein JPEG ist: so etwas erzeugt die App nicht, per Schnittstelle ginge es aber.
+    legacyRow('alt-000001', doc({ type: 'photo', attrs: { src: 'data:image/png;base64,iVBORw0KGgo=', w: 1, h: 1, caption: '' } }));
+    const del = send([change('alt-000001', doc(), { baseRev: 1, deleted: true })]);
+    expect(del.rejected).toEqual([]);
+    expect(del.changes.find((c) => c.id === 'alt-000001')).toMatchObject({ deleted: true });
+    expect((db.prepare('SELECT deletedAt FROM protocols WHERE id = ?').get('alt-000001') as { deletedAt: number | null }).deletedAt).not.toBeNull();
+  });
+
+  it('Neues mit einem unbrauchbaren Foto wird weiterhin abgelehnt', () => {
+    const res = send([change('neu-000001', doc({ type: 'photo', attrs: { src: 'data:image/png;base64,iVBORw0KGgo=', w: 1, h: 1, caption: '' } }))]);
+    expect(res.rejected.map((r) => r.id)).toEqual(['neu-000001']);
+  });
+
+  it('der Name im Protokoll bleibt erhalten, auch ein sehr langer samt Endung', () => {
+    const long = `${'Bericht '.repeat(30)}Jahr.pdf`; // über 200 Zeichen
+    const res = send([change('doc-0001', doc(fileInline(randomBytes(300), { name: long })))]);
+    const shown = String(nodesOf(res, 'doc-0001')[0]!.attrs!.name);
+    expect(shown.endsWith('Jahr.pdf')).toBe(true);
+    expect(shown.length).toBeLessThanOrEqual(255);
+    const row = db.prepare('SELECT name FROM blobs').get() as { name: string };
+    expect(row.name.endsWith('.pdf')).toBe(true);
+    expect(row.name.length).toBeLessThanOrEqual(120);
   });
 });
 

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { putLocalBlob } from '@/core/db/blobs';
 import { db } from '@/core/db/db';
 import { newProtokoll } from './model';
 import { useSyncStatus } from './syncStatus';
@@ -20,7 +21,7 @@ beforeEach(async () => {
   request.mockReset();
   conn = { url: 'https://hub.example', token: 't' };
   useSyncStatus.setState({ state: 'off', message: '', lastSyncAt: null, counts: null });
-  await Promise.all([db.protokolle.clear(), db.folders.clear(), db.outbox.clear(), db.kv.clear()]);
+  await Promise.all([db.protokolle.clear(), db.folders.clear(), db.outbox.clear(), db.blobs.clear(), db.blobData.clear(), db.kv.clear()]);
   // Ein Gerät, das sich schon einmal mit einem aktuellen Server abgeglichen hat (sonst käme ein vollständiger Abgleich mit Nachlauf).
   await db.kv.put({ key: 'protokolle.serverRecords', value: true });
 });
@@ -84,6 +85,25 @@ describe('syncNow', () => {
     expect(res).toMatchObject({ rejected: 1 });
     expect(status().message).toContain('1 Protokoll(e) vom Server abgelehnt');
     expect(await db.protokolle.get(p.id)).toMatchObject({ dirty: 1, rejected: 'Protokoll zu groß' });
+  });
+
+  it('der Hinweis auf vom Server abgelehnte Anhänge bleibt über die Läufe stehen, ohne dass sie erneut versucht werden', async () => {
+    await putLocalBlob({ id: 'foto-gross1', kind: 'photo', mime: 'image/jpeg', name: '', data: Uint8Array.from([0xff, 0xd8, 0xff, 1]) });
+    await db.blobs.update('foto-gross1', { rejected: 'Payload Too Large' });
+    const p = { ...newProtokoll(), content: { type: 'doc', content: [{ type: 'photo', attrs: { blobId: 'foto-gross1' } }] } };
+    await db.protokolle.add(p);
+    request.mockResolvedValue(reply());
+    await syncNow();
+    expect(status().message).toContain('1 Anhang/Anhänge vom Server abgelehnt');
+    await syncNow();
+    expect(status().message).toContain('1 Anhang/Anhänge vom Server abgelehnt');
+    expect(request.mock.calls.filter((c) => c[1] === 'PUT')).toEqual([]);
+    expect(status().state).toBe('idle');
+
+    // Wird das Foto aus dem Protokoll entfernt, ist nichts mehr zu melden.
+    await db.protokolle.update(p.id, { content: { type: 'doc', content: [{ type: 'paragraph' }] } });
+    await syncNow();
+    expect(status().message).not.toContain('Anhang');
   });
 
   it('ein Server mit zu alter Schnittstelle wird als Fehler gemeldet', async () => {

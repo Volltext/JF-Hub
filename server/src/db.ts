@@ -187,6 +187,8 @@ export function openDb(path: string): DatabaseSync {
       kind TEXT NOT NULL,
       uploaderId TEXT NOT NULL DEFAULT '',
       uploadedAt INTEGER NOT NULL,
+      -- Seit wann ohne Verweis (von der Müllsammlung gemerkt); leer, solange ein Protokoll darauf verweist.
+      orphanedAt INTEGER,
       data BLOB NOT NULL
     );
     -- Welches Protokoll auf welchen Blob verweist. Der Blob darf fehlen (noch nicht hochgeladen), deshalb kein Fremdschlüssel darauf.
@@ -209,6 +211,7 @@ export function openDb(path: string): DatabaseSync {
   addColumn(db, 'protocols', 'purgedAt', 'INTEGER');
   // Migration: Anhänge ausgelagert; Bearbeitungen auf dem Stand davor bleiben gültig (ab 2.2.0).
   addColumn(db, 'protocols', 'migratedFrom', 'INTEGER');
+  addColumn(db, 'blobs', 'orphanedAt', 'INTEGER');
   addColumn(db, 'records', 'ownerId', "TEXT NOT NULL DEFAULT ''");
   addColumn(db, 'records', 'shared', 'INTEGER NOT NULL DEFAULT 1');
   addColumn(db, 'records', 'hiddenRev', 'INTEGER');

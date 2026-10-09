@@ -1,3 +1,4 @@
+import { blobIdsIn } from '@/core/domain/blobRefs';
 import { newId } from '@/core/domain/id';
 import { db, type HubDb, type LocalBlob } from './db';
 
@@ -53,22 +54,58 @@ export async function readBlob(id: string, store: HubDb = db): Promise<{ meta: L
   return { meta, data: row.data };
 }
 
-/** Anhänge, die noch hochgeladen werden müssen (und die der Server nicht schon abgelehnt hat). */
-export async function pendingBlobs(store: HubDb = db): Promise<LocalBlob[]> {
-  return (await store.blobs.where('state').equals('local').toArray()).filter((b) => !b.rejected);
+/** Anhänge, die jetzt hochgeladen werden sollen: nicht vom Server abgelehnt und nicht in der Pause nach einem Fehlschlag. */
+export async function pendingBlobs(store: HubDb = db, now = Date.now()): Promise<LocalBlob[]> {
+  return (await store.blobs.where('state').equals('local').toArray()).filter((b) => !b.rejected && (b.retryAt ?? 0) <= now);
 }
 
-/** Anzahl der Anhänge, die nur auf diesem Gerät liegen (gehen beim Abmelden verloren). */
+/**
+ * Anhänge, die nur auf diesem Gerät liegen und noch gebraucht werden: die wartenden und die vom Server abgelehnten, auf die noch ein
+ * Protokoll verweist. Ein abgelehnter Anhang, den niemand mehr braucht (das Foto wurde wieder entfernt), ist kein Problem mehr und
+ * soll weder den Hinweis im Abgleich noch die Warnung beim Abmelden dauerhaft auslösen.
+ */
+async function liveLocalBlobs(store: HubDb): Promise<LocalBlob[]> {
+  const local = await store.blobs.where('state').equals('local').toArray();
+  if (!local.some((b) => b.rejected)) return local;
+  const used = new Set<string>();
+  await store.protokolle.each((p) => {
+    for (const id of blobIdsIn(p.content)) used.add(id);
+  });
+  return local.filter((b) => !b.rejected || used.has(b.id));
+}
+
+/** Anzahl der Anhänge, die nur auf diesem Gerät liegen und noch gebraucht werden (gehen beim Abmelden verloren). */
 export async function localBlobCount(store: HubDb = db): Promise<number> {
-  return store.blobs.where('state').equals('local').count();
+  return (await liveLocalBlobs(store)).length;
 }
 
 export async function markSynced(id: string, store: HubDb = db): Promise<void> {
-  await store.blobs.update(id, { state: 'synced', rejected: undefined });
+  await store.blobs.update(id, { state: 'synced', rejected: undefined, failures: undefined, retryAt: undefined });
 }
 
 export async function markRejected(id: string, reason: string, store: HubDb = db): Promise<void> {
   await store.blobs.update(id, { rejected: reason });
+}
+
+/** Pause nach dem n-ten Fehlschlag: 1, 2, 4 … Minuten, höchstens eine Stunde. */
+export const retryDelay = (failures: number): number => Math.min(60, 2 ** Math.max(0, failures - 1)) * 60_000;
+
+/** Der Upload ist an einem Serverfehler oder einem Zeitlimit gescheitert: Er kommt nach einer Pause wieder dran. */
+export async function markFailed(id: string, store: HubDb = db, now = Date.now()): Promise<void> {
+  const failures = ((await store.blobs.get(id))?.failures ?? 0) + 1;
+  await store.blobs.update(id, { failures, retryAt: now + retryDelay(failures) });
+}
+
+/** Gibt abgelehnten und pausierten Anhängen einen neuen Versuch („Alles neu abgleichen“). Liefert die Anzahl. */
+export async function retryBlobsNow(store: HubDb = db): Promise<number> {
+  const stuck = await store.blobs.filter((b) => b.state === 'local' && (!!b.rejected || !!b.failures || !!b.retryAt)).primaryKeys();
+  for (const id of stuck) await store.blobs.update(id, { rejected: undefined, failures: undefined, retryAt: undefined });
+  return stuck.length;
+}
+
+/** Anzahl der Anhänge, die der Server abgelehnt hat, die nur noch hier liegen und auf die ein Protokoll noch verweist. */
+export async function rejectedBlobCount(store: HubDb = db): Promise<number> {
+  return (await liveLocalBlobs(store)).filter((b) => !!b.rejected).length;
 }
 
 /**
@@ -80,21 +117,27 @@ export async function requeueBlobs(ids: string[], store: HubDb = db): Promise<nu
   for (const id of ids) {
     const meta = await store.blobs.get(id);
     if (meta?.state === 'synced') {
-      await store.blobs.update(id, { state: 'local' });
+      await store.blobs.update(id, { state: 'local', failures: undefined, retryAt: undefined });
       n++;
     }
   }
   return n;
 }
 
-/** Entfernt die am längsten ungenutzten Kopien des Servers, bis sie zusammen höchstens `limit` Byte belegen. Liefert die Anzahl. */
+/**
+ * Entfernt die am längsten ungenutzten Kopien des Servers, bis sie zusammen höchstens `limit` Byte belegen. Liefert die Anzahl.
+ * Anhänge, auf die ein noch nicht gesendetes Protokoll verweist, bleiben: Hat der Server das Protokoll nie bekommen, ist diese
+ * Kopie womöglich die einzige, wenn er den Anhang inzwischen aufgeräumt hat.
+ */
 export async function evictBlobs(limit: number = CACHE_LIMIT_BYTES, store: HubDb = db): Promise<number> {
   const copies = await store.blobs.where('state').equals('synced').toArray();
   let total = copies.reduce((sum, b) => sum + b.size, 0);
   if (total <= limit) return 0;
+  const inUse = new Set((await store.protokolle.where('dirty').equals(1).toArray()).flatMap((p) => blobIdsIn(p.content)));
   const drop: string[] = [];
   for (const b of copies.sort((a, c) => a.lastUsedAt - c.lastUsedAt)) {
     if (total <= limit) break;
+    if (inUse.has(b.id)) continue;
     drop.push(b.id);
     total -= b.size;
   }

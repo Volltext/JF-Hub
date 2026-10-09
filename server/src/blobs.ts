@@ -45,9 +45,19 @@ const sha256 = (b: Uint8Array): string => createHash('sha256').update(b).digest(
 const MIME = /^[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]{0,100}\/[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]{0,100}$/;
 /** Ein unbrauchbarer Medientyp wird zu `application/octet-stream`. */
 export const cleanMime = (v: unknown): string => (typeof v === 'string' && MIME.test(v) ? v.toLowerCase() : 'application/octet-stream');
-/** Dateiname ohne Steuerzeichen und Pfadtrenner. */
 // eslint-disable-next-line no-control-regex
-export const cleanName = (v: unknown): string => (typeof v === 'string' ? v.replace(/[\u0000-\u001f\u007f/\\]+/g, '').trim().slice(0, 120) : '');
+const CONTROL = /[\u0000-\u001f\u007f]+/g;
+
+/** Kürzt einen Dateinamen auf höchstens `max` Zeichen und behält die Endung („sehr-langer-name….pdf“). */
+export function shortName(name: string, max: number): string {
+  if (name.length <= max) return name;
+  const dot = name.lastIndexOf('.');
+  const ext = dot > 0 && name.length - dot <= 12 ? name.slice(dot) : '';
+  return name.slice(0, Math.max(0, max - ext.length)) + ext;
+}
+
+/** Dateiname ohne Steuerzeichen und Pfadtrenner (für die Ablage beim Server). */
+export const cleanName = (v: unknown): string => (typeof v === 'string' ? shortName(v.replace(CONTROL, '').replace(/[/\\]+/g, '').trim(), 120) : '');
 
 // ---------- Hochladen: Prüfung ----------
 
@@ -112,10 +122,16 @@ export function storeBlob(db: DatabaseSync, input: BlobInput): { created: boolea
   if (!BLOB_ID_RE.test(input.id)) throw new BlobError('Ungültige Kennung', 400);
   const hash = input.sha256 ?? sha256(input.data);
   const now = input.now ?? Date.now();
+  // Kennungen der Form p-<Hash> und f-<Hash> vergibt der Server aus dem Inhalt. Sie dürfen nur Inhalt tragen, zu dem sie passen
+  // (die App lädt solche Anhänge erneut hoch, wenn der Server sie verloren hat), sonst ließe sich eine Kennung vorab besetzen.
+  const derived = /^([pf])-([0-9a-f]{40})$/.exec(input.id);
+  if (derived && (derived[2] !== hash.slice(0, 40) || (derived[1] === 'p') !== (input.kind === 'photo'))) {
+    throw new BlobError('Diese Kennung ist dem Server vorbehalten und passt nicht zum Inhalt', 400);
+  }
   const existing = db.prepare('SELECT sha256 FROM blobs WHERE id = ?').get(input.id) as { sha256: string } | undefined;
   if (existing) {
     if (existing.sha256 !== hash) throw new BlobError('Unter dieser Kennung liegt schon etwas anderes', 409);
-    db.prepare('UPDATE blobs SET uploadedAt = ? WHERE id = ?').run(now, input.id);
+    db.prepare('UPDATE blobs SET uploadedAt = ?, orphanedAt = NULL WHERE id = ?').run(now, input.id);
     return { created: false, sha256: hash };
   }
   db.prepare('INSERT INTO blobs(id, sha256, size, mime, name, kind, uploaderId, uploadedAt, data) VALUES(?,?,?,?,?,?,?,?,?)').run(
@@ -169,9 +185,19 @@ export function blobStats(db: DatabaseSync): { count: number; bytes: number } {
   return { count: r.n, bytes: r.bytes };
 }
 
-/** Räumt Blobs auf, auf die nichts mehr verweist und die seit der Schonfrist niemand mehr hochgeladen hat. Liefert die Anzahl. */
+/**
+ * Räumt Blobs auf, auf die seit mehr als sieben Tagen nichts mehr verweist. Die Frist beginnt, wenn der Blob ohne Verweis dasteht
+ * (der Lauf davor merkt es sich in `orphanedAt`), nicht erst mit dem Upload: Ein Gerät, das lange offline war, kann ein Protokoll
+ * schicken, das noch auf einen Anhang zeigt, den ein anderes Gerät inzwischen entfernt hat (Konfliktkopie). Auch ein erneutes
+ * Hochladen verlängert die Frist. Liefert die Zahl der entfernten Blobs.
+ */
 export function sweepBlobs(db: DatabaseSync, now = Date.now()): number {
-  const r = db.prepare('DELETE FROM blobs WHERE uploadedAt < ? AND NOT EXISTS (SELECT 1 FROM blob_refs r WHERE r.blobId = blobs.id)').run(now - BLOB_GRACE_DAYS * DAY);
+  db.prepare('UPDATE blobs SET orphanedAt = NULL WHERE orphanedAt IS NOT NULL AND EXISTS (SELECT 1 FROM blob_refs r WHERE r.blobId = blobs.id)').run();
+  db.prepare('UPDATE blobs SET orphanedAt = ? WHERE orphanedAt IS NULL AND NOT EXISTS (SELECT 1 FROM blob_refs r WHERE r.blobId = blobs.id)').run(now);
+  const cutoff = now - BLOB_GRACE_DAYS * DAY;
+  const r = db
+    .prepare('DELETE FROM blobs WHERE orphanedAt < ? AND uploadedAt < ? AND NOT EXISTS (SELECT 1 FROM blob_refs r WHERE r.blobId = blobs.id)')
+    .run(cutoff, cutoff);
   return Number(r.changes);
 }
 
@@ -238,7 +264,8 @@ export function reindexBlobRefs(db: DatabaseSync): number {
   const seen = new Set<string>();
   db.exec('BEGIN IMMEDIATE');
   try {
-    for (const row of db.prepare('SELECT id, content, purgedAt FROM protocols').all() as { id: string; content: string; purgedAt: number | null }[]) {
+    // Zeile für Zeile, nicht alles auf einmal: Bleibt nach einem gescheiterten Umbau viel Altbestand im Inhalt, wäre das sonst eine Speicherspitze.
+    for (const row of db.prepare('SELECT id, content, purgedAt FROM protocols').iterate() as Iterable<{ id: string; content: string; purgedAt: number | null }>) {
       seen.add(row.id);
       let want: string[] = [];
       if (row.purgedAt === null) {
@@ -359,12 +386,13 @@ export function normalizeContent(content: unknown, strict: boolean): Normalized 
       return node;
     }
     const mime = cleanMime(attrs.mime);
-    const name = cleanName(attrs.name) || 'Datei';
-    const blob = derive('file', data, mime, name);
+    // Im Protokoll bleibt der Name, wie er war (nur Steuerzeichen raus, sehr lange behalten die Endung); beim Blob steht die bereinigte Fassung.
+    const shown = typeof attrs.name === 'string' ? shortName(attrs.name.replace(CONTROL, '').trim(), 255) : '';
+    const blob = derive('file', data, mime, cleanName(attrs.name) || 'Datei');
     if (!found.has(blob.id)) found.set(blob.id, blob);
     const { data: _data, ...rest } = attrs;
     void _data;
-    return { ...node, attrs: { ...rest, name, mime, size: data.length, blobId: blob.id } };
+    return { ...node, attrs: { ...rest, name: shown || 'Datei', mime, size: data.length, blobId: blob.id } };
   };
 
   const walk = (n: unknown): unknown => {
