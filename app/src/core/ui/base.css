@@ -145,12 +145,12 @@ a.btn--primary { color: var(--on-primary); }
 .clock__main { flex: 1; min-height: 64px; font-size: 1.2rem; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-3); }
 .marker-btn { min-height: 64px; border-radius: var(--r-md); border: 1px solid var(--border); background: var(--surface-2); display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; padding: var(--s-2); }
-.marker-btn[aria-pressed='true'] { border-color: var(--accent); }
+.marker-btn[aria-pressed='true'] { border-color: var(--primary); }
 .marker-btn:disabled { opacity: 0.45; cursor: default; }
 .marker-btn small { color: var(--muted); }
 .chips-row { display: flex; flex-wrap: wrap; gap: var(--s-2); }
 .chip-btn { min-height: 44px; padding: 0 var(--s-4); border-radius: 999px; border: 1px solid var(--border); background: var(--surface); font-weight: 600; cursor: pointer; }
-.chip-btn[aria-pressed='true'] { background: var(--accent); border-color: transparent; color: #1a0f04; }
+.chip-btn[aria-pressed='true'] { background: var(--primary); border-color: transparent; color: var(--on-primary); }
 .stepper-row { display: flex; align-items: center; gap: var(--s-3); min-height: 52px; padding: var(--s-2) var(--s-3); background: var(--surface-2); border-radius: var(--r-md); }
 .stepper-btn { width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--border); background: var(--surface); display: grid; place-items: center; cursor: pointer; flex-shrink: 0; }
 .stepper-btn--add { background: var(--primary); border-color: transparent; color: #fff; }
@@ -159,7 +159,7 @@ a.btn--primary { color: var(--on-primary); }
 .score__total { font-size: 2.6rem; font-weight: 800; line-height: 1.1; }
 .scale { display: grid; grid-template-columns: repeat(5, 1fr); gap: var(--s-2); }
 .scale button { min-height: 52px; border-radius: var(--r-md); border: 2px solid transparent; background: var(--surface-2); display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; }
-.scale button[aria-pressed='true'] { border-color: var(--accent); }
+.scale button[aria-pressed='true'] { border-color: var(--primary); }
 .scale small { color: var(--muted); font-size: 0.65rem; }
 .acc { background: var(--surface-2); border-radius: var(--r-md); padding: var(--s-2) var(--s-3); }
 .acc summary { min-height: 44px; display: flex; align-items: center; gap: var(--s-2); font-weight: 600; cursor: pointer; }
