@@ -1,10 +1,22 @@
 import { db } from '@/core/db/db';
+import { jsonEqual } from '@/core/domain/equal';
 import { DEMO_NEEDS_SERVER, IS_DEMO } from '@/core/env';
 import { loadSettings } from '@/core/settings/settings';
 import { shareBinaryFile } from '@/core/native/files';
 import { ProtoError, loadConn, request } from './http';
 import { newProtokoll, type Protokoll, type ProtokollPatch } from './model';
 import { scheduleSync, syncNow } from './sync';
+
+/** Wert eines Feldes, so wie er verglichen wird: fehlender Ordner = oberste Ebene, fehlendes `shared` = privat. */
+function fieldValue(p: Partial<Protokoll>, key: keyof ProtokollPatch): unknown {
+  if (key === 'folderId') return p.folderId ?? '';
+  if (key === 'shared') return p.shared === true;
+  return p[key];
+}
+
+function isUnchanged(row: Protokoll, patch: ProtokollPatch): boolean {
+  return (Object.keys(patch) as (keyof ProtokollPatch)[]).every((key) => jsonEqual(fieldValue(row, key), fieldValue(patch, key)));
+}
 
 export const protokolleRepo = {
   async create(folderId = ''): Promise<Protokoll> {
@@ -13,8 +25,13 @@ export const protokolleRepo = {
     return p;
   },
 
-  /** Speichert lokal (sofort) und stößt den Abgleich verzögert an. */
+  /**
+   * Speichert lokal (sofort) und stößt den Abgleich verzögert an. Ändert der Patch nichts, bleibt alles unberührt
+   * (keine neue Änderungszeit, kein Abgleich) und die bisherige Änderungszeit kommt zurück.
+   */
   async save(id: string, patch: ProtokollPatch): Promise<number> {
+    const row = await db.protokolle.get(id);
+    if (row && isUnchanged(row, patch)) return row.updatedAt;
     const updatedAt = Date.now();
     await db.protokolle.update(id, { ...patch, updatedAt, dirty: 1 });
     scheduleSync();

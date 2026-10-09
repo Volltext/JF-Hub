@@ -31,5 +31,6 @@ export function sampleProtocol() {
     rev: 0,
     updatedAt: Date.now(),
     deletedAt: null,
+    conflictRev: null,
   });
 }

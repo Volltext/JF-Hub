@@ -1,5 +1,5 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db } from '@/core/db/db';
+import { db, type HubDb } from '@/core/db/db';
 
 export type Role = 'admin' | 'betreuer';
 
@@ -27,8 +27,8 @@ export async function saveAccount(account: Account): Promise<void> {
   await db.kv.put({ key: ACCOUNT_KEY, value: account });
 }
 
-export async function saveDirectory(users: DirectoryUser[]): Promise<void> {
-  await db.kv.put({ key: DIRECTORY_KEY, value: users });
+export async function saveDirectory(users: DirectoryUser[], store: HubDb = db): Promise<void> {
+  await store.kv.put({ key: DIRECTORY_KEY, value: users });
 }
 
 /** `undefined` = lädt noch, `null` = nicht angemeldet. */

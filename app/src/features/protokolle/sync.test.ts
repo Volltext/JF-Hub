@@ -85,6 +85,53 @@ describe('performSync', () => {
   });
 });
 
+describe('performSync: übersprungene Server-Dokumente', () => {
+  const cursor = async () => (await db.kv.get('protokolle.rev'))?.value;
+
+  it('rückt den Stand nicht über ein Dokument hinaus, das wegen lokaler Bearbeitung übersprungen wurde', async () => {
+    const p = { ...newProtokoll(), title: 'v1', dirty: 0 as const, rev: 1 };
+    await db.protokolle.add(p);
+    await performSync(async () => {
+      // Der Nutzer tippt los, während die Antwort mit der Fassung eines anderen Geräts unterwegs ist.
+      await db.protokolle.update(p.id, { title: 'v2', updatedAt: p.updatedAt + 50, dirty: 1 });
+      return { rev: 10, changes: [serverDoc(p.id, { title: 'fremd', rev: 8, updatedAt: 99 })], folders: [], conflicts: [] };
+    });
+    expect(await db.protokolle.get(p.id)).toMatchObject({ title: 'v2', dirty: 1, rev: 1 });
+    // Der Stand bleibt vor dem übersprungenen Dokument, damit der Server es beim nächsten Abgleich erneut liefert.
+    expect(await cursor()).toBe(7);
+  });
+
+  it('hält den Stand auch, wenn während der Übertragung weitergetippt wird und der Server eine fremde Fassung liefert', async () => {
+    const p = { ...newProtokoll(), title: 'v1', rev: 1 };
+    await db.protokolle.add(p);
+    await performSync(async () => {
+      await db.protokolle.update(p.id, { title: 'v2', updatedAt: p.updatedAt + 50, dirty: 1 });
+      return {
+        rev: 10,
+        changes: [serverDoc(p.id, { title: 'fremd', rev: 8, updatedAt: 99 }), serverDoc('kopie-123456', { title: 'v1 (Konflikt)', rev: 9 })],
+        folders: [],
+        conflicts: [{ id: p.id, copyId: 'kopie-123456' }],
+      };
+    });
+    expect(await db.protokolle.get(p.id)).toMatchObject({ title: 'v2', dirty: 1 });
+    expect(await cursor()).toBe(7);
+  });
+
+  it('übernimmt das erneut gelieferte Dokument, sobald nichts mehr in Arbeit ist, und rückt dann vor', async () => {
+    const p = { ...newProtokoll(), title: 'v2', rev: 1 };
+    await db.protokolle.add(p);
+    await db.kv.put({ key: 'protokolle.rev', value: 7 });
+    await performSync(async () => ({
+      rev: 10,
+      changes: [serverDoc(p.id, { title: 'fremd', rev: 8, updatedAt: 99 }), serverDoc('kopie-123456', { title: 'v2 (Konflikt)', rev: 9 })],
+      folders: [],
+      conflicts: [{ id: p.id, copyId: 'kopie-123456' }],
+    }));
+    expect(await db.protokolle.get(p.id)).toMatchObject({ title: 'fremd', dirty: 0, rev: 8 });
+    expect(await cursor()).toBe(10);
+  });
+});
+
 describe('performSync: Ordner', () => {
   it('sendet geänderte Ordner und übernimmt Ordner vom Server', async () => {
     await db.folders.add({ id: 'ordner-lokal', name: 'Lokal', parentId: '', rev: 0, updatedAt: 5, dirty: 1, deleted: 0 });

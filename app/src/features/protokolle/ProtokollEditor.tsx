@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
+import type { Editor } from '@tiptap/core';
 import { EditorContent, useEditor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
@@ -15,6 +16,7 @@ import { isMine, useAccount, useDirectory } from '@/core/account/account';
 import { DateField, TimeField } from '@/core/ui/pickers';
 import { InkNode } from '@/features/ink/InkNode';
 import { FileNode, PhotoNode } from '@/features/attachments/AttachmentNodes';
+import { createAutosave } from './autosave';
 import { EditorToolbar } from './EditorToolbar';
 import { FolderPicker } from './FolderPicker';
 import { folderPathLabel, liveFolders } from './folders';
@@ -80,15 +82,20 @@ function EditorInner({ initial }: { initial: Protokoll }) {
   }, [meta.title]);
 
   const metaRef = useRef(meta);
-  const pending = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const lastWritten = useRef(initial.updatedAt);
-  const flushRef = useRef<() => Promise<void>>(async () => {});
-
-  const queue = useCallback(() => {
-    setSaved(false);
-    clearTimeout(pending.current);
-    pending.current = setTimeout(() => void flushRef.current(), 500);
-  }, []);
+  const editorRef = useRef<Editor | null>(null);
+  // Schreibt erst nach einer Ruhepause und nur, wenn es etwas zu schreiben gibt: Öffnen und Zurück ändert ein Protokoll nicht.
+  const autosave = useMemo(
+    () =>
+      createAutosave(
+        async () => {
+          const ed = editorRef.current;
+          if (ed) lastWritten.current = await protokolleRepo.save(initial.id, { ...metaRef.current, content: ed.getJSON() });
+        },
+        { onDirty: () => setSaved(false), onSaved: () => setSaved(true) },
+      ),
+    [initial.id],
+  );
 
   const editor = useEditor({
     extensions: [
@@ -102,45 +109,36 @@ function EditorInner({ initial }: { initial: Protokoll }) {
     ],
     content: initial.content,
     editorProps: { attributes: { class: 'ed-content', 'aria-label': 'Protokolltext', lang: 'de', spellcheck: 'true' } },
-    onUpdate: () => queue(),
+    onUpdate: () => autosave.markDirty(),
     onFocus: () => document.body.classList.add('editing'),
     onBlur: () => document.body.classList.remove('editing'),
   });
-
-  flushRef.current = async () => {
-    if (!editor) return;
-    clearTimeout(pending.current);
-    pending.current = undefined;
-    lastWritten.current = await protokolleRepo.save(initial.id, { ...metaRef.current, content: editor.getJSON() });
-    setSaved(true);
-  };
+  editorRef.current = editor;
 
   // Ungespeichertes beim Verlassen/Wechseln der App sichern.
   useEffect(() => {
-    const flushIfPending = () => {
-      if (pending.current) void flushRef.current();
-    };
-    const onHide = () => document.visibilityState === 'hidden' && flushIfPending();
+    const flush = () => void autosave.flushIfDirty();
+    const onHide = () => document.visibilityState === 'hidden' && flush();
     document.addEventListener('visibilitychange', onHide);
-    window.addEventListener('pagehide', flushIfPending);
+    window.addEventListener('pagehide', flush);
     return () => {
       document.removeEventListener('visibilitychange', onHide);
-      window.removeEventListener('pagehide', flushIfPending);
+      window.removeEventListener('pagehide', flush);
       document.body.classList.remove('editing');
-      flushIfPending();
+      flush();
     };
-  }, []);
+  }, [autosave]);
 
   // Änderung von einem anderen Gerät (per Abgleich eingegangen) übernehmen, solange hier nichts offen ist.
   const live = useLiveQuery(() => db.protokolle.get(initial.id), [initial.id]);
   useEffect(() => {
-    if (!live || !editor || pending.current || live.updatedAt === lastWritten.current || live.deleted) return;
+    if (!live || !editor || autosave.dirty || live.updatedAt === lastWritten.current || live.deleted) return;
     lastWritten.current = live.updatedAt;
     editor.commands.setContent(live.content, { emitUpdate: false });
     const m = metaOf(live);
     metaRef.current = m;
     setMeta(m);
-  }, [live, editor]);
+  }, [live, editor, autosave]);
 
   const folders = useLiveQuery(liveFolders, []);
   const folderId = live?.folderId ?? initial.folderId ?? '';
@@ -154,14 +152,14 @@ function EditorInner({ initial }: { initial: Protokoll }) {
     const next = { ...metaRef.current, ...p };
     metaRef.current = next;
     setMeta(next);
-    queue();
+    autosave.markDirty();
   }
 
   async function pdf() {
     setBusy(true);
     setError('');
     try {
-      await flushRef.current();
+      await autosave.flushIfDirty();
       await exportPdf(initial.id);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'PDF konnte nicht erstellt werden.');
@@ -172,8 +170,7 @@ function EditorInner({ initial }: { initial: Protokoll }) {
 
   async function remove() {
     if (!(await confirmDialog('Dieses Protokoll löschen?', { title: meta.title || 'Ohne Titel', confirmLabel: 'Löschen', danger: true }))) return;
-    clearTimeout(pending.current);
-    pending.current = undefined;
+    autosave.cancel();
     await protokolleRepo.remove(initial.id);
     navigate(folderId ? `/protokolle/o/${folderId}` : '/protokolle', { replace: true });
   }
@@ -181,7 +178,7 @@ function EditorInner({ initial }: { initial: Protokoll }) {
   return (
     <div className="proto">
       <div className="proto-bar">
-        <Link to={folderId ? `/protokolle/o/${folderId}` : '/protokolle'} className="proto-back" onClick={() => void flushRef.current()}>
+        <Link to={folderId ? `/protokolle/o/${folderId}` : '/protokolle'} className="proto-back" onClick={() => void autosave.flushIfDirty()}>
           <ChevronLeft size={20} /> Protokolle
         </Link>
         <span className="proto-bar__spacer" />
@@ -271,7 +268,7 @@ function EditorInner({ initial }: { initial: Protokoll }) {
                 variant={shared ? undefined : 'primary'}
                 onClick={async () => {
                   setSharing(false);
-                  await flushRef.current();
+                  await autosave.flushIfDirty();
                   lastWritten.current = await protokolleRepo.save(initial.id, { shared: !shared });
                 }}
               >
@@ -290,7 +287,7 @@ function EditorInner({ initial }: { initial: Protokoll }) {
           onClose={() => setPicking(false)}
           onPick={async (target) => {
             setPicking(false);
-            await flushRef.current();
+            await autosave.flushIfDirty();
             lastWritten.current = await protokolleRepo.save(initial.id, { folderId: target });
           }}
         />

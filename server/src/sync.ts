@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 import { currentRev, getEpoch, nextRev, type FolderRow, type ProtocolRow, type RecordRow, type Role } from './db.js';
 
@@ -177,8 +177,11 @@ interface Meta {
   prev?: { shared: number; hiddenRev: number | null };
 }
 
-function write(db: DatabaseSync, id: string, c: ClientChange, deleted: boolean, meta: Meta): void {
-  const content = JSON.stringify(c.content ?? { type: 'doc', content: [] });
+const EMPTY_DOC = { type: 'doc', content: [] };
+
+/** Schreibt (oder überschreibt) ein Protokoll und liefert die vergebene Revision. */
+function write(db: DatabaseSync, id: string, c: ClientChange, deleted: boolean, meta: Meta): number {
+  const content = JSON.stringify(c.content ?? EMPTY_DOC);
   if (content.length > MAX_CONTENT) throw new Error('Protokoll zu groß');
   const now = Date.now();
   const rev = nextRev(db);
@@ -207,7 +210,28 @@ function write(db: DatabaseSync, id: string, c: ClientChange, deleted: boolean, 
     Number.isFinite(c.updatedAt) ? c.updatedAt : now,
     deleted ? now : null,
   );
+  return rev;
 }
+
+/** Steht genau diese Fassung (Kopfdaten und Inhalt) schon beim Server? Dann ist eine veraltete Basis kein Konflikt. */
+function sameDoc(r: ProtocolRow, c: ClientChange): boolean {
+  return (
+    r.title === str(c.title, 200) &&
+    r.folderId === str(c.folderId, 64) &&
+    r.datum === str(c.datum, 20) &&
+    r.beginn === str(c.beginn, 10) &&
+    r.ende === str(c.ende, 10) &&
+    r.ort === str(c.ort, 200) &&
+    r.leitung === str(c.leitung, 200) &&
+    r.content === JSON.stringify(c.content ?? EMPTY_DOC)
+  );
+}
+
+/**
+ * Kennung der Konfliktkopie: dieselbe für denselben Nutzer, dasselbe Dokument und dieselbe veraltete Basis. Wer auf einem
+ * veralteten Stand weitertippt, schreibt so dieselbe Kopie fort, statt bei jedem Abgleich eine neue anzulegen.
+ */
+const conflictCopyId = (userId: string, c: ClientChange): string => createHash('sha256').update(`${userId}\n${c.id}\n${c.baseRev}`).digest('hex').slice(0, 32);
 
 /**
  * Wendet Client-Änderungen an und liefert alles, was seit `since` neu ist und für den Nutzer sichtbar ist.
@@ -220,6 +244,8 @@ function write(db: DatabaseSync, id: string, c: ClientChange, deleted: boolean, 
  */
 export function applySync(db: DatabaseSync, req: SyncRequest, user: SyncUser): SyncResponse {
   const conflicts: SyncResponse['conflicts'] = [];
+  /** Dokumente, die in die Antwort gehören, auch wenn ihre Revision nicht über dem Stand des Clients liegt. */
+  const resend = new Set<string>();
   const epoch = getEpoch(db);
   let since = Number.isFinite(req.since) ? req.since : 0;
   // Der gemerkte Stand des Clients passt nicht zu dieser Datenbank (neu angelegt/zurückgesetzt/ersetzt):
@@ -254,8 +280,20 @@ export function applySync(db: DatabaseSync, req: SyncRequest, user: SyncUser): S
         write(db, c.id, c, false, meta);
         continue;
       }
-      const copyId = randomUUID().replace(/-/g, '');
-      write(db, copyId, { ...c, title: `${str(c.title, 180) || 'Protokoll'} (Konflikt)` }, false, { ownerId: user.id, shared: existing.shared as 0 | 1 });
+      // Das Gerät baut auf einem veralteten Stand auf. Das Original geht in jedem Fall mit zurück, damit es aufholen kann,
+      // auch wenn sein Stand schon darüber hinausgerückt ist.
+      resend.add(c.id);
+      // Steht genau diese Fassung schon beim Server (Wiederholung nach verlorener Antwort, gleiche Änderung auf zwei Geräten), ist nichts zu tun.
+      if (sameDoc(existing, c)) continue;
+      // Sonst bleibt die Server-Fassung, und die Fassung des Geräts wird als Kopie gesichert. Dieselbe Kopie wird fortgeschrieben,
+      // solange das Gerät auf derselben veralteten Basis weitertippt und niemand die Kopie geändert hat.
+      let copyId = conflictCopyId(user.id, c);
+      const prev = db.prepare('SELECT rev, conflictRev, deletedAt FROM protocols WHERE id = ?').get(copyId) as
+        | { rev: number; conflictRev: number | null; deletedAt: number | null }
+        | undefined;
+      if (prev && (prev.deletedAt !== null || prev.conflictRev !== prev.rev)) copyId = randomUUID().replace(/-/g, '');
+      const copyRev = write(db, copyId, { ...c, title: `${str(c.title, 180) || 'Protokoll'} (Konflikt)` }, false, { ownerId: user.id, shared: existing.shared as 0 | 1 });
+      db.prepare('UPDATE protocols SET conflictRev = ? WHERE id = ?').run(copyRev, copyId);
       conflicts.push({ id: c.id, copyId });
     }
     const now = Date.now();
@@ -296,6 +334,11 @@ export function applySync(db: DatabaseSync, req: SyncRequest, user: SyncUser): S
   }
 
   const rows = db.prepare(`SELECT * FROM protocols WHERE rev > ? AND ${VISIBLE_SQL} ORDER BY rev`).all(since, user.id) as unknown as ProtocolRow[];
+  for (const id of resend) {
+    if (rows.some((r) => r.id === id)) continue;
+    const row = db.prepare(`SELECT * FROM protocols WHERE id = ? AND ${VISIBLE_SQL}`).get(id, user.id) as unknown as ProtocolRow | undefined;
+    if (row) rows.push(row);
+  }
   const hiddenDocs = (
     db.prepare('SELECT id, rev FROM protocols WHERE rev > ? AND shared = 0 AND ownerId != ? AND hiddenRev > ?').all(since, user.id, since) as { id: string; rev: number }[]
   ).map((h) => hiddenDoc(h.id, h.rev));

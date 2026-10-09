@@ -138,6 +138,56 @@ describe('Sync', () => {
     expect(titles).toContain('Gerät B (Konflikt)');
   });
 
+  it('derselbe Stand auf veralteter Basis ist kein Konflikt (z. B. Wiederholung nach verlorener Antwort)', async () => {
+    const t = await login();
+    const r1 = await sync(t, 0, [change('doc-0001')]);
+    const base = r1.changes[0]!.rev;
+    const r2 = await sync(t, r1.rev, [change('doc-0001', { baseRev: base, title: 'Neu' })]);
+    const r3 = await sync(t, r2.rev, [change('doc-0001', { baseRev: base, title: 'Neu' })]);
+    expect(r3.conflicts).toHaveLength(0);
+    // Das Original geht zum Aufholen mit zurück, obwohl der Stand des Geräts schon darüber liegt.
+    expect(r3.changes.map((c) => c.id)).toEqual(['doc-0001']);
+    expect(r3.changes[0]!.rev).toBe(r2.changes[0]!.rev);
+    expect((await sync(t, 0, [])).changes).toHaveLength(1);
+  });
+
+  it('bei einem Konflikt geht das Original immer mit zurück, auch wenn der Stand des Geräts darüber liegt', async () => {
+    const t = await login();
+    const r1 = await sync(t, 0, [change('doc-0001')]);
+    const base = r1.changes[0]!.rev;
+    const r2 = await sync(t, r1.rev, [change('doc-0001', { baseRev: base, title: 'Gerät A' })]);
+    const r3 = await sync(t, r2.rev, [change('doc-0001', { baseRev: base, title: 'Gerät B' })]);
+    expect(r3.conflicts).toHaveLength(1);
+    expect(r3.changes.find((c) => c.id === 'doc-0001')!.title).toBe('Gerät A');
+  });
+
+  it('schreibt die Konfliktkopie bei gleicher veralteter Basis fort, statt neue anzulegen', async () => {
+    const t = await login();
+    const r1 = await sync(t, 0, [change('doc-0001')]);
+    const base = r1.changes[0]!.rev;
+    await sync(t, r1.rev, [change('doc-0001', { baseRev: base, title: 'Gerät A' })]);
+    const first = await sync(t, r1.rev, [change('doc-0001', { baseRev: base, title: 'Gerät B, Stand 1' })]);
+    const again = await sync(t, first.rev, [change('doc-0001', { baseRev: base, title: 'Gerät B, Stand 2' })]);
+    expect(again.conflicts).toHaveLength(1);
+    expect(again.conflicts[0]!.copyId).toBe(first.conflicts[0]!.copyId);
+    const all = (await sync(t, 0, [])).changes;
+    expect(all.filter((c) => c.title.endsWith('(Konflikt)')).map((c) => c.title)).toEqual(['Gerät B, Stand 2 (Konflikt)']);
+  });
+
+  it('legt eine neue Kopie an, wenn die bisherige inzwischen bearbeitet wurde', async () => {
+    const t = await login();
+    const r1 = await sync(t, 0, [change('doc-0001')]);
+    const base = r1.changes[0]!.rev;
+    await sync(t, r1.rev, [change('doc-0001', { baseRev: base, title: 'Gerät A' })]);
+    const first = await sync(t, r1.rev, [change('doc-0001', { baseRev: base, title: 'Gerät B, Stand 1' })]);
+    const copyId = first.conflicts[0]!.copyId;
+    const copyRev = first.changes.find((c) => c.id === copyId)!.rev;
+    await sync(t, first.rev, [change(copyId, { baseRev: copyRev, title: 'Von Hand weiterbearbeitet' })]);
+    const next = await sync(t, 0, [change('doc-0001', { baseRev: base, title: 'Gerät B, Stand 2' })]);
+    expect(next.conflicts[0]!.copyId).not.toBe(copyId);
+    expect(next.changes.find((c) => c.id === copyId)!.title).toBe('Von Hand weiterbearbeitet'); // die Arbeit an der Kopie bleibt erhalten
+  });
+
   it('Löschen erzeugt Tombstone, Bearbeitung weckt ihn wieder auf', async () => {
     const t = await login();
     const r1 = await sync(t, 0, [change('doc-0001')]);
