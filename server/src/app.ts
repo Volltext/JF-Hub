@@ -35,7 +35,7 @@ import {
   type SessionUser,
 } from './auth.js';
 import { CONFIG_DEFAULTS, getSettings, nextRev, setConfig, type ConfigKey, type FolderRow, type ProtocolRow, type UserRow } from './db.js';
-import { pdfFileName, renderPdf, type PdfStyle } from './pdf.js';
+import { pdfFileName, renderPdf, safeFileName, type PdfStyle } from './pdf.js';
 import { parseClothingPdf, renderClothingPdf } from './clothingPdf.js';
 import { applySync, canSee, toServerDoc, VISIBLE_SQL, type SyncRequest } from './sync.js';
 import { ensureVapid, PushError, replaceReminders, sendDue, subscribe, unsubscribe, webPushSender, type PushSender } from './push.js';
@@ -44,7 +44,7 @@ import { sampleProtocol } from './sample.js';
 import { autoKeep, backupPath, createBackup, deleteBackup, isBackupName, listBackups, pruneBackups, restoreFromFile, RestoreError, runAutoBackup, writeUpload } from './backup.js';
 import { DEMO_ACCOUNTS, demoBlock, formatResetAt, isDemoAccount, msUntilReset, parseResetAt, resetDemo } from './demo.js';
 
-export const VERSION = '2.0.1';
+export const VERSION = '2.0.4';
 const COOKIE = 'jfh_session';
 
 declare module 'fastify' {
@@ -82,6 +82,8 @@ export interface AppOptions {
   demo?: { resetAt?: string; timer?: boolean };
   fetchImpl?: FetchLike;
   logger?: boolean;
+  /** Tests: wird für jede registrierte Route aufgerufen (Grundlage des Sicherheitstests, der alle geschützten Routen durchgeht). */
+  onRoute?: (route: { method: string; url: string }) => void;
 }
 
 /** Liest `TRUST_PROXY`: true/false, eine Liste (Komma) oder ein Name wie `loopback`. Standard: private Netze (Docker, Tunnel, Reverse-Proxy im Heimnetz). */
@@ -98,6 +100,13 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
   const app = Fastify({ logger: opts.logger ?? false, trustProxy: opts.trustProxy ?? parseTrustProxy(undefined), bodyLimit: 64 * 1024 * 1024 }) as FastifyInstance & {
     setupCode?: string;
   };
+
+  if (opts.onRoute) {
+    const report = opts.onRoute;
+    app.addHook('onRoute', (route) => {
+      for (const method of [route.method].flat()) report({ method: String(method), url: route.url });
+    });
+  }
 
   // Clients, die den Content-Type weglassen (z. B. native HTTP-Schichten), werden als JSON gelesen.
   app.addContentTypeParser('*', { parseAs: 'string' }, (_req, body, done) => {
@@ -127,7 +136,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
   await app.register(cookie);
   await app.register(rateLimit, { global: false });
 
-  app.addHook('onSend', async (_req, reply) => {
+  app.addHook('onSend', async (req, reply) => {
     reply.header('X-Content-Type-Options', 'nosniff');
     reply.header('X-Frame-Options', 'DENY');
     reply.header('Referrer-Policy', 'no-referrer');
@@ -136,6 +145,15 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
       'Content-Security-Policy',
       "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'",
     );
+    // API-Antworten (Export, Backup, PDF) gehören nie in einen Zwischenspeicher, auch nicht in den eines CDN, das nach der Dateiendung cacht.
+    if (!reply.hasHeader('cache-control') && (req.routeOptions.url ?? req.url).startsWith('/api/')) reply.header('Cache-Control', 'no-store');
+  });
+
+  // Der Router dekodiert den Pfad, `req.url` bleibt roh: Zugriffsregeln gehören deshalb ans Routenmuster (siehe unten). Zusätzlich
+  // weisen wir Pfade ab, in denen Zeichen kodiert sind, die kein Client kodiert (Buchstaben, Ziffern, `-._~`).
+  const ENCODED_UNRESERVED = /%(?:3[0-9]|4[1-9a-f]|5[0-9af]|6[1-9a-f]|7[0-9ae]|2[de])/i;
+  app.addHook('onRequest', async (req, reply) => {
+    if (ENCODED_UNRESERVED.test(req.url.split('?')[0]!)) return reply.code(400).send({ error: 'Ungültiger Pfad' });
   });
 
   const tokenOf = (req: FastifyRequest): { token?: string; viaCookie: boolean } => {
@@ -153,9 +171,11 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
       if (blocked) return reply.code(403).send({ error: blocked });
     });
   }
-  app.addHook('preHandler', async (req, reply) => {
-    const path = req.url.split('?')[0]!;
-    if (!path.startsWith('/api/') || PUBLIC.has(path)) return;
+  // Vor dem Lesen des Bodys. Maßgeblich ist das Muster der Route, die der Router gefunden hat – nicht die rohe URL.
+  // Ohne Muster (404, statische Dateien) gibt es nichts zu schützen.
+  app.addHook('onRequest', async (req, reply) => {
+    const route = req.routeOptions.url;
+    if (!route?.startsWith('/api/') || PUBLIC.has(route)) return;
     const { token, viaCookie } = tokenOf(req);
     const user = validateSession(db, token);
     if (!user) return reply.code(401).send({ error: 'Nicht angemeldet' });
@@ -163,7 +183,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
     if (viaCookie && !['GET', 'HEAD'].includes(req.method) && req.headers['x-jfh'] !== '1') {
       return reply.code(403).send({ error: 'Ungültige Anfrage' });
     }
-    if (path.startsWith('/api/admin/') && user.role !== 'admin') return reply.code(403).send({ error: 'Nur für Admins' });
+    if (route.startsWith('/api/admin/') && user.role !== 'admin') return reply.code(403).send({ error: 'Nur für Admins' });
     req.user = user;
   });
 
@@ -308,9 +328,16 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
 
   app.get<{ Params: { id: string } }>('/api/protocols/:id/pdf', async (req, reply) => {
     const row = db.prepare('SELECT * FROM protocols WHERE id = ?').get(req.params.id) as ProtocolRow | undefined;
-    if (!row || !canSee(row, me(req))) return reply.code(404).send({ error: 'Nicht gefunden' });
+    if (!row || row.deletedAt !== null || !canSee(row, me(req))) return reply.code(404).send({ error: 'Nicht gefunden' });
     const doc = toServerDoc(row);
-    const pdf = await renderPdf(doc, style());
+    let pdf: Buffer;
+    try {
+      pdf = await renderPdf(doc, style());
+    } catch (e) {
+      // Der Inhalt kommt von Clients und wird nicht geprüft: ein unbrauchbares Protokoll darf nur sein eigenes PDF verhindern.
+      app.log.warn({ err: e, protocol: row.id }, 'PDF konnte nicht erzeugt werden');
+      return reply.code(422).send({ error: 'Dieses Protokoll kann nicht als PDF ausgegeben werden.' });
+    }
     return reply
       .header('Content-Type', 'application/pdf')
       .header('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(pdfFileName(doc))}.pdf`)
@@ -341,18 +368,26 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
     const folders = new Map((db.prepare('SELECT * FROM folders WHERE deletedAt IS NULL').all() as unknown as FolderRow[]).map((f) => [f.id, f]));
     const dirOf = (id: string): string => {
       const parts: string[] = [];
-      for (let f = folders.get(id), n = 0; f && n < 50; f = folders.get(f.parentId), n++) parts.unshift(f.name.replace(/[^\p{L}\p{N} ._-]+/gu, '').trim() || 'Ordner');
+      for (let f = folders.get(id), n = 0; f && n < 50; f = folders.get(f.parentId), n++) parts.unshift(safeFileName(f.name, 'Ordner', 120));
       return parts.length ? `${parts.join('/')}/` : '';
     };
+    const problems: string[] = [];
     for (const r of rows) {
       const doc = toServerDoc(r);
       const dir = dirOf(doc.folderId);
       let base = pdfFileName(doc);
       while (used.has(dir + base)) base += '_';
       used.add(dir + base);
-      files[`${dir}${base}.pdf`] = new Uint8Array(await renderPdf(doc, st));
       files[`json/${dir}${base}.json`] = strToU8(JSON.stringify(doc, null, 2));
+      try {
+        files[`${dir}${base}.pdf`] = new Uint8Array(await renderPdf(doc, st));
+      } catch (e) {
+        // Ein unbrauchbarer Inhalt darf den Export der übrigen nicht verhindern; der Rohinhalt liegt unter json/ bei.
+        app.log.warn({ err: e, protocol: r.id }, 'PDF für den Export nicht erzeugt');
+        problems.push(`${doc.datum} ${doc.title || 'Ohne Titel'} (${r.id}): PDF konnte nicht erzeugt werden, der Rohinhalt liegt unter json/ bei.`);
+      }
     }
+    if (problems.length) files['export-fehler.txt'] = strToU8(`${problems.join('\n')}\n`);
     return reply
       .header('Content-Type', 'application/zip')
       .header('Content-Disposition', 'attachment; filename="protokolle.zip"')

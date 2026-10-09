@@ -259,7 +259,12 @@ export function renderDefinition(definition: Any): Promise<Buffer> {
   });
 }
 
+/** Reinigt Text für Dateinamen: nur Buchstaben, Ziffern, Leerzeichen und `._-`; reine Punkte (`.`, `..`) sind kein Name. */
+export function safeFileName(text: string, fallback: string, max = 80): string {
+  const clean = text.replace(/[^\p{L}\p{N} ._-]+/gu, '').trim().slice(0, max).trim();
+  return /^\.*$/.test(clean) ? fallback : clean;
+}
+
 export function pdfFileName(doc: ServerDoc): string {
-  const base = [doc.datum, doc.title || 'Protokoll'].filter(Boolean).join(' ');
-  return base.replace(/[^\p{L}\p{N} ._-]+/gu, '').trim().slice(0, 80) || 'Protokoll';
+  return safeFileName([doc.datum, doc.title || 'Protokoll'].filter(Boolean).join(' '), 'Protokoll');
 }
