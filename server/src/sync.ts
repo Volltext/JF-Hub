@@ -1,6 +1,5 @@
-import { createHash, randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
-import { clearRefs, missingBlobIds, normalizeContent, refreshRefs, saveBlobs } from './blobs.js';
+import { clearRefs } from './blobs.js';
 import { currentRev, getEpoch, getSettings, nextRev, type FolderRow, type ProtocolRow, type RecordRow, type Role } from './db.js';
 
 /** Wer synchronisiert (aus der Sitzung). */
@@ -9,7 +8,16 @@ export interface SyncUser {
   role: Role;
 }
 
-/** Änderung eines Clients. `baseRev` ist die Server-Revision, auf der die Bearbeitung beruht (0 = neu). */
+/**
+ * Kopffelder eines Protokolls. Jedes trägt seine eigene Änderungszeit: Bei gleichzeitigen Änderungen gewinnt Feld für Feld die
+ * jüngere. Der Text liegt nicht hier, sondern als Yjs-Dokument beim Austausch (`collab/exchange.ts`).
+ */
+export const META_FIELDS = ['title', 'datum', 'beginn', 'ende', 'ort', 'leitung', 'folderId', 'shared'] as const;
+export type MetaField = (typeof META_FIELDS)[number];
+/** Zeitpunkt (ms) der letzten Änderung je Kopffeld. */
+export type MetaAt = Partial<Record<MetaField, number>>;
+
+/** Änderung der Kopfdaten eines Protokolls durch einen Client. `baseRev` ist die Server-Revision, auf der sie beruht (0 = neu). */
 export interface ClientChange {
   id: string;
   baseRev: number;
@@ -21,7 +29,8 @@ export interface ClientChange {
   ende: string;
   ort: string;
   leitung: string;
-  content: unknown;
+  /** Wann der Client welches Feld zuletzt geändert hat. Felder ohne Zeit behauptet der Client nicht. */
+  metaAt?: MetaAt;
   updatedAt: number;
   deleted: boolean;
   /** true = für alle Betreuer sichtbar. Nur der Besitzer kann das ändern. */
@@ -68,7 +77,11 @@ export interface SyncRequest {
   since: number;
   /** Kennung der Datenbank, mit der der Client zuletzt abgeglichen hat. */
   epoch?: string;
-  changes: ClientChange[];
+  /**
+   * Kopfdaten der Protokolle. Das Feld heißt absichtlich nicht mehr `changes`: Ein Server vor 3.0.0 würde eine Änderung ohne Inhalt als
+   * leeres Dokument speichern, so ignoriert er das neue Feld.
+   */
+  protocols: ClientChange[];
   folders?: ClientFolder[];
   records?: ClientRecord[];
 }
@@ -82,12 +95,16 @@ export interface ServerDoc {
   ende: string;
   ort: string;
   leitung: string;
+  /** Schnappschuss des Textes (aus dem Yjs-Dokument abgeleitet) für Liste, Suche, PDF und die Nur-lesen-Ansicht. */
   content: unknown;
   shared: boolean;
   ownerId: string;
   rev: number;
   updatedAt: number;
   deleted: boolean;
+  /** 1 = der Text liegt als Yjs-Dokument beim Server; 0 = noch nicht umgestellt (nur lesen). */
+  ymode: number;
+  metaAt: MetaAt;
 }
 
 export interface DirectoryUser {
@@ -109,11 +126,11 @@ export interface SyncResponse {
   users: DirectoryUser[];
   /** Anzahl Einträge auf dem Server, soweit für den Nutzer sichtbar (zur Kontrolle in der App). */
   counts: { protocols: number; folders: number; records: number };
-  /** Eigene Fassung des Clients wurde als Kopie `copyId` gesichert, weil der Server eine neuere hatte. */
+  /** Seit 3.0.0 immer leer (der Text wird zusammengeführt, die Kopfdaten Feld für Feld); bleibt im Format für den Abgleich von Altfällen. */
   conflicts: { id: string; copyId: string }[];
   /** Änderungen, die der Server nicht annimmt (ungültig, zu groß …). Die übrigen sind trotzdem angewendet. */
   rejected: { kind: 'protocol' | 'folder' | 'record'; id: string; collection?: string; reason: string }[];
-  /** Anhänge, auf die ein soeben gespeichertes Protokoll verweist und die der Server nicht hat: Das Gerät lädt sie nach, wenn es sie noch besitzt. */
+  /** Seit 3.0.0 immer leer: Fehlende Anhänge meldet der Austausch des Textes (`collab/exchange.ts`). */
   missingBlobs: string[];
 }
 
@@ -148,6 +165,8 @@ export function toServerDoc(r: ProtocolRow): ServerDoc {
     rev: r.rev,
     updatedAt: r.updatedAt,
     deleted: r.deletedAt !== null,
+    ymode: r.ymode,
+    metaAt: parseMetaAt(r.metaAt),
   };
 }
 
@@ -167,6 +186,8 @@ const hiddenDoc = (id: string, rev: number): ServerDoc => ({
   rev,
   updatedAt: Date.now(),
   deleted: true,
+  ymode: 1,
+  metaAt: {},
 });
 
 const MAX_DEPTH = 100;
@@ -201,43 +222,68 @@ export function validateContent(content: unknown): string | null {
 function validate(c: ClientChange): string | null {
   if (!c || typeof c !== 'object') return 'ungültige Änderung';
   if (typeof c.id !== 'string' || !/^[A-Za-z0-9_-]{6,64}$/.test(c.id)) return 'ungültige ID';
-  if (typeof c.baseRev !== 'number' || c.baseRev < 0) return 'ungültige Basisrevision';
-  return validateContent(c.content);
+  return null;
 }
 
-interface Meta {
-  ownerId: string;
-  shared: 0 | 1;
-  /** Wer die Änderung schickt: Ihm gehören die Anhänge, die dabei aus dem Inhalt herausgelöst werden. */
-  by: string;
-  /** Zustand vor der Änderung (für `hiddenRev`). */
-  prev?: { shared: number; hiddenRev: number | null };
+const EMPTY_CONTENT = '{"type":"doc","content":[]}';
+/** Wie weit die Uhr eines Geräts vorgehen darf: Wer in der Zukunft schreibt, gewinnt sonst jede spätere Änderung. */
+const FUTURE_SKEW_MS = 5 * 60_000;
+
+function parseMetaAt(text: string): MetaAt {
+  try {
+    const v: unknown = JSON.parse(text);
+    return v && typeof v === 'object' && !Array.isArray(v) ? (v as MetaAt) : {};
+  } catch {
+    return {};
+  }
 }
 
-const EMPTY_DOC = { type: 'doc', content: [] };
+/** Die vom Client genannten Änderungszeiten, begrenzt auf „jetzt + 5 Minuten“. Felder ohne gültige Zeit fehlen. */
+function sentTimes(c: ClientChange, now: number): MetaAt {
+  const out: MetaAt = {};
+  const given: unknown = c.metaAt;
+  if (!given || typeof given !== 'object' || Array.isArray(given)) return out;
+  for (const f of META_FIELDS) {
+    const t = (given as Record<string, unknown>)[f];
+    if (typeof t === 'number' && Number.isFinite(t) && t > 0) out[f] = Math.min(Math.floor(t), now + FUTURE_SKEW_MS);
+  }
+  return out;
+}
 
-/**
- * Schreibt (oder überschreibt) ein Protokoll und liefert die vergebene Revision. Fotos und Dateien, die noch im Inhalt stecken
- * (Apps bis 2.1.x, Altbestand), werden dabei in Blobs ausgelagert; ist das nicht möglich, wirft es und die Änderung wird abgelehnt.
- */
-function write(db: DatabaseSync, id: string, c: ClientChange, deleted: boolean, meta: Meta): number {
-  // Streng nur, wenn etwas Neues gespeichert wird. Ein Löschen darf nie an einem Altinhalt scheitern, der sich nicht auslagern ließ.
-  const normalized = normalizeContent(c.content ?? EMPTY_DOC, !deleted);
-  const content = JSON.stringify(normalized.content);
-  if (content.length > MAX_CONTENT) throw new Error('Protokoll zu groß');
-  const now = Date.now();
-  saveBlobs(db, normalized.blobs, meta.by, now);
-  const rev = nextRev(db);
-  const hiddenRev = meta.prev && meta.prev.shared === 1 && meta.shared === 0 ? rev : (meta.prev?.hiddenRev ?? null);
+/** Wert eines Kopffeldes, wie der Server ihn speichern würde. */
+function incomingValue(c: ClientChange, f: MetaField): string | number {
+  switch (f) {
+    case 'title':
+      return str(c.title, 200);
+    case 'datum':
+      return str(c.datum, 20);
+    case 'beginn':
+      return str(c.beginn, 10);
+    case 'ende':
+      return str(c.ende, 10);
+    case 'ort':
+      return str(c.ort, 200);
+    case 'leitung':
+      return str(c.leitung, 200);
+    case 'folderId':
+      return str(c.folderId, 64);
+    case 'shared':
+      return c.shared === true ? 1 : 0;
+  }
+}
+
+const storedValue = (r: ProtocolRow, f: MetaField): string | number => (f === 'folderId' ? (r.folderId ?? '') : r[f]);
+
+/** Legt ein Protokoll aus den Kopfdaten an. Der Text kommt später über den Austausch. */
+function createProtocol(db: DatabaseSync, c: ClientChange, user: SyncUser, sent: MetaAt, now: number): void {
+  const at = typeof c.updatedAt === 'number' && Number.isFinite(c.updatedAt) && c.updatedAt > 0 ? Math.min(Math.floor(c.updatedAt), now + FUTURE_SKEW_MS) : now;
+  const metaAt: MetaAt = {};
+  for (const f of META_FIELDS) metaAt[f] = sent[f] ?? at;
   db.prepare(
-    `INSERT INTO protocols(id, title, folderId, datum, beginn, ende, ort, leitung, content, ownerId, shared, hiddenRev, rev, updatedAt, deletedAt)
-     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-     ON CONFLICT(id) DO UPDATE SET title=excluded.title, folderId=excluded.folderId, datum=excluded.datum, beginn=excluded.beginn,
-       ende=excluded.ende, ort=excluded.ort, leitung=excluded.leitung, content=excluded.content,
-       ownerId=excluded.ownerId, shared=excluded.shared, hiddenRev=excluded.hiddenRev,
-       rev=excluded.rev, updatedAt=excluded.updatedAt, deletedAt=excluded.deletedAt, purgedAt=NULL, migratedFrom=NULL`,
+    `INSERT INTO protocols(id, title, folderId, datum, beginn, ende, ort, leitung, content, ownerId, shared, hiddenRev, rev, updatedAt, deletedAt, ymode, metaAt)
+     VALUES(?,?,?,?,?,?,?,?,?,?,?,NULL,?,?,?,1,?)`,
   ).run(
-    id,
+    c.id,
     str(c.title, 200),
     str(c.folderId, 64),
     str(c.datum, 20),
@@ -245,16 +291,76 @@ function write(db: DatabaseSync, id: string, c: ClientChange, deleted: boolean, 
     str(c.ende, 10),
     str(c.ort, 200),
     str(c.leitung, 200),
-    content,
-    meta.ownerId,
-    meta.shared,
-    hiddenRev,
-    rev,
-    Number.isFinite(c.updatedAt) ? c.updatedAt : now,
-    deleted ? now : null,
+    EMPTY_CONTENT,
+    user.id,
+    c.shared === true ? 1 : 0,
+    nextRev(db),
+    now,
+    c.deleted ? now : null,
+    JSON.stringify(metaAt),
   );
-  refreshRefs(db, id, normalized.content);
-  return rev;
+}
+
+/**
+ * Wendet die Kopfdaten eines Clients an. Jedes Feld gilt für sich: Es gewinnt die jüngere Änderungszeit, bei Gleichstand der größere
+ * Wert (damit alle Geräte gleich entscheiden). War der Server bei einem Feld neuer, geht das Protokoll in die Antwort (`resend`), und
+ * das Gerät übernimmt es. Löschen gewinnt; ein gelöschtes oder geleertes Protokoll holt nur eine Änderung zurück, die jünger ist.
+ */
+function applyProtocol(db: DatabaseSync, c: ClientChange, user: SyncUser, now: number, resend: Set<string>): void {
+  const sent = sentTimes(c, now);
+  const existing = db.prepare('SELECT * FROM protocols WHERE id = ?').get(c.id) as ProtocolRow | undefined;
+  if (!existing) {
+    createProtocol(db, c, user, sent, now);
+    return;
+  }
+  if (!canSee(existing, user)) return; // fremdes privates Protokoll: ignorieren
+  const isOwner = existing.ownerId === user.id;
+  if (c.deleted) {
+    if (!isOwner && user.role !== 'admin') return;
+    // Löschen gewinnt, auch gegen eine Bearbeitung auf veraltetem Stand: Der Papierkorb macht es umkehrbar, und sonst bliebe ein
+    // bewusst gelöschtes Protokoll durch ein Gerät am Leben, das nur noch nicht abgeglichen hatte.
+    if (existing.deletedAt !== null) resend.add(c.id);
+    else db.prepare('UPDATE protocols SET deletedAt = ?, rev = ?, updatedAt = ? WHERE id = ?').run(now, nextRev(db), now, c.id);
+    return;
+  }
+  const removedAt = existing.purgedAt ?? existing.deletedAt;
+  let revive = false;
+  if (removedAt !== null) {
+    if (Math.max(0, ...Object.values(sent)) <= removedAt) {
+      resend.add(c.id); // die Änderung ist älter als das Löschen
+      return;
+    }
+    revive = true;
+  }
+
+  const known = parseMetaAt(existing.metaAt);
+  const set: Record<string, string | number> = {};
+  let serverNewer = false;
+  for (const f of META_FIELDS) {
+    const t = sent[f];
+    if (t === undefined || (f === 'shared' && !isOwner)) continue;
+    const current = storedValue(existing, f);
+    const incoming = incomingValue(c, f);
+    if (incoming === current) continue;
+    const at = known[f] ?? 0;
+    if (t > at || (t === at && incoming > current)) {
+      set[f] = incoming;
+      known[f] = t;
+    } else {
+      serverNewer = true;
+    }
+  }
+  if (serverNewer) resend.add(c.id);
+  if (!Object.keys(set).length && !revive) return;
+
+  const rev = nextRev(db);
+  const hiddenRev = 'shared' in set && existing.shared === 1 && set.shared === 0 ? rev : existing.hiddenRev;
+  const columns = Object.keys(set); // nur Namen aus META_FIELDS
+  db.prepare(
+    `UPDATE protocols SET ${columns.map((k) => `${k} = ?, `).join('')}metaAt = ?, hiddenRev = ?, rev = ?, updatedAt = ?${
+      revive ? `, deletedAt = NULL, purgedAt = NULL${existing.purgedAt !== null ? ', ymode = 1' : ''}` : ''
+    } WHERE id = ?`,
+  ).run(...columns.map((k) => set[k]!), JSON.stringify(known), hiddenRev, rev, now, c.id);
 }
 
 /**
@@ -269,7 +375,10 @@ export function purgeProtocol(db: DatabaseSync, id: string, now = Date.now()): b
        WHERE id = ? AND deletedAt IS NOT NULL AND purgedAt IS NULL`,
     )
     .run(now, nextRev(db), id);
-  if (r.changes > 0) clearRefs(db, id); // Die Anhänge sind frei und werden nach der Schonfrist aufgeräumt.
+  if (r.changes > 0) {
+    clearRefs(db, id); // Die Anhänge sind frei und werden nach der Schonfrist aufgeräumt.
+    db.prepare('DELETE FROM ydocs WHERE id = ?').run(id);
+  }
   return r.changes > 0;
 }
 
@@ -291,29 +400,6 @@ export function sweepTrash(db: DatabaseSync, now = Date.now()): { purged: number
 }
 
 /**
- * Steht genau diese Fassung (Kopfdaten und Inhalt) schon beim Server? Dann ist eine veraltete Basis kein Konflikt.
- * `content` ist der Inhalt, wie er gespeichert würde (Anhänge schon ausgelagert).
- */
-function sameDoc(r: ProtocolRow, c: ClientChange, content: unknown): boolean {
-  return (
-    r.title === str(c.title, 200) &&
-    r.folderId === str(c.folderId, 64) &&
-    r.datum === str(c.datum, 20) &&
-    r.beginn === str(c.beginn, 10) &&
-    r.ende === str(c.ende, 10) &&
-    r.ort === str(c.ort, 200) &&
-    r.leitung === str(c.leitung, 200) &&
-    r.content === JSON.stringify(content)
-  );
-}
-
-/**
- * Kennung der Konfliktkopie: dieselbe für denselben Nutzer, dasselbe Dokument und dieselbe veraltete Basis. Wer auf einem
- * veralteten Stand weitertippt, schreibt so dieselbe Kopie fort, statt bei jedem Abgleich eine neue anzulegen.
- */
-const conflictCopyId = (userId: string, c: ClientChange): string => createHash('sha256').update(`${userId}\n${c.id}\n${c.baseRev}`).digest('hex').slice(0, 32);
-
-/**
  * Wendet Client-Änderungen an und liefert alles, was seit `since` neu ist und für den Nutzer sichtbar ist.
  * Last-Write-Wins nur, wenn der Client auf dem aktuellen Stand aufbaut; sonst bleibt die
  * Server-Fassung und die Client-Fassung wird als Konfliktkopie gesichert – es geht nichts verloren.
@@ -323,17 +409,9 @@ const conflictCopyId = (userId: string, c: ClientChange): string => createHash('
  * löschen Besitzer und Admins. Wird ein Eintrag wieder privat, erhalten andere Clients einen Löschhinweis.
  */
 export function applySync(db: DatabaseSync, req: SyncRequest, user: SyncUser): SyncResponse {
-  const conflicts: SyncResponse['conflicts'] = [];
   /** Dokumente, die in die Antwort gehören, auch wenn ihre Revision nicht über dem Stand des Clients liegt. */
   const resend = new Set<string>();
   const rejected: SyncResponse['rejected'] = [];
-  /** Protokolle, die in dieser Anfrage neu geschrieben wurden (für die Meldung fehlender Anhänge). */
-  const written = new Set<string>();
-  const put = (id: string, change: ClientChange, deleted: boolean, meta: Meta): number => {
-    const rev = write(db, id, change, deleted, meta);
-    if (!deleted) written.add(id);
-    return rev;
-  };
   /**
    * Führt eine einzelne Änderung isoliert aus: Scheitert sie, wird nur sie zurückgenommen und gemeldet, die übrigen laufen weiter.
    * Sonst sperrt ein einziges unbrauchbares Protokoll (zu groß, ungültig) den Abgleich des ganzen Geräts, und zwar dauerhaft.
@@ -362,56 +440,14 @@ export function applySync(db: DatabaseSync, req: SyncRequest, user: SyncUser): S
   if (reset) since = 0;
   db.exec('BEGIN IMMEDIATE');
   try {
-    for (const c of req.changes ?? []) {
+    const now = Date.now();
+    for (const c of Array.isArray(req.protocols) ? req.protocols : []) {
       isolated({ kind: 'protocol', id: c?.id }, () => {
         const err = validate(c);
         if (err) throw new Error(err);
-        const existing = db.prepare('SELECT * FROM protocols WHERE id = ?').get(c.id) as ProtocolRow | undefined;
-        if (!existing) {
-          put(c.id, c, c.deleted, { ownerId: user.id, shared: c.shared === true ? 1 : 0, by: user.id });
-          return;
-        }
-        if (!canSee(existing, user)) return; // fremdes privates Protokoll: ignorieren
-        const isOwner = existing.ownerId === user.id;
-        const meta: Meta = {
-          ownerId: existing.ownerId,
-          shared: isOwner && typeof c.shared === 'boolean' ? (c.shared ? 1 : 0) : (existing.shared as 0 | 1),
-          by: user.id,
-          prev: existing,
-        };
-        const serverDeleted = existing.deletedAt !== null;
-        if (c.deleted) {
-          if (!isOwner && user.role !== 'admin') return;
-          // Löschen gewinnt, auch gegen eine Bearbeitung auf veraltetem Stand: Der Papierkorb macht es umkehrbar, und sonst bliebe ein
-          // bewusst gelöschtes Protokoll durch ein Gerät am Leben, das nur noch nicht abgeglichen hatte.
-          if (serverDeleted) resend.add(c.id);
-          else put(c.id, { ...c, ...rowFields(existing) }, true, { ...meta, shared: existing.shared as 0 | 1 });
-          return;
-        }
-        // Eine Bearbeitung auf dem Stand vor der Migration der Anhänge baut auf demselben Inhalt auf: kein Konflikt.
-        if (existing.rev === c.baseRev || serverDeleted || (existing.migratedFrom !== null && existing.migratedFrom === c.baseRev)) {
-          put(c.id, c, false, meta);
-          return;
-        }
-        // Das Gerät baut auf einem veralteten Stand auf. Das Original geht in jedem Fall mit zurück, damit es aufholen kann,
-        // auch wenn sein Stand schon darüber hinausgerückt ist.
-        resend.add(c.id);
-        // Steht genau diese Fassung schon beim Server (Wiederholung nach verlorener Antwort, gleiche Änderung auf zwei Geräten), ist nichts zu tun.
-        // Verglichen wird, wie der Inhalt gespeichert würde: Steckt ein Anhang noch darin, ist er ausgelagert dieselbe Fassung.
-        if (sameDoc(existing, c, normalizeContent(c.content ?? EMPTY_DOC, false).content)) return;
-        // Sonst bleibt die Server-Fassung, und die Fassung des Geräts wird als Kopie gesichert. Dieselbe Kopie wird fortgeschrieben,
-        // solange das Gerät auf derselben veralteten Basis weitertippt und niemand die Kopie geändert hat.
-        let copyId = conflictCopyId(user.id, c);
-        const prev = db.prepare('SELECT rev, conflictRev, deletedAt FROM protocols WHERE id = ?').get(copyId) as
-          | { rev: number; conflictRev: number | null; deletedAt: number | null }
-          | undefined;
-        if (prev && (prev.deletedAt !== null || prev.conflictRev !== prev.rev)) copyId = randomUUID().replace(/-/g, '');
-        const copyRev = put(copyId, { ...c, title: `${str(c.title, 180) || 'Protokoll'} (Konflikt)` }, false, { ownerId: user.id, shared: existing.shared as 0 | 1, by: user.id });
-        db.prepare('UPDATE protocols SET conflictRev = ? WHERE id = ?').run(copyRev, copyId);
-        conflicts.push({ id: c.id, copyId });
+        applyProtocol(db, c, user, now, resend);
       });
     }
-    const now = Date.now();
     for (const f of req.folders ?? []) {
       isolated({ kind: 'folder', id: f?.id }, () => {
         if (typeof f?.id !== 'string' || !/^[A-Za-z0-9_-]{6,64}$/.test(f.id)) throw new Error('ungültige Ordner-ID');
@@ -499,22 +535,8 @@ export function applySync(db: DatabaseSync, req: SyncRequest, user: SyncUser): S
     collections: COLLECTIONS,
     users,
     counts,
-    conflicts,
+    conflicts: [],
     rejected,
-    missingBlobs: missingBlobIds(db, [...written]),
-  };
-}
-
-function rowFields(r: ProtocolRow) {
-  return {
-    title: r.title,
-    folderId: r.folderId ?? '',
-    datum: r.datum,
-    beginn: r.beginn,
-    ende: r.ende,
-    ort: r.ort,
-    leitung: r.leitung,
-    content: JSON.parse(r.content) as unknown,
-    updatedAt: r.updatedAt,
+    missingBlobs: [],
   };
 }

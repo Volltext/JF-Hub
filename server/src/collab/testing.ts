@@ -3,6 +3,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import * as Y from 'yjs';
 import { refreshRefs } from '../blobs.js';
 import { nextRev } from '../db.js';
+import { META_FIELDS, type ClientChange, type MetaAt } from '../sync.js';
 import { jsonToYDoc, yDocToJson, type DocNode } from './convert.js';
 
 /** Hilfen für Tests (nicht Teil des Servers). */
@@ -75,4 +76,17 @@ export function textOf(doc: Y.Doc | DocNode): string {
   };
   walk(doc instanceof Y.Doc ? yDocToJson(doc) : doc);
   return out.join(' ');
+}
+
+let clock = Date.now() - 3_600_000;
+/** Eine fortlaufende Uhr: Spätere Aufrufe liefern sicher spätere Zeiten (bei den Kopffeldern zählt die Feldzeit, nicht die Wanduhr). */
+export const tick = (): number => (clock += 1000);
+
+/** Alle Kopffelder mit derselben Zeit, einzelne überschreibbar. */
+export const metaTimes = (at: number, over: MetaAt = {}): MetaAt => ({ ...Object.fromEntries(META_FIELDS.map((f) => [f, at])), ...over });
+
+/** Kopfdaten für `/api/sync`; ohne Angabe tragen alle Felder dieselbe, neue Zeit (die Änderung ist also die jüngste). */
+export function headerChange(id: string, over: Partial<ClientChange> = {}): ClientChange {
+  const at = tick();
+  return { id, baseRev: 0, title: 'Sitzung', datum: '2026-10-01', beginn: '', ende: '', ort: '', leitung: '', updatedAt: at, deleted: false, metaAt: metaTimes(at), ...over };
 }

@@ -4,6 +4,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import { buildApp } from './app.js';
 import { currentRev, getConfig, openDb } from './db.js';
 import { DEMO_PASSWORD, msUntilReset, parseResetAt, resetDemo } from './demo.js';
+import { headerChange } from './collab/testing.js';
 import type { SyncResponse } from './sync.js';
 
 let db: DatabaseSync;
@@ -22,10 +23,10 @@ async function login(username: string): Promise<string> {
   expect(r.statusCode).toBe(200);
   return r.json().token as string;
 }
-const auth = (token: string) => ({ authorization: `Bearer ${token}`, 'x-jfh-schema': '2' });
+const auth = (token: string) => ({ authorization: `Bearer ${token}`, 'x-jfh-schema': '5' });
 
 async function sync(token: string, body: Record<string, unknown> = {}): Promise<SyncResponse> {
-  const r = await app.inject({ method: 'POST', url: '/api/sync', headers: auth(token), payload: { since: 0, changes: [], ...body } });
+  const r = await app.inject({ method: 'POST', url: '/api/sync', headers: auth(token), payload: { since: 0, protocols: [], ...body } });
   expect(r.statusCode).toBe(200);
   return r.json() as SyncResponse;
 }
@@ -139,7 +140,7 @@ describe('Demo-Modus', () => {
   it('setzt alles zurück: Besucherdaten weg, Sitzungen beendet, neue Epoche', async () => {
     const token = await login('jugendwart');
     const before = await sync(token, {
-      changes: [{ id: 'besucher-1', baseRev: 0, title: 'Von einem Besucher', datum: '2026-10-01', beginn: '', ende: '', ort: '', leitung: '', content: { type: 'doc', content: [] }, updatedAt: Date.now(), deleted: false, shared: true }],
+      protocols: [headerChange('besucher-1', { title: 'Von einem Besucher', shared: true })],
     });
     expect(before.changes.map((d) => d.title)).toContain('Von einem Besucher');
     const oldUsers = (db.prepare('SELECT id FROM users').all() as { id: string }[]).map((u) => u.id);
@@ -148,7 +149,7 @@ describe('Demo-Modus', () => {
 
     await resetDemo(db);
 
-    expect((await app.inject({ method: 'POST', url: '/api/sync', headers: auth(token), payload: { since: 0, changes: [] } })).statusCode).toBe(401);
+    expect((await app.inject({ method: 'POST', url: '/api/sync', headers: auth(token), payload: { since: 0, protocols: [] } })).statusCode).toBe(401);
     const newUsers = (db.prepare('SELECT id FROM users').all() as { id: string }[]).map((u) => u.id);
     expect(newUsers.some((id) => oldUsers.includes(id))).toBe(false);
     expect(getConfig(db, 'vapidPrivate')).toBe(vapid);

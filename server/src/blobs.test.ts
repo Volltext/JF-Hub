@@ -6,6 +6,8 @@ import { buildApp } from './app.js';
 import { DEMO_MAX_PHOTO_BYTES, MAX_FILE_BYTES, MAX_PHOTO_BYTES } from './blobs.js';
 import { openDb } from './db.js';
 import { DEMO_PASSWORD } from './demo.js';
+import type { DocNode } from './collab/convert.js';
+import { headerChange, putProtocol } from './collab/testing.js';
 import type { ClientChange, SyncResponse } from './sync.js';
 
 const PW = 'ein-sicheres-passwort';
@@ -20,7 +22,7 @@ afterEach(async () => {
   await app.close();
 });
 
-const auth = (token: string) => ({ authorization: `Bearer ${token}`, 'x-jfh-schema': '2' });
+const auth = (token: string) => ({ authorization: `Bearer ${token}`, 'x-jfh-schema': '5' });
 
 async function adminToken(): Promise<string> {
   const r = await app.inject({ method: 'POST', url: '/api/login', payload: { username: 'admin', password: PW, device: 'Test' } });
@@ -48,29 +50,24 @@ const put = (token: string, id: string, bytes: Buffer, over: Upload = {}, a: Fas
   a.inject({ method: 'PUT', url: `/api/blobs/${id}`, headers: auth(token), payload: { kind: 'photo', mime: 'image/jpeg', ...over, data: bytes.toString('base64') } });
 const get = (token: string, id: string, a: FastifyInstance = app) => a.inject({ method: 'GET', url: `/api/blobs/${id}`, headers: auth(token) });
 
-const photoDoc = (id: string, blobId: string, over: Partial<ClientChange> = {}): ClientChange => ({
-  id,
-  baseRev: 0,
-  title: 'Mit Foto',
-  datum: '2026-10-01',
-  beginn: '',
-  ende: '',
-  ort: '',
-  leitung: '',
-  content: {
-    type: 'doc',
-    content: [
-      { type: 'paragraph', content: [{ type: 'text', text: 'Text' }] },
-      { type: 'photo', attrs: { blobId, mime: 'image/jpeg', w: 800, h: 600, caption: 'Teich' } },
-    ],
-  },
-  updatedAt: Date.now(),
-  deleted: false,
-  ...over,
+const userId = (username: string) => (db.prepare('SELECT id FROM users WHERE username = ?').get(username) as { id: string }).id;
+const photoContent = (blobId: string): DocNode => ({
+  type: 'doc',
+  content: [
+    { type: 'paragraph', content: [{ type: 'text', text: 'Text' }] },
+    { type: 'photo', attrs: { blobId, mime: 'image/jpeg', w: 800, h: 600, caption: 'Teich' } },
+  ],
 });
 
-async function sync(token: string, changes: ClientChange[], since = 0): Promise<SyncResponse> {
-  const r = await app.inject({ method: 'POST', url: '/api/sync', headers: auth(token), payload: { since, changes } });
+/** Ein Protokoll mit Foto, der Text als Yjs-Dokument (wie nach 3.0.0). */
+const photoDoc = (owner: string, id: string, blobId: string, shared = false) =>
+  putProtocol(db, { id, title: 'Mit Foto', ownerId: userId(owner), shared, content: photoContent(blobId) });
+
+/** Änderung der Kopfdaten eines solchen Protokolls. */
+const header = (id: string, over: Partial<ClientChange> = {}) => headerChange(id, { title: 'Mit Foto', ...over });
+
+async function sync(token: string, protocols: ClientChange[]): Promise<SyncResponse> {
+  const r = await app.inject({ method: 'POST', url: '/api/sync', headers: auth(token), payload: { since: 0, protocols } });
   expect(r.statusCode).toBe(200);
   return r.json() as SyncResponse;
 }
@@ -200,26 +197,22 @@ describe('Wer ein Foto sehen darf', () => {
     expect(await status(anna)).toBe(200);
     expect(await status(ben)).toBe(404); // noch verweist nichts darauf
 
-    const first = await sync(anna, [photoDoc('doc-0001', 'foto-0001')]); // privates Protokoll
+    photoDoc('anna', 'doc-0001', 'foto-0001'); // privates Protokoll
     expect(await status(ben)).toBe(404);
     expect(await status(admin)).toBe(404); // auch der Admin sieht Privates anderer nicht
 
-    const rev1 = first.changes.find((c) => c.id === 'doc-0001')!.rev;
-    const shared = await sync(anna, [photoDoc('doc-0001', 'foto-0001', { baseRev: rev1, shared: true })], first.rev);
+    await sync(anna, [header('doc-0001', { shared: true })]);
     expect(await status(ben)).toBe(200);
     expect(await status(admin)).toBe(200);
     expect(Buffer.compare((await get(ben, 'foto-0001')).rawPayload, bytes)).toBe(0);
 
-    const rev2 = shared.changes.find((c) => c.id === 'doc-0001')!.rev;
-    const priv = await sync(anna, [photoDoc('doc-0001', 'foto-0001', { baseRev: rev2, shared: false })], shared.rev);
+    await sync(anna, [header('doc-0001', { shared: false })]);
     expect(await status(ben)).toBe(404); // zurückgenommen
     expect(await status(anna)).toBe(200);
 
-    const rev3 = priv.changes.find((c) => c.id === 'doc-0001')!.rev;
-    const again = await sync(anna, [photoDoc('doc-0001', 'foto-0001', { baseRev: rev3, shared: true })], priv.rev);
+    await sync(anna, [header('doc-0001', { shared: true })]);
     expect(await status(ben)).toBe(200);
-    const rev4 = again.changes.find((c) => c.id === 'doc-0001')!.rev;
-    await sync(anna, [photoDoc('doc-0001', 'foto-0001', { baseRev: rev4, shared: true, deleted: true })], again.rev);
+    await sync(anna, [header('doc-0001', { shared: true, deleted: true })]);
     expect(await status(ben)).toBe(404); // das Protokoll liegt im Papierkorb
     expect(await status(anna)).toBe(200);
   });
@@ -229,9 +222,9 @@ describe('Wer ein Foto sehen darf', () => {
     const anna = await betreuer(admin, 'anna');
     const ben = await betreuer(admin, 'ben');
     await put(anna, 'foto-0001', jpeg());
-    const a = await sync(anna, [photoDoc('doc-0001', 'foto-0001', { shared: true })]);
-    const rev = a.changes[0]!.rev;
-    const b = await sync(anna, [photoDoc('doc-0001', 'foto-0001', { baseRev: rev, shared: true, deleted: true })], a.rev);
+    photoDoc('anna', 'doc-0001', 'foto-0001', true);
+    expect((await get(ben, 'foto-0001')).statusCode).toBe(200);
+    const b = await sync(anna, [header('doc-0001', { shared: true, deleted: true })]);
     expect((await get(ben, 'foto-0001')).statusCode).toBe(404);
     expect(b.changes[0]!.deleted).toBe(true);
     expect((await app.inject({ method: 'POST', url: '/api/protocols/doc-0001/restore', headers: auth(anna) })).statusCode).toBe(200);

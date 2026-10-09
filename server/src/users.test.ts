@@ -8,6 +8,7 @@ import { buildApp, parseTrustProxy } from './app.js';
 import { openDb } from './db.js';
 import { hashPassword } from './auth.js';
 import { sendDue, type PushPayload } from './push.js';
+import { headerChange as proto, tick } from './collab/testing.js';
 import type { ClientChange, SyncResponse } from './sync.js';
 
 const PW = 'ein-sicheres-passwort';
@@ -22,7 +23,7 @@ afterEach(async () => {
   await app.close();
 });
 
-const auth = (token: string) => ({ authorization: `Bearer ${token}`, 'x-jfh-schema': '2' });
+const auth = (token: string) => ({ authorization: `Bearer ${token}`, 'x-jfh-schema': '5' });
 
 async function login(username: string, password: string) {
   const r = await app.inject({ method: 'POST', url: '/api/login', payload: { username, password, device: 'Test' } });
@@ -38,21 +39,6 @@ async function addBetreuer(adminToken: string, username: string, password = 'pas
   return accepted.json().token as string;
 }
 
-const proto = (id: string, over: Partial<ClientChange> = {}): ClientChange => ({
-  id,
-  baseRev: 0,
-  title: 'Sitzung',
-  datum: '2026-10-01',
-  beginn: '',
-  ende: '',
-  ort: '',
-  leitung: '',
-  content: { type: 'doc', content: [] },
-  updatedAt: Date.now(),
-  deleted: false,
-  ...over,
-});
-
 const task = (id: string, shared: boolean, over: Record<string, unknown> = {}) => ({
   collection: 'tasks',
   id,
@@ -62,8 +48,8 @@ const task = (id: string, shared: boolean, over: Record<string, unknown> = {}) =
   shared,
 });
 
-async function sync(token: string, body: { since?: number; changes?: ClientChange[]; records?: unknown[] } = {}): Promise<SyncResponse> {
-  const r = await app.inject({ method: 'POST', url: '/api/sync', headers: auth(token), payload: { since: 0, changes: [], ...body } });
+async function sync(token: string, body: { since?: number; protocols?: ClientChange[]; records?: unknown[] } = {}): Promise<SyncResponse> {
+  const r = await app.inject({ method: 'POST', url: '/api/sync', headers: auth(token), payload: { since: 0, protocols: [], ...body } });
   expect(r.statusCode).toBe(200);
   return r.json() as SyncResponse;
 }
@@ -140,7 +126,7 @@ describe('Benutzerverwaltung', () => {
     const admin = (await login('admin', PW)).token;
     const anna = await addBetreuer(admin, 'anna');
     const id = (await app.inject({ method: 'GET', url: '/api/me', headers: auth(anna) })).json().user.id as string;
-    await sync(anna, { changes: [proto('doc-privat', { shared: false }), proto('doc-offen', { shared: true })], records: [task('task-privat', false), task('task-offen', true)] });
+    await sync(anna, { protocols: [proto('doc-privat', { shared: false }), proto('doc-offen', { shared: true })], records: [task('task-privat', false), task('task-offen', true)] });
     expect((await app.inject({ method: 'DELETE', url: `/api/admin/users/${id}`, headers: auth(admin) })).statusCode).toBe(200);
     const view = await sync(admin);
     expect(view.changes.map((c) => c.id)).toEqual(['doc-offen']);
@@ -213,7 +199,7 @@ describe('Sichtbarkeit von Protokollen und Aufgaben', () => {
     const admin = (await login('admin', PW)).token;
     const anna = await addBetreuer(admin, 'anna');
     const ben = await addBetreuer(admin, 'ben');
-    await sync(anna, { changes: [proto('doc-privat', { shared: false }), proto('doc-offen', { shared: true })], records: [task('task-privat', false), task('task-offen', true)] });
+    await sync(anna, { protocols: [proto('doc-privat', { shared: false }), proto('doc-offen', { shared: true })], records: [task('task-privat', false), task('task-offen', true)] });
 
     const annaView = await sync(anna);
     expect(annaView.changes.map((c) => c.id).sort()).toEqual(['doc-offen', 'doc-privat']);
@@ -231,8 +217,8 @@ describe('Sichtbarkeit von Protokollen und Aufgaben', () => {
     const admin = (await login('admin', PW)).token;
     const anna = await addBetreuer(admin, 'anna');
     const ben = await addBetreuer(admin, 'ben');
-    await sync(anna, { changes: [proto('doc-privat', { shared: false, title: 'Geheim' })], records: [task('task-privat', false, { title: 'Geheim' })] });
-    const r = await sync(ben, { changes: [proto('doc-privat', { title: 'Überschrieben', shared: true })], records: [{ ...task('task-privat', true, { title: 'Überschrieben' }), updatedAt: Date.now() + 10_000 }] });
+    await sync(anna, { protocols: [proto('doc-privat', { shared: false, title: 'Geheim' })], records: [task('task-privat', false, { title: 'Geheim' })] });
+    const r = await sync(ben, { protocols: [proto('doc-privat', { title: 'Überschrieben', shared: true })], records: [{ ...task('task-privat', true, { title: 'Überschrieben' }), updatedAt: Date.now() + 10_000 }] });
     expect(r.changes).toHaveLength(0);
     expect(r.records).toHaveLength(0);
     const annaView = await sync(anna);
@@ -246,20 +232,18 @@ describe('Sichtbarkeit von Protokollen und Aufgaben', () => {
     const admin = (await login('admin', PW)).token;
     const anna = await addBetreuer(admin, 'anna');
     const ben = await addBetreuer(admin, 'ben');
-    const first = await sync(anna, { changes: [proto('doc-0001', { shared: false })], records: [task('task-0001', false)] });
+    const first = await sync(anna, { protocols: [proto('doc-0001', { shared: false })], records: [task('task-0001', false)] });
     const benEmpty = await sync(ben);
     expect(benEmpty.changes).toHaveLength(0);
 
     // veröffentlichen
-    const rev1 = first.changes[0]!.rev;
-    await sync(anna, { since: first.rev, changes: [proto('doc-0001', { baseRev: rev1, shared: true })], records: [{ ...task('task-0001', true), updatedAt: Date.now() + 1 }] });
+    await sync(anna, { since: first.rev, protocols: [proto('doc-0001', { shared: true })], records: [{ ...task('task-0001', true), updatedAt: Date.now() + 1 }] });
     const benShared = await sync(ben, { since: benEmpty.rev });
     expect(benShared.changes.map((c) => c.id)).toEqual(['doc-0001']);
     expect(benShared.records.map((r) => r.id)).toEqual(['task-0001']);
 
     // wieder privat: Ben bekommt Tombstones, damit seine lokale Kopie verschwindet
-    const rev2 = benShared.changes[0]!.rev;
-    await sync(anna, { since: first.rev, changes: [proto('doc-0001', { baseRev: rev2, shared: false })], records: [{ ...task('task-0001', false), updatedAt: Date.now() + 2 }] });
+    await sync(anna, { since: first.rev, protocols: [proto('doc-0001', { shared: false })], records: [{ ...task('task-0001', false), updatedAt: Date.now() + 2 }] });
     const benHidden = await sync(ben, { since: benShared.rev });
     expect(benHidden.changes).toMatchObject([{ id: 'doc-0001', deleted: true }]);
     expect(benHidden.records).toMatchObject([{ id: 'task-0001', deleted: true }]);
@@ -271,7 +255,7 @@ describe('Sichtbarkeit von Protokollen und Aufgaben', () => {
     const admin = (await login('admin', PW)).token;
     const anna = await addBetreuer(admin, 'anna');
     const ben = await addBetreuer(admin, 'ben');
-    await sync(anna, { changes: [proto('doc-privat', { shared: false })] });
+    await sync(anna, { protocols: [proto('doc-privat', { shared: false })] });
     const r = await sync(ben, { since: 0 });
     expect(r.changes).toHaveLength(0);
   });
@@ -280,39 +264,36 @@ describe('Sichtbarkeit von Protokollen und Aufgaben', () => {
     const admin = (await login('admin', PW)).token;
     const anna = await addBetreuer(admin, 'anna');
     const ben = await addBetreuer(admin, 'ben');
-    const first = await sync(anna, { changes: [proto('doc-0001', { shared: true })], records: [task('task-0001', true)] });
-    const base = first.changes[0]!.rev;
+    await sync(anna, { protocols: [proto('doc-0001', { shared: true })], records: [task('task-0001', true)] });
 
     // Ben bearbeitet und versucht, es privat zu stellen: Bearbeitung zählt, Sichtbarkeit bleibt
-    const edit = await sync(ben, { since: 0, changes: [proto('doc-0001', { baseRev: base, title: 'Von Ben', shared: false })], records: [{ ...task('task-0001', false, { completed: true }), updatedAt: Date.now() + 5 }] });
+    const edit = await sync(ben, { since: 0, protocols: [proto('doc-0001', { title: 'Von Ben', shared: false })], records: [{ ...task('task-0001', false, { completed: true }), updatedAt: Date.now() + 5 }] });
     expect(edit.changes[0]).toMatchObject({ title: 'Von Ben', shared: true });
     expect(edit.records[0]!.data).toMatchObject({ completed: true, shared: true });
 
     // Ben kann nicht löschen
-    const cur = edit.changes[0]!.rev;
-    const del = await sync(ben, { since: edit.rev, changes: [proto('doc-0001', { baseRev: cur, deleted: true })], records: [{ ...task('task-0001', true), deleted: true, updatedAt: Date.now() + 9 }] });
+    const del = await sync(ben, { since: edit.rev, protocols: [proto('doc-0001', { deleted: true })], records: [{ ...task('task-0001', true), deleted: true, updatedAt: Date.now() + 9 }] });
     expect(del.changes).toHaveLength(0);
     expect(del.records).toHaveLength(0);
     const still = await sync(anna);
     expect(still.changes[0]!.deleted).toBe(false);
 
     // Admin darf löschen (Moderation)
-    const adminDel = await sync(admin, { since: 0, changes: [proto('doc-0001', { baseRev: cur, deleted: true })] });
+    const adminDel = await sync(admin, { since: 0, protocols: [proto('doc-0001', { deleted: true })] });
     expect(adminDel.changes[0]!.deleted).toBe(true);
   });
 
-  it('Konfliktkopie gehört dem Bearbeitenden und erbt die Sichtbarkeit', async () => {
+  it('gleichzeitige Änderungen verschiedener Betreuer ergeben keine Kopie; Besitzer und Sichtbarkeit bleiben', async () => {
     const admin = (await login('admin', PW)).token;
     const anna = await addBetreuer(admin, 'anna');
     const ben = await addBetreuer(admin, 'ben');
-    const first = await sync(anna, { changes: [proto('doc-0001', { shared: true })] });
-    const base = first.changes[0]!.rev;
-    await sync(anna, { since: first.rev, changes: [proto('doc-0001', { baseRev: base, title: 'A' })] });
-    const r = await sync(ben, { since: 0, changes: [proto('doc-0001', { baseRev: base, title: 'B' })] });
-    expect(r.conflicts).toHaveLength(1);
-    const copy = r.changes.find((c) => c.id === r.conflicts[0]!.copyId)!;
-    expect(copy).toMatchObject({ title: 'B (Konflikt)', shared: true });
-    expect(copy.ownerId).not.toBe(first.changes[0]!.ownerId);
+    const first = await sync(anna, { protocols: [proto('doc-0001', { shared: true })] });
+    const t = tick();
+    await sync(anna, { since: first.rev, protocols: [proto('doc-0001', { shared: true, title: 'A', metaAt: { title: t } })] });
+    const r = await sync(ben, { since: 0, protocols: [proto('doc-0001', { ort: 'Wache', metaAt: { ort: t + 1 } })] });
+    expect(r.conflicts).toEqual([]);
+    expect(r.changes.map((c) => c.id)).toEqual(['doc-0001']);
+    expect(r.changes[0]).toMatchObject({ title: 'A', ort: 'Wache', shared: true, ownerId: first.changes[0]!.ownerId });
   });
 
   it('Mitglieder, Dienste und Kleidung gehören immer der ganzen Gruppe', async () => {
@@ -326,7 +307,7 @@ describe('Sichtbarkeit von Protokollen und Aufgaben', () => {
   it('Export enthält nur sichtbare Protokolle', async () => {
     const admin = (await login('admin', PW)).token;
     const anna = await addBetreuer(admin, 'anna');
-    await sync(anna, { changes: [proto('doc-privat', { shared: false, title: 'Privatnotiz' }), proto('doc-offen', { shared: true, title: 'Offen' })] });
+    await sync(anna, { protocols: [proto('doc-privat', { shared: false, title: 'Privatnotiz' }), proto('doc-offen', { shared: true, title: 'Offen' })] });
     const zip = async (t: string) => (await app.inject({ method: 'GET', url: '/api/export.zip', headers: auth(t) })).rawPayload.toString('latin1');
     expect(await zip(admin)).toContain('Offen');
     expect(await zip(admin)).not.toContain('Privatnotiz');

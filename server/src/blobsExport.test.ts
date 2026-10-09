@@ -7,7 +7,9 @@ import { openDb } from './db.js';
 import { resetDemo } from './demo.js';
 import { buildDocDefinition, type PdfStyle } from './pdf.js';
 import { storeBlob } from './blobs.js';
-import { toServerDoc, type ClientChange } from './sync.js';
+import type { DocNode } from './collab/convert.js';
+import { headerChange, putProtocol } from './collab/testing.js';
+import { toServerDoc } from './sync.js';
 
 const PW = 'ein-sicheres-passwort';
 const STYLE: PdfStyle = { orgName: 'JF', footer: '', accent: '#c0392b', logo: '' };
@@ -30,38 +32,23 @@ afterEach(async () => {
   await app.close();
 });
 
-const auth = () => ({ authorization: `Bearer ${token}`, 'x-jfh-schema': '2' });
-
-const change = (id: string, content: unknown, over: Partial<ClientChange> = {}): ClientChange => ({
-  id,
-  baseRev: 0,
-  title: 'Sitzung am Teich',
-  datum: '2026-10-01',
-  beginn: '',
-  ende: '',
-  ort: '',
-  leitung: '',
-  content,
-  updatedAt: Date.now(),
-  deleted: false,
-  ...over,
-});
+const auth = () => ({ authorization: `Bearer ${token}`, 'x-jfh-schema': '5' });
 
 const photo = (blobId: string, attrs: Record<string, unknown> = {}) => ({ type: 'photo', attrs: { blobId, mime: 'image/jpeg', w: 1, h: 1, caption: 'Teich', ...attrs } });
 const attachment = (blobId: string, name: string) => ({ type: 'attachment', attrs: { blobId, name, mime: 'application/pdf', size: 5 } });
-const doc = (...content: unknown[]) => ({ type: 'doc', content });
+const doc = (...content: unknown[]) => ({ type: 'doc', content }) as DocNode;
 
-async function sync(changes: ClientChange[]) {
-  const r = await app.inject({ method: 'POST', url: '/api/sync', headers: auth(), payload: { since: 0, changes } });
-  expect(r.statusCode).toBe(200);
-  return r.json();
+/** Legt ein Protokoll des Admins an, der Text als Yjs-Dokument (wie nach 3.0.0). */
+function add(id: string, content: DocNode): string {
+  const admin = (db.prepare("SELECT id FROM users WHERE username = 'admin'").get() as { id: string }).id;
+  return putProtocol(db, { id, title: 'Sitzung am Teich', ownerId: admin, content });
 }
 const pdfOf = async (id: string) => app.inject({ method: 'GET', url: `/api/protocols/${id}/pdf`, headers: auth() });
 
 describe('PDF mit ausgelagerten Fotos', () => {
   it('setzt das Foto aus dem Blob in das PDF', async () => {
     storeBlob(db, { id: 'foto-0001', kind: 'photo', name: '', mime: 'image/jpeg', data: TINY_JPEG, uploaderId: 'x' });
-    await sync([change('doc-0001', doc(photo('foto-0001')))]);
+    add('doc-0001', doc(photo('foto-0001')));
     const r = await pdfOf('doc-0001');
     expect(r.statusCode).toBe(200);
     expect(r.rawPayload.subarray(0, 4).toString()).toBe('%PDF');
@@ -69,7 +56,7 @@ describe('PDF mit ausgelagerten Fotos', () => {
   });
 
   it('ein Foto, das der Server nicht hat, verhindert das PDF nicht', async () => {
-    await sync([change('doc-0001', doc(photo('foto-fehlt')))]);
+    add('doc-0001', doc(photo('foto-fehlt')));
     const r = await pdfOf('doc-0001');
     expect(r.statusCode).toBe(200);
     expect(r.rawPayload.toString('latin1')).not.toContain('/DCTDecode');
@@ -94,7 +81,7 @@ describe('ZIP-Export mit Anhängen', () => {
   it('legt Fotos und Dateien unter attachments/ ab und bleibt dem Protokoll zuordenbar', async () => {
     storeBlob(db, { id: 'foto-0001', kind: 'photo', name: '', mime: 'image/jpeg', data: TINY_JPEG, uploaderId: 'x' });
     storeBlob(db, { id: 'datei-001', kind: 'file', name: 'Plan.pdf', mime: 'application/pdf', data: Buffer.from('%PDF-1.4 hallo'), uploaderId: 'x' });
-    await sync([change('doc-0001', doc(photo('foto-0001'), attachment('datei-001', 'Plan.pdf'), photo('foto-fehlt')))]);
+    add('doc-0001', doc(photo('foto-0001'), attachment('datei-001', 'Plan.pdf'), photo('foto-fehlt')));
 
     const zip = await app.inject({ method: 'GET', url: '/api/export.zip', headers: auth() });
     expect(zip.statusCode).toBe(200);
@@ -112,8 +99,9 @@ describe('ZIP-Export mit Anhängen', () => {
 
   it('Anhänge nicht sichtbarer oder gelöschter Protokolle gehören nicht ins Archiv', async () => {
     storeBlob(db, { id: 'foto-0001', kind: 'photo', name: '', mime: 'image/jpeg', data: TINY_JPEG, uploaderId: 'x' });
-    const first = await sync([change('doc-0001', doc(photo('foto-0001')))]);
-    await app.inject({ method: 'POST', url: '/api/sync', headers: auth(), payload: { since: first.rev, changes: [change('doc-0001', doc(), { baseRev: first.changes[0].rev, deleted: true })] } });
+    add('doc-0001', doc(photo('foto-0001')));
+    const del = await app.inject({ method: 'POST', url: '/api/sync', headers: auth(), payload: { since: 0, protocols: [headerChange('doc-0001', { title: 'Sitzung am Teich', deleted: true })] } });
+    expect(del.statusCode).toBe(200);
     const files = unzipSync(new Uint8Array((await app.inject({ method: 'GET', url: '/api/export.zip', headers: auth() })).rawPayload));
     expect(Object.keys(files).filter((n) => n.startsWith('attachments/'))).toEqual([]);
   });
@@ -122,7 +110,7 @@ describe('ZIP-Export mit Anhängen', () => {
 describe('Verwaltung', () => {
   it('die Größe eines Protokolls zählt die Anhänge mit, die Übersicht nennt den Speicher', async () => {
     storeBlob(db, { id: 'foto-0001', kind: 'photo', name: '', mime: 'image/jpeg', data: Buffer.concat([TINY_JPEG, Buffer.alloc(5000)]), uploaderId: 'x' });
-    await sync([change('doc-0001', doc(photo('foto-0001')))]);
+    add('doc-0001', doc(photo('foto-0001')));
     const list = (await app.inject({ method: 'GET', url: '/api/admin/protocols', headers: auth() })).json() as { id: string; size: number }[];
     expect(list.find((p) => p.id === 'doc-0001')!.size).toBeGreaterThan(5000);
     const info = (await app.inject({ method: 'GET', url: '/api/admin/info', headers: auth() })).json();
@@ -140,7 +128,7 @@ describe('Demo-Zurücksetzen', () => {
     await resetDemo(demoDb);
 
     // Alles, was nicht zu den Beispieldaten gehört, muss leer sein: Das gilt auch für Tabellen, die später dazukommen.
-    const seeded = new Set(['users', 'config', 'records', 'folders', 'protocols']);
+    const seeded = new Set(['users', 'config', 'records', 'folders', 'protocols', 'ydocs']);
     const tables = (demoDb.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'").all() as { name: string }[]).map((t) => t.name);
     for (const t of tables.filter((n) => !seeded.has(n))) {
       expect((demoDb.prepare(`SELECT COUNT(*) AS n FROM "${t}"`).get() as { n: number }).n, t).toBe(0);
@@ -168,5 +156,7 @@ function sampleRow() {
     conflictRev: null,
     purgedAt: null,
     migratedFrom: null,
+    ymode: 1,
+    metaAt: '{}',
   };
 }

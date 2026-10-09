@@ -34,8 +34,7 @@ function plan(db: DatabaseSync, id: string): { change: boolean; skipped: boolean
  * Wiederholbar: Was schon ausgelagert ist, wird nicht mehr gefunden. Vor dem ersten Eingriff sichert der Server die Datenbank
  * (Backup der Art „update“), falls ein Backup-Ordner eingerichtet ist.
  *
- * Die Änderungszeit der Protokolle bleibt unberührt. Die Revision steigt, damit die Geräte die schlanke Fassung bekommen;
- * `migratedFrom` merkt die alte, damit eine Bearbeitung auf dem Stand davor kein Konflikt wird.
+ * Die Änderungszeit der Protokolle bleibt unberührt. Die Revision steigt, damit die Geräte die schlanke Fassung bekommen.
  */
 export function migrateBlobs(db: DatabaseSync, opts: { backupDir?: string; log?: (message: string) => void } = {}): MigrationResult {
   const result: MigrationResult = { protocols: 0, blobs: 0, skipped: 0 };
@@ -58,12 +57,12 @@ export function migrateBlobs(db: DatabaseSync, opts: { backupDir?: string; log?:
   db.exec('BEGIN IMMEDIATE');
   try {
     for (const id of todo) {
-      const row = db.prepare('SELECT content, rev, ownerId FROM protocols WHERE id = ?').get(id) as { content: string; rev: number; ownerId: string } | undefined;
+      const row = db.prepare('SELECT content, ownerId FROM protocols WHERE id = ?').get(id) as { content: string; ownerId: string } | undefined;
       if (!row) continue;
       const normalized = normalizeContent(JSON.parse(row.content), false);
       if (!normalized.blobs.length) continue;
       result.blobs += saveBlobs(db, normalized.blobs, row.ownerId);
-      db.prepare('UPDATE protocols SET content = ?, rev = ?, migratedFrom = ? WHERE id = ?').run(JSON.stringify(normalized.content), nextRev(db), row.rev, id);
+      db.prepare('UPDATE protocols SET content = ?, rev = ? WHERE id = ?').run(JSON.stringify(normalized.content), nextRev(db), id);
       refreshRefs(db, id, normalized.content);
       result.protocols++;
     }

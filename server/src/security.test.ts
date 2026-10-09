@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance, HTTPMethods } from 'fastify';
 import { strFromU8, unzipSync } from 'fflate';
+import type { DatabaseSync } from 'node:sqlite';
 import { buildApp } from './app.js';
 import { openDb } from './db.js';
+import { headerChange, putProtocol } from './collab/testing.js';
 import type { ClientChange } from './sync.js';
 
 const PW = 'ein-sicheres-passwort';
@@ -11,18 +13,20 @@ const PW = 'ein-sicheres-passwort';
 const PUBLIC_ROUTES = new Set(['/api/health', '/api/status', '/api/login', '/api/setup', '/api/invite/accept']);
 
 let app: FastifyInstance;
+let db: DatabaseSync;
 const routes: { method: string; url: string }[] = [];
 
 beforeEach(async () => {
   routes.length = 0;
-  app = await buildApp({ db: openDb(':memory:'), adminPassword: PW, pushTimer: false, onRoute: (r) => routes.push(r) });
+  db = openDb(':memory:');
+  app = await buildApp({ db, adminPassword: PW, pushTimer: false, onRoute: (r) => routes.push(r) });
   await app.ready();
 });
 afterEach(async () => {
   await app.close();
 });
 
-const auth = (token: string) => ({ authorization: `Bearer ${token}`, 'x-jfh-schema': '2' });
+const auth = (token: string) => ({ authorization: `Bearer ${token}`, 'x-jfh-schema': '5' });
 
 async function adminToken(): Promise<string> {
   const r = await app.inject({ method: 'POST', url: '/api/login', payload: { username: 'admin', password: PW, device: 'Test' } });
@@ -141,32 +145,21 @@ describe('Zugriffsschutz der API', () => {
 });
 
 describe('Export', () => {
-  const change = (id: string, over: Partial<ClientChange> = {}): ClientChange => ({
-    id,
-    baseRev: 0,
-    title: 'Sitzung',
-    datum: '2026-10-01',
-    beginn: '17:30',
-    ende: '19:00',
-    ort: 'Gerätehaus',
-    leitung: 'Anna',
-    content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Hallo' }] }] },
-    updatedAt: Date.now(),
-    deleted: false,
-    ...over,
-  });
+  const change = (id: string, over: Partial<ClientChange> = {}): ClientChange =>
+    headerChange(id, { beginn: '17:30', ende: '19:00', ort: 'Gerätehaus', leitung: 'Anna', ...over });
 
-  async function sync(token: string, changes: ClientChange[], folders: unknown[] = [], since = 0) {
-    const r = await app.inject({ method: 'POST', url: '/api/sync', headers: auth(token), payload: { since, changes, folders } });
+  async function sync(token: string, protocols: ClientChange[], folders: unknown[] = []) {
+    const r = await app.inject({ method: 'POST', url: '/api/sync', headers: auth(token), payload: { since: 0, protocols, folders } });
     expect(r.statusCode).toBe(200);
     return r.json() as { rev: number; changes: { id: string; rev: number }[] };
   }
+  const adminId = () => (db.prepare("SELECT id FROM users WHERE username = 'admin'").get() as { id: string }).id;
 
   it('das PDF eines gelöschten Protokolls gibt es nicht mehr', async () => {
     const t = await adminToken();
-    const first = await sync(t, [change('doc-0001')]);
+    await sync(t, [change('doc-0001')]);
     expect((await app.inject({ method: 'GET', url: '/api/protocols/doc-0001/pdf', headers: auth(t) })).statusCode).toBe(200);
-    await sync(t, [change('doc-0001', { baseRev: first.changes[0]!.rev, deleted: true })], [], first.rev);
+    await sync(t, [change('doc-0001', { deleted: true })]);
     expect((await app.inject({ method: 'GET', url: '/api/protocols/doc-0001/pdf', headers: auth(t) })).statusCode).toBe(404);
   });
 
@@ -174,7 +167,8 @@ describe('Export', () => {
     const t = await adminToken();
     // Beginnt wie ein JPEG (sonst nähme der Server es gar nicht an), hat aber keine Bilddaten: Die PDF-Erzeugung scheitert daran.
     const hollow = Buffer.from([0xff, 0xd8, 0xff, 0xfe, 0x00, 0x04, 0x61, 0x62]).toString('base64');
-    await sync(t, [change('gut-0001', { title: 'Gut' }), change('kaputt-1', { title: 'Kaputt', content: { type: 'doc', content: [{ type: 'photo', attrs: { src: `data:image/jpeg;base64,${hollow}`, w: 1, h: 1 } }] } })]);
+    putProtocol(db, { id: 'gut-0001', title: 'Gut', ownerId: adminId(), content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Hallo' }] }] } });
+    putProtocol(db, { id: 'kaputt-1', title: 'Kaputt', ownerId: adminId(), content: { type: 'doc', content: [{ type: 'photo', attrs: { src: `data:image/jpeg;base64,${hollow}`, w: 1, h: 1 } }] } });
     const pdf = await app.inject({ method: 'GET', url: '/api/protocols/kaputt-1/pdf', headers: auth(t) });
     expect(pdf.statusCode).toBe(422);
     expect(pdf.json().error).toContain('PDF');

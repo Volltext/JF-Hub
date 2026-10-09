@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import type { DatabaseSync } from 'node:sqlite';
 import { buildApp } from './app.js';
+import { putProtocol } from './collab/testing.js';
 import { openDb, setConfig } from './db.js';
 import { applySync, sweepTrash, type ClientChange, type SyncResponse } from './sync.js';
 
@@ -18,7 +19,7 @@ afterEach(async () => {
   await app.close();
 });
 
-const auth = (token: string) => ({ authorization: `Bearer ${token}`, 'x-jfh-schema': '2' });
+const auth = (token: string) => ({ authorization: `Bearer ${token}`, 'x-jfh-schema': '5' });
 
 async function adminToken(): Promise<string> {
   const r = await app.inject({ method: 'POST', url: '/api/login', payload: { username: 'admin', password: PW, device: 'Test' } });
@@ -31,6 +32,7 @@ async function betreuer(admin: string, username: string): Promise<{ token: strin
   return { token: accepted.json().token as string, id: accepted.json().user.id as string };
 }
 
+const T0 = Date.now() - 3_600_000;
 const change = (id: string, over: Partial<ClientChange> = {}): ClientChange => ({
   id,
   baseRev: 0,
@@ -40,14 +42,14 @@ const change = (id: string, over: Partial<ClientChange> = {}): ClientChange => (
   ende: '',
   ort: '',
   leitung: '',
-  content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Inhalt' }] }] },
-  updatedAt: Date.now(),
+  updatedAt: T0,
   deleted: false,
+  metaAt: { title: T0, datum: T0, beginn: T0, ende: T0, ort: T0, leitung: T0, folderId: T0, shared: T0 },
   ...over,
 });
 
-async function sync(token: string, changes: ClientChange[], since = 0): Promise<SyncResponse> {
-  const r = await app.inject({ method: 'POST', url: '/api/sync', headers: auth(token), payload: { since, changes } });
+async function sync(token: string, protocols: ClientChange[], since = 0): Promise<SyncResponse> {
+  const r = await app.inject({ method: 'POST', url: '/api/sync', headers: auth(token), payload: { since, protocols } });
   expect(r.statusCode).toBe(200);
   return r.json() as SyncResponse;
 }
@@ -105,14 +107,17 @@ describe('Papierkorb in der App', () => {
 });
 
 describe('Papierkorb leeren hinterlässt einen Grabstein', () => {
-  it('endgültiges Löschen entfernt Titel und Inhalt, das Gerät erfährt es aber trotzdem', async () => {
+  it('endgültiges Löschen entfernt Titel, Text und Zustand, das Gerät erfährt es aber trotzdem', async () => {
     const admin = await adminToken();
-    const rev = await trashed(admin, 'doc-0001', { title: 'Geheim' });
+    const adminId = (db.prepare("SELECT id FROM users WHERE username = 'admin'").get() as { id: string }).id;
+    putProtocol(db, { id: 'doc-0001', ownerId: adminId, title: 'Geheim', deleted: true, content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Inhalt' }] }] } });
+    const rev = (db.prepare('SELECT rev FROM protocols WHERE id = ?').get('doc-0001') as { rev: number }).rev;
     expect((await app.inject({ method: 'DELETE', url: '/api/admin/protocols/doc-0001', headers: auth(admin) })).statusCode).toBe(200);
     const row = db.prepare('SELECT title, content, purgedAt FROM protocols WHERE id = ?').get('doc-0001') as { title: string; content: string; purgedAt: number | null };
     expect(row.title).toBe('');
     expect(row.content).not.toContain('Inhalt');
     expect(row.purgedAt).not.toBeNull();
+    expect(db.prepare('SELECT COUNT(*) AS n FROM ydocs WHERE id = ?').get('doc-0001')).toEqual({ n: 0 });
     // Ein Gerät, das den Papierkorb-Eintrag nie gesehen hat, bekommt die Löschung.
     const late = await sync(admin, [], rev - 1);
     expect(late.changes.find((c) => c.id === 'doc-0001')).toMatchObject({ deleted: true });
@@ -123,12 +128,14 @@ describe('Papierkorb leeren hinterlässt einen Grabstein', () => {
     expect((await app.inject({ method: 'GET', url: '/api/admin/info', headers: auth(admin) })).json().trashed).toBe(0);
   });
 
-  it('eine späte Bearbeitung eines geleerten Eintrags erweckt ihn mit ihrem Inhalt wieder auf', async () => {
+  it('eine spätere Änderung eines geleerten Eintrags erweckt ihn wieder auf, eine ältere nicht', async () => {
     const admin = await adminToken();
     const rev = await trashed(admin, 'doc-0001');
     await app.inject({ method: 'DELETE', url: '/api/admin/protocols/doc-0001', headers: auth(admin) });
-    const back = await sync(admin, [change('doc-0001', { baseRev: rev, title: 'Mein Stand' })], 0);
-    expect(back.changes.find((c) => c.id === 'doc-0001')).toMatchObject({ deleted: false, title: 'Mein Stand' });
+    const stale = await sync(admin, [change('doc-0001', { baseRev: rev, title: 'Alter Stand' })], 0);
+    expect(stale.changes.find((c) => c.id === 'doc-0001')).toMatchObject({ deleted: true });
+    const back = await sync(admin, [change('doc-0001', { baseRev: rev, title: 'Mein Stand', metaAt: { title: Date.now() + 1000 } })], 0);
+    expect(back.changes.find((c) => c.id === 'doc-0001')).toMatchObject({ deleted: false, title: 'Mein Stand', ymode: 1 });
     expect((db.prepare('SELECT purgedAt FROM protocols WHERE id = ?').get('doc-0001') as { purgedAt: number | null }).purgedAt).toBeNull();
   });
 });
@@ -137,7 +144,7 @@ describe('sweepTrash', () => {
   it('leert nach trashDays, entfernt Grabsteine nach max(tokenDays, 90) Tagen', () => {
     const user = { id: 'u1', role: 'betreuer' as const };
     const put = (id: string, base = 0, deleted = false) =>
-      applySync(db, { since: 0, changes: [{ ...change(id, { baseRev: base, deleted }), baseRev: base }] }, user);
+      applySync(db, { since: 0, protocols: [{ ...change(id, { baseRev: base, deleted }), baseRev: base }] }, user);
     const r = put('alt-00001');
     put('alt-00001', r.changes[0]!.rev, true);
     const t0 = Date.now();
@@ -152,8 +159,8 @@ describe('sweepTrash', () => {
 
   it('richtet sich nach den Einstellungen', () => {
     const user = { id: 'u1', role: 'betreuer' as const };
-    const r = applySync(db, { since: 0, changes: [change('kurz-00001')] }, user);
-    applySync(db, { since: 0, changes: [change('kurz-00001', { baseRev: r.changes[0]!.rev, deleted: true })] }, user);
+    const r = applySync(db, { since: 0, protocols: [change('kurz-00001')] }, user);
+    applySync(db, { since: 0, protocols: [change('kurz-00001', { baseRev: r.changes[0]!.rev, deleted: true })] }, user);
     setConfig(db, 'trashDays', '3');
     expect(sweepTrash(db, Date.now() + 2 * DAY).purged).toBe(0);
     expect(sweepTrash(db, Date.now() + 4 * DAY).purged).toBe(1);

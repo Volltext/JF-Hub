@@ -9,7 +9,6 @@ import { listBackups, restoreFromFile } from './backup.js';
 import { storeBlob } from './blobs.js';
 import { nextRev, openDb } from './db.js';
 import { migrateBlobs } from './migrate.js';
-import { applySync, type ClientChange } from './sync.js';
 
 const USER = { id: 'u1', role: 'betreuer' as const };
 let dir: string;
@@ -50,7 +49,7 @@ function legacy(target: DatabaseSync, id: string, content: unknown, owner = 'u1'
 }
 
 const row = (target: DatabaseSync, id: string) =>
-  target.prepare('SELECT content, rev, updatedAt, migratedFrom FROM protocols WHERE id = ?').get(id) as { content: string; rev: number; updatedAt: number; migratedFrom: number | null };
+  target.prepare('SELECT content, rev, updatedAt FROM protocols WHERE id = ?').get(id) as { content: string; rev: number; updatedAt: number };
 const count = (target: DatabaseSync, table: string) => (target.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get() as { n: number }).n;
 
 describe('Migration: Anhänge aus den Protokollen in Blobs', () => {
@@ -65,7 +64,6 @@ describe('Migration: Anhänge aus den Protokollen in Blobs', () => {
     const r = row(db, 'doc-0001');
     expect(r.updatedAt).toBe(1234);
     expect(r.rev).toBeGreaterThan(rev0);
-    expect(r.migratedFrom).toBe(rev0);
     expect(r.content.length).toBeLessThan(1000);
     const nodes = (JSON.parse(r.content) as Node).content!;
     expect(nodes[1]!.attrs).toMatchObject({ caption: 'Teich', mime: 'image/jpeg', w: 800, h: 600, blobId: expect.stringMatching(/^p-/) });
@@ -139,32 +137,6 @@ describe('Migration: Anhänge aus den Protokollen in Blobs', () => {
     } finally {
       before.close();
     }
-  });
-
-  it('eine Bearbeitung auf dem Stand vor der Migration ist kein Konflikt', () => {
-    const rev0 = legacy(db, 'doc-0001', doc(p('alt'), photoInline(jpeg())));
-    migrateBlobs(db);
-    const edit = (baseRev: number, title: string): ClientChange => ({
-      id: 'doc-0001',
-      baseRev,
-      title,
-      datum: '2026-01-01',
-      beginn: '',
-      ende: '',
-      ort: '',
-      leitung: '',
-      content: doc(p('Offline geändert')),
-      updatedAt: Date.now(),
-      deleted: false,
-    });
-    const first = applySync(db, { since: 0, changes: [edit(rev0, 'Offline')] }, USER);
-    expect(first.conflicts).toEqual([]);
-    expect(first.changes.find((c) => c.id === 'doc-0001')).toMatchObject({ title: 'Offline' });
-    expect(row(db, 'doc-0001').migratedFrom).toBeNull();
-
-    // Dieselbe alte Basis noch einmal von einem anderen Gerät: jetzt ist es ein echter Konflikt.
-    const second = applySync(db, { since: 0, changes: [edit(rev0, 'Anderes Gerät')] }, USER);
-    expect(second.conflicts).toHaveLength(1);
   });
 });
 
