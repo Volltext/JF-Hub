@@ -12,7 +12,7 @@ import { exportPdf } from './repo';
 
 beforeEach(async () => {
   vi.clearAllMocks();
-  await Promise.all([db.protokolle.clear(), db.kv.clear()]);
+  await Promise.all([db.protokolle.clear(), db.ydocs.clear(), db.kv.clear()]);
 });
 
 describe('exportPdf', () => {
@@ -36,6 +36,27 @@ describe('exportPdf', () => {
     await exportPdf(p.id);
     expect(syncNow).toHaveBeenCalledTimes(2);
     expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  it('auch ungesendeter Text zählt: Das PDF entsteht erst, wenn er beim Server ist', async () => {
+    const p = { ...newProtokoll(), title: 'Sitzung', dirty: 0 as const, rev: 3 };
+    await db.protokolle.add(p);
+    await db.ydocs.put({ id: p.id, update: new Uint8Array([0, 0]), dirty: 1, seq: 1 });
+    syncNow.mockImplementationOnce(async () => null).mockImplementationOnce(async () => {
+      await db.ydocs.update(p.id, { dirty: 0 });
+      return null;
+    });
+    await exportPdf(p.id);
+    expect(syncNow).toHaveBeenCalledTimes(2);
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  it('bleibt der Text ungesendet (kein Netz), gibt es kein PDF', async () => {
+    const p = { ...newProtokoll(), title: 'Sitzung', dirty: 0 as const, rev: 3 };
+    await db.protokolle.add(p);
+    await db.ydocs.put({ id: p.id, update: new Uint8Array([0, 0]), dirty: 1, seq: 1 });
+    await expect(exportPdf(p.id)).rejects.toThrow(/Verbindung zum Server/);
+    expect(request).not.toHaveBeenCalled();
   });
 
   it('ohne Verbindung (Änderung bleibt ungesendet) gibt es eine verständliche Meldung und kein PDF', async () => {

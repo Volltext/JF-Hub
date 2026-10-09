@@ -71,12 +71,19 @@ export function answerOf(res: ExchangeDocResult): { update?: Uint8Array; sv?: Ui
 /** Der Abgleich der Protokolle merkt sich die Kennung der Datenbank des Servers (siehe `sync.ts`). */
 export const EPOCH_KEY = 'protokolle.epoch';
 
-/** Der Austausch über HTTP. Ohne eingerichteten Server oder Anmeldung wirft er „keine Verbindung“ (Status 0). */
+/** Es ist kein Server eingerichtet (Browser-Demo, Android ohne Server) oder niemand angemeldet: nichts auszutauschen, aber auch nicht „offline“. */
+export class NoServer extends ProtoError {
+  constructor() {
+    super('Kein Server eingerichtet.', 0);
+  }
+}
+
+/** Der Austausch über HTTP. Ohne eingerichteten Server oder Anmeldung wirft er `NoServer`. */
 export const httpExchange =
   (epoch: () => Promise<string | undefined>): ExchangeTransport =>
   async (req) => {
     const conn = await loadConn();
-    if (!conn.url || !conn.token) throw new ProtoError('Kein Server eingerichtet.', 0);
+    if (!conn.url || !conn.token) throw new NoServer();
     try {
       return await request<ExchangeResponse>(conn, 'POST', '/api/collab/exchange', { ...req, epoch: await epoch() }, false, { timeoutMs: 90_000 });
     } catch (e) {

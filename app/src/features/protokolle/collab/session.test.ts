@@ -5,7 +5,7 @@ import type { SyncUser } from '../../../../../server/src/sync';
 import { ANNA, BEN, TestServer, closeDevices, newDevice, textOf, typeInto } from './harness';
 import { openProtocol } from './openPlan';
 import { REMOTE, isSessionOpen, type CollabSession, type SessionOptions } from './session';
-import type { ExchangeTransport } from './wire';
+import { NoServer, type ExchangeTransport } from './wire';
 import { isEmptyUpdate, loadDoc } from './yStore';
 
 const ID = 'doc-00001';
@@ -411,6 +411,29 @@ describe('Lebenslauf und Zeitsteuerung', () => {
     const sent = server.exchanges.slice(reqs).flatMap((r) => r.docs);
     expect(sent.every((d) => d.rev !== undefined && !d.update)).toBe(true);
     expect((await stored(benDb))!.seq).toBe(seq);
+  });
+
+  it('ohne eingerichteten Server (Demo im Browser) ist das kein Ausfall: kein „offline“, und es wird nicht weiter versucht', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    let calls = 0;
+    const none: ExchangeTransport = async () => {
+      calls++;
+      throw new NoServer();
+    };
+    const ben = await open(benDb, BEN, { intervalMs: 500 }, none);
+    ben.start();
+    await vi.waitFor(async () => {
+      await vi.advanceTimersByTimeAsync(500);
+      expect(calls).toBe(1);
+    }, { timeout: 20_000, interval: 100 });
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(calls).toBe(1); // nicht noch einmal
+    expect(ben.getInfo()).toMatchObject({ offline: false, status: 'ok' });
+    typeInto(ben.doc, ' lokal');
+    await ben.flush();
+    expect(ben.getInfo().saved).toBe(true);
+    expect(await stored(benDb)).toMatchObject({ dirty: 1 }); // bleibt auf dem Gerät
+    await ben.destroy();
   });
 
   it('ein Update, das nur aus Löschungen besteht, ist nicht leer', () => {

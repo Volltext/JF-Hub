@@ -114,6 +114,20 @@ describe('lokaler Anhang-Speicher', () => {
     expect(await store.blobs.get(drop.id)).toBeUndefined();
   });
 
+  it('behält auch Anhänge von Protokollen, deren Text ungesendet ist', async () => {
+    const keep = await saveDownloaded({ id: 'ung-000001', kind: 'photo', mime: 'image/jpeg', name: '' }, bytes(100), store);
+    const drop = await saveDownloaded({ id: 'abg-000001', kind: 'photo', mime: 'image/jpeg', name: '' }, bytes(100), store);
+    await store.blobs.update(keep.id, { lastUsedAt: 1 });
+    await store.blobs.update(drop.id, { lastUsedAt: 2 });
+    const content = (id: string) => ({ type: 'doc', content: [{ type: 'photo', attrs: { blobId: id } }] });
+    const textUnsent = { ...newProtokoll(), id: 'text-000001', content: content(keep.id), dirty: 0 as const };
+    await store.protokolle.bulkAdd([textUnsent, { ...newProtokoll(), id: 'sauber-0001', content: content(drop.id), dirty: 0 as const }]);
+    await store.ydocs.put({ id: textUnsent.id, update: new Uint8Array([0, 0]), dirty: 1, seq: 1 });
+    expect(await evictBlobs(0, store)).toBe(1);
+    expect(await store.blobs.get(keep.id)).toBeDefined();
+    expect(await store.blobs.get(drop.id)).toBeUndefined();
+  });
+
   it('ein Anhang in der Pause nach einem Fehlschlag wartet, bis sie vorbei ist', async () => {
     const meta = await photo(bytes(5), 'anh-000001');
     await markFailed(meta.id, store, 1_000);

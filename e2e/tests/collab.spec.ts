@@ -74,7 +74,7 @@ test.describe.serial('Gemeinsam schreiben', () => {
 
     await ben.context.setOffline(true);
     await append(ben.page, ' Bens Ergänzung im Zug.');
-    await expect(ben.page.getByText('Auf dem Gerät gespeichert')).toBeVisible({ timeout: 30_000 });
+    await expect(ben.page.getByText(/^Offline:/)).toBeVisible({ timeout: 30_000 });
     await append(admin.page, ' Annas Ergänzung im Büro.');
     await serverHasText(request, token, title, 'Annas Ergänzung im Büro.');
 
@@ -160,7 +160,7 @@ test.describe.serial('Gemeinsam schreiben', () => {
     // Ben schreibt ohne Netz; währenddessen wird die Sicherung eingespielt
     await ben.context.setOffline(true);
     await append(ben.page, ' Bens ungesendeter Satz.');
-    await expect(ben.page.getByText('Auf dem Gerät gespeichert')).toBeVisible({ timeout: 30_000 });
+    await expect(ben.page.getByText(/^Offline:/)).toBeVisible({ timeout: 30_000 });
     const restored = await request.post(`/api/admin/backups/${backup}/restore`, { headers: auth });
     expect(restored.ok()).toBeTruthy();
 

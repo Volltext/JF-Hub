@@ -3,7 +3,9 @@ import { db } from '@/core/db/db';
 import { loadAccount } from '@/core/account/account';
 import { memberRepo } from '@/core/db/repos';
 import { DEFAULT_ITEMS } from '@/features/kleidung/model';
+import { openProtocol } from '@/features/protokolle/collab/openPlan';
 import { schemaAccepts } from '@/features/protokolle/editorSchema';
+import { ProtoError } from '@/features/protokolle/http';
 import { DEMO_ACCOUNT, isDemoSeeded, seedDemo } from './seed';
 
 describe('Browser-Demo', () => {
@@ -42,6 +44,23 @@ describe('Browser-Demo', () => {
     const json = JSON.stringify(docs.map((p) => p.content));
     for (const part of ['"type":"table"', '"type":"tableHeader"', '"type":"tableCell"', '"type":"link"', '"type":"highlight"']) expect(json, part).toContain(part);
     for (const p of docs) expect(schemaAccepts(p.content), p.title).toBe(true);
+  });
+
+  it('jedes Beispielprotokoll lässt sich ohne Server bearbeiten (die Basis entsteht beim Öffnen aus dem Schnappschuss) und das Öffnen verändert nichts', async () => {
+    await seedDemo(new Date(2026, 9, 6));
+    for (const p of await db.protokolle.toArray()) {
+      const opened = await openProtocol(p.id, { transport: async () => Promise.reject(new ProtoError('Kein Server eingerichtet.', 0)), hasServer: async () => false });
+      expect(opened.kind, p.title).toBe('edit');
+      if (opened.kind === 'edit') await opened.session.destroy();
+    }
+    expect(await db.protokolle.where('dirty').equals(1).count()).toBe(0);
+  });
+
+  it('Zurücksetzen räumt auch die Texte auf', async () => {
+    await seedDemo(new Date(2026, 9, 6));
+    await db.ydocs.put({ id: 'besucher-1', update: new Uint8Array([0, 0]), dirty: 1, seq: 1 });
+    await seedDemo(new Date(2026, 9, 7));
+    expect(await db.ydocs.get('besucher-1')).toBeUndefined();
   });
 
   it('Zurücksetzen entfernt eigene Änderungen und datiert neu', async () => {

@@ -293,7 +293,7 @@ function EditorInner({ initial, session, editorRef }: { initial: Protokoll; sess
         </Link>
         <span className="proto-bar__spacer" />
         <span className="muted proto-saved" aria-live="polite">
-          {saved ? (info.offline ? 'Auf dem Gerät gespeichert' : 'Gespeichert') : 'Speichert …'}
+          {saved ? 'Gespeichert' : 'Speichert …'}
         </span>
         <SyncBadge compact />
         <button type="button" className="icon-btn" onClick={pdf} disabled={busy} aria-label="Als PDF exportieren" title="Als PDF exportieren">
@@ -329,6 +329,11 @@ function EditorInner({ initial, session, editorRef }: { initial: Protokoll; sess
       {!gone && info.message && (
         <p role="alert" className="proto-error">
           {info.message}
+        </p>
+      )}
+      {info.offline && (
+        <p role="status" className="proto-offline">
+          Offline: Deine Änderungen sind auf diesem Gerät gesichert und gehen später zum Server.
         </p>
       )}
       <Presence ids={info.peers} />

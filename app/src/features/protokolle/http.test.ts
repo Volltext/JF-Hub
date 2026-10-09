@@ -47,6 +47,9 @@ describe('request', () => {
     await expect(request(conn, 'POST', '/api/sync', {})).rejects.toMatchObject({ status: 426, message: expect.stringContaining('App aktualisieren') });
     respond(429, {});
     await expect(request(conn, 'POST', '/api/login', {})).rejects.toMatchObject({ status: 429 });
+    // der Antwortinhalt bleibt erreichbar (zum Beispiel `reset` beim Austausch des Textes)
+    respond(409, { error: 'Die Datenbank des Servers wurde ersetzt.', reset: true });
+    await expect(request(conn, 'POST', '/api/collab/exchange', {})).rejects.toMatchObject({ status: 409, body: { reset: true } });
     respond(500, 'kein JSON');
     await expect(request(conn, 'GET', '/api/x')).rejects.toMatchObject({ status: 500, message: 'Serverfehler 500.' });
   });

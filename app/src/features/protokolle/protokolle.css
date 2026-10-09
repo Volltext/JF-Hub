@@ -11,6 +11,7 @@
 /* Wer das Protokoll gerade noch geöffnet hat; ohne Mitschreibende ist die Zeile ausgeblendet. */
 .proto-peers { margin: 0; display: flex; align-items: center; gap: var(--s-2); font-size: 0.85rem; font-weight: 600; color: var(--success); }
 .proto-peers[hidden] { display: none; }
+.proto-offline { margin: 0; font-size: 0.85rem; font-weight: 600; color: var(--warning); }
 body.web .icon-btn { cursor: pointer; }
 
 .sync-badge { min-height: 40px; padding: 0 var(--s-3); display: inline-flex; align-items: center; gap: var(--s-2); border-radius: var(--r-md); border: 1px solid var(--border); background: var(--surface-2); color: var(--muted); font-size: 0.85rem; font-weight: 600; cursor: pointer; }

@@ -5,7 +5,7 @@ import { jsonEqual } from '@/core/domain/equal';
 import { ProtoError } from '../http';
 import { isEmptySnapshot } from './base';
 import { saveLocalCopy } from './localCopy';
-import { answerOf, type ExchangeDocRequest, type ExchangeTransport } from './wire';
+import { NoServer, answerOf, type ExchangeDocRequest, type ExchangeTransport } from './wire';
 import { docProblem, yDocToJson } from './yJson';
 import { applyAnswer, compact, discard, forgetServerState, getYRow, isEmptyUpdate, markRejected, putLocal } from './yStore';
 
@@ -431,6 +431,12 @@ export class CollabSession {
   }
 
   private onError(e: unknown): void {
+    if (e instanceof NoServer) {
+      // Ohne Server (Demo im Browser, App ohne Server) gibt es nichts auszutauschen, und das ist kein Fehler: Alles bleibt auf dem Gerät.
+      this.stopped = true;
+      clearTimeout(this.exchangeTimer);
+      return;
+    }
     const status = e instanceof ProtoError ? e.status : -1;
     this.failures++;
     if (status === 0) {

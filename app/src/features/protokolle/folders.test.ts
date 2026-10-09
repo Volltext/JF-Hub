@@ -73,6 +73,10 @@ describe('folderRepo', () => {
     await folderRepo.remove('mitte');
     expect(await db.folders.get('unten')).toMatchObject({ parentId: 'oben', dirty: 1 });
     expect(await db.protokolle.get(p.id)).toMatchObject({ folderId: 'oben', dirty: 1 });
+    // der Server führt die Kopfdaten Feld für Feld zusammen: Auch der neue Ordner braucht seine Änderungszeit, sonst gewinnt der alte Wert
+    const moved = (await db.protokolle.get(p.id))!;
+    expect(moved.metaAt!.folderId).toBeGreaterThanOrEqual(moved.updatedAt);
+    expect(moved.metaAt!.title).toBeLessThan(moved.metaAt!.folderId!);
     expect(await db.folders.get('mitte')).toMatchObject({ deleted: 1, dirty: 1 }); // dem Server wird die Löschung gemeldet
     expect((await liveFolders()).map((f) => f.id).sort()).toEqual(['oben', 'unten']);
   });
