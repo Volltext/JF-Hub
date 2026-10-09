@@ -6,6 +6,8 @@
 .proto-back { display: inline-flex; align-items: center; gap: 2px; min-height: 44px; color: var(--muted); text-decoration: none; font-weight: 600; }
 .proto-saved { font-size: 0.82rem; white-space: nowrap; }
 .proto-error { margin: 0; padding: var(--s-3); border-radius: var(--r-md); background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); }
+.proto-notice { margin: 0; padding: var(--s-3); border-radius: var(--r-md); background: color-mix(in srgb, var(--warning) 14%, transparent); display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2) var(--s-3); }
+.proto-notice a { font-weight: 600; }
 body.web .icon-btn { cursor: pointer; }
 
 .sync-badge { min-height: 40px; padding: 0 var(--s-3); display: inline-flex; align-items: center; gap: var(--s-2); border-radius: var(--r-md); border: 1px solid var(--border); background: var(--surface-2); color: var(--muted); font-size: 0.85rem; font-weight: 600; cursor: pointer; }

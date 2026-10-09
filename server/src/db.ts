@@ -26,6 +26,8 @@ export interface ProtocolRow {
   deletedAt: number | null;
   /** Nur bei Konfliktkopien: die Revision, mit der die Kopie geschrieben wurde. Stimmt sie noch, hat niemand die Kopie geändert und sie darf fortgeschrieben werden. */
   conflictRev: number | null;
+  /** Gesetzt, wenn der Papierkorb geleert wurde: die Zeile bleibt als leerer Grabstein, damit auch lange offline gewesene Geräte die Löschung erfahren. */
+  purgedAt: number | null;
 }
 
 /** Einstellungen, die in der Admin-GUI änderbar sind (key/value in `config`). */
@@ -178,6 +180,8 @@ export function openDb(path: string): DatabaseSync {
   addColumn(db, 'protocols', 'hiddenRev', 'INTEGER');
   // Migration: Konfliktkopien werden bei Wiederholung fortgeschrieben statt vervielfacht (ab 2.1.0).
   addColumn(db, 'protocols', 'conflictRev', 'INTEGER');
+  // Migration: Papierkorb leeren hinterlässt einen Grabstein statt die Zeile zu löschen (ab 2.1.0).
+  addColumn(db, 'protocols', 'purgedAt', 'INTEGER');
   addColumn(db, 'records', 'ownerId', "TEXT NOT NULL DEFAULT ''");
   addColumn(db, 'records', 'shared', 'INTEGER NOT NULL DEFAULT 1');
   addColumn(db, 'records', 'hiddenRev', 'INTEGER');

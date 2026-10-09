@@ -2,6 +2,7 @@ import type { JSONContent } from '@tiptap/core';
 import { db, type HubDb, type SyncCollection } from '@/core/db/db';
 import { saveDirectory, type DirectoryUser } from '@/core/account/account';
 import { BASE_COLLECTIONS, SYNC_COLLECTIONS, seedOutboxOnce } from '@/core/db/outbox';
+import { noteConflicts } from './conflicts';
 import { ProtoError, loadConn, request } from './http';
 import type { Protokoll } from './model';
 import { useSyncStatus } from './syncStatus';
@@ -218,6 +219,9 @@ export async function performSync(send: (req: SyncRequest) => Promise<SyncRespon
       void _deleted;
       await store.protokolle.put({ ...fields, dirty: 0, deleted: 0 });
     }
+
+    // Konflikte vormerken, bis die Nutzerin oder der Nutzer sie gesehen hat (der Hinweis im Tooltip war auf dem Handy unsichtbar).
+    await noteConflicts(res.conflicts ?? [], store);
 
     // Vom Server abgelehnte Fassungen merken, solange sie noch genau die gesendete ist (sonst gibt es schon eine neuere).
     for (const r of res.rejected ?? []) {

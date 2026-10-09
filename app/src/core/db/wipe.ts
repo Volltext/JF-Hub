@@ -6,6 +6,7 @@ const SYNC_KV_KEYS = [
   'protokolle.epoch',
   'protokolle.serverRecords',
   'protokolle.serverCollections',
+  'protokolle.conflicts',
   'records.seeded',
   'account',
   'directory',

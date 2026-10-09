@@ -32,5 +32,6 @@ export function sampleProtocol() {
     updatedAt: Date.now(),
     deletedAt: null,
     conflictRev: null,
+    purgedAt: null,
   });
 }

@@ -17,9 +17,10 @@ import { DateField, TimeField } from '@/core/ui/pickers';
 import { InkNode } from '@/features/ink/InkNode';
 import { FileNode, PhotoNode } from '@/features/attachments/AttachmentNodes';
 import { createAutosave } from './autosave';
+import { dismissConflict, useConflicts } from './conflicts';
 import { EditorToolbar } from './EditorToolbar';
 import { FolderPicker } from './FolderPicker';
-import { folderPathLabel, liveFolders } from './folders';
+import { folderPathLabel, liveFolders, shownFolder } from './folders';
 import { SyncBadge } from './SyncBadge';
 import type { Protokoll } from './model';
 import { exportPdf, protokolleRepo } from './repo';
@@ -141,7 +142,11 @@ function EditorInner({ initial }: { initial: Protokoll }) {
   }, [live, editor, autosave]);
 
   const folders = useLiveQuery(liveFolders, []);
-  const folderId = live?.folderId ?? initial.folderId ?? '';
+  // Ein dem Gerät unbekannter Ordner (von jemand anderem gelöscht) zählt als oberste Ebene, wie in der Liste.
+  const rawFolderId = live?.folderId ?? initial.folderId ?? '';
+  const folderId = folders ? shownFolder(folders, rawFolderId) : rawFolderId;
+  const conflicts = useConflicts();
+  const conflict = conflicts?.find((n) => n.id === initial.id || n.copyId === initial.id);
   const current = live ?? initial;
   const shared = current.shared === true;
   const mine = isMine(current, account);
@@ -208,6 +213,21 @@ function EditorInner({ initial }: { initial: Protokoll }) {
       {error && (
         <p role="alert" className="proto-error">
           {error}
+        </p>
+      )}
+      {conflict && (
+        <p role="status" className="proto-notice">
+          <span>
+            {conflict.id === initial.id
+              ? 'Dieses Protokoll wurde zur selben Zeit von jemand anderem geändert. Deine Fassung liegt als Kopie vor.'
+              : 'Das ist deine Fassung aus einem gleichzeitigen Bearbeiten. Übernimm, was du brauchst.'}
+          </span>
+          <Link to={`/protokolle/${conflict.id === initial.id ? conflict.copyId : conflict.id}`}>
+            {conflict.id === initial.id ? 'Kopie öffnen' : 'Zum Original'}
+          </Link>
+          <button type="button" className="btn" onClick={() => void dismissConflict(conflict.copyId)}>
+            Verstanden
+          </button>
         </p>
       )}
       {current.rejected && (

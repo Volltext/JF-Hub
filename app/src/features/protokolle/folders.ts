@@ -6,6 +6,12 @@ import { scheduleSync } from './sync';
 /** Oberste Ebene. */
 export const ROOT = '';
 
+/**
+ * Ordner, in dem ein Protokoll angezeigt wird. Kennt dieses Gerät den eingetragenen Ordner nicht (zum Beispiel, weil ein anderer
+ * Betreuer ihn gelöscht hat, während das Protokoll privat war), liegt es auf der obersten Ebene, statt unauffindbar zu sein.
+ */
+export const shownFolder = (all: Ordner[], folderId: string | undefined): string => (folderId && all.some((f) => f.id === folderId) ? folderId : ROOT);
+
 const byName = (a: Ordner, b: Ordner) => a.name.localeCompare(b.name, 'de', { numeric: true, sensitivity: 'base' });
 
 export const childFolders = (all: Ordner[], parentId: string): Ordner[] => all.filter((f) => f.parentId === parentId).sort(byName);

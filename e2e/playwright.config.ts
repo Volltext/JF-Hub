@@ -8,9 +8,12 @@ const PORT = 8099;
 const DEMO_PORT = 8098;
 /** Demo im Browser (app/dist-demo) unter einem Unterpfad wie auf GitHub Pages (tests/browser-demo.spec.ts). */
 const PAGES_PORT = 8097;
+/** Eigener Server für die Protokoll-Tests (tests/protokolle.spec.ts): eigene Datenbank, und /api/login erlaubt nur 8 Versuche je 15 Minuten. */
+const PROTOKOLLE_PORT = 8096;
 const root = resolve(import.meta.dirname, '..');
 const dataDir = process.env.E2E_DATA_DIR ?? mkdtempSync(join(tmpdir(), 'jfh-e2e-'));
 const demoDataDir = mkdtempSync(join(tmpdir(), 'jfh-e2e-demo-'));
+const protokolleDataDir = mkdtempSync(join(tmpdir(), 'jfh-e2e-protokolle-'));
 const files = {
   ADMIN_DIR: join(root, 'server/public/admin'),
   WEB_DIR: join(root, 'app/dist-web'),
@@ -43,6 +46,13 @@ export default defineConfig({
       reuseExistingServer: false,
       timeout: 30_000,
       env: { PORT: String(PORT), DATA_DIR: dataDir, ADMIN_USER: 'admin', ADMIN_PASSWORD: 'e2e-admin-passwort', ...files },
+    },
+    {
+      command: `node ${join(root, 'server/dist/index.js')}`,
+      url: `http://127.0.0.1:${PROTOKOLLE_PORT}/api/health`,
+      reuseExistingServer: false,
+      timeout: 30_000,
+      env: { PORT: String(PROTOKOLLE_PORT), DATA_DIR: protokolleDataDir, ADMIN_USER: 'admin', ADMIN_PASSWORD: 'e2e-admin-passwort', ...files },
     },
     {
       command: `node ${join(root, 'server/dist/index.js')}`,

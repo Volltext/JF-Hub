@@ -37,7 +37,7 @@ import {
 import { CONFIG_DEFAULTS, getSettings, nextRev, setConfig, type ConfigKey, type FolderRow, type ProtocolRow, type UserRow } from './db.js';
 import { pdfFileName, renderPdf, safeFileName, type PdfStyle } from './pdf.js';
 import { parseClothingPdf, renderClothingPdf } from './clothingPdf.js';
-import { applySync, canSee, toServerDoc, VISIBLE_SQL, type SyncRequest } from './sync.js';
+import { applySync, canSee, purgeProtocol, sweepTrash, toServerDoc, VISIBLE_SQL, type SyncRequest } from './sync.js';
 import { ensureVapid, PushError, replaceReminders, sendDue, subscribe, unsubscribe, webPushSender, type PushSender } from './push.js';
 import { HolidayCache, type FetchLike } from './holidays.js';
 import { sampleProtocol } from './sample.js';
@@ -344,6 +344,32 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
       .send(pdf);
   });
 
+  /** Papierkorb: die eigenen gelöschten Protokolle (Admin: zusätzlich veröffentlichte anderer), neueste zuerst. */
+  app.get('/api/protocols/trash', async (req) => {
+    const user = me(req);
+    const items = db
+      .prepare(
+        `SELECT p.id, p.title, p.datum, p.ort, p.deletedAt, p.shared, p.ownerId, COALESCE(u.displayName, u.username, '') AS owner
+         FROM protocols p LEFT JOIN users u ON u.id = p.ownerId
+         WHERE p.deletedAt IS NOT NULL AND p.purgedAt IS NULL AND (p.ownerId = ? OR (? = 1 AND p.shared = 1))
+         ORDER BY p.deletedAt DESC`,
+      )
+      .all(user.id, user.role === 'admin' ? 1 : 0);
+    return { items, trashDays: Number(getSettings(db).trashDays) || 30 };
+  });
+
+  /** Holt ein Protokoll aus dem Papierkorb zurück (Besitzer oder Admin). Die Geräte bekommen es beim nächsten Abgleich. */
+  app.post<{ Params: { id: string } }>('/api/protocols/:id/restore', async (req, reply) => {
+    const user = me(req);
+    const who = [user.id, user.role === 'admin' ? 1 : 0] as const;
+    const row = db
+      .prepare('SELECT id FROM protocols WHERE id = ? AND deletedAt IS NOT NULL AND purgedAt IS NULL AND (ownerId = ? OR (? = 1 AND shared = 1))')
+      .get(req.params.id, ...who);
+    if (!row) return reply.code(404).send({ error: 'Nicht im Papierkorb' });
+    db.prepare('UPDATE protocols SET deletedAt = NULL, rev = ?, updatedAt = ? WHERE id = ?').run(nextRev(db), Date.now(), req.params.id);
+    return { ok: true };
+  });
+
   /** Kleidertabelle als PDF: die App schickt die Zeilen, der Server setzt sie im Stil der Protokoll-PDFs. */
   app.post('/api/clothing/pdf', async (req, reply) => {
     let data;
@@ -457,7 +483,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
       node: process.version,
       uptime: Math.round(process.uptime()),
       protocols: count('deletedAt IS NULL'),
-      trashed: count('deletedAt IS NOT NULL'),
+      trashed: count('deletedAt IS NOT NULL AND purgedAt IS NULL'),
       users: countUsers(db),
     };
   });
@@ -539,7 +565,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
       .prepare(
         `SELECT p.id, p.title, p.datum, p.ort, p.rev, p.updatedAt, p.deletedAt, p.shared, length(p.content) AS size, COALESCE(u.displayName, u.username, '') AS owner
          FROM protocols p LEFT JOIN users u ON u.id = p.ownerId
-         WHERE (p.shared = 1 OR p.ownerId = ?)
+         WHERE (p.shared = 1 OR p.ownerId = ?) AND p.purgedAt IS NULL
          ORDER BY (p.deletedAt IS NOT NULL), p.datum DESC, p.updatedAt DESC`,
       )
       .all(me(req).id);
@@ -547,14 +573,14 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
 
   app.post<{ Params: { id: string } }>('/api/admin/protocols/:id/restore', async (req, reply) => {
     const r = db
-      .prepare(`UPDATE protocols SET deletedAt = NULL, rev = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NOT NULL AND ${VISIBLE_SQL}`)
+      .prepare(`UPDATE protocols SET deletedAt = NULL, rev = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NOT NULL AND purgedAt IS NULL AND ${VISIBLE_SQL}`)
       .run(nextRev(db), Date.now(), req.params.id, me(req).id);
     return r.changes ? { ok: true } : reply.code(404).send({ error: 'Nicht im Papierkorb' });
   });
 
   app.delete<{ Params: { id: string } }>('/api/admin/protocols/:id', async (req, reply) => {
-    const r = db.prepare(`DELETE FROM protocols WHERE id = ? AND deletedAt IS NOT NULL AND ${VISIBLE_SQL}`).run(req.params.id, me(req).id);
-    return r.changes ? { ok: true } : reply.code(404).send({ error: 'Nur Papierkorb-Einträge können endgültig gelöscht werden' });
+    const row = db.prepare(`SELECT id FROM protocols WHERE id = ? AND deletedAt IS NOT NULL AND purgedAt IS NULL AND ${VISIBLE_SQL}`).get(req.params.id, me(req).id);
+    return row && purgeProtocol(db, req.params.id) ? { ok: true } : reply.code(404).send({ error: 'Nur Papierkorb-Einträge können endgültig gelöscht werden' });
   });
 
   app.get('/api/admin/backup', async (_req, reply) => {
@@ -673,8 +699,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
 
   const timer = setInterval(() => {
     purgeExpiredSessions(db);
-    const days = Number(getSettings(db).trashDays) || 30;
-    db.prepare('DELETE FROM protocols WHERE deletedAt IS NOT NULL AND deletedAt < ?').run(Date.now() - days * 86_400_000);
+    sweepTrash(db);
   }, 6 * 3_600_000);
   timer.unref();
   app.addHook('onClose', async () => clearInterval(timer));

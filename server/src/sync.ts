@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
-import { currentRev, getEpoch, nextRev, type FolderRow, type ProtocolRow, type RecordRow, type Role } from './db.js';
+import { currentRev, getEpoch, getSettings, nextRev, type FolderRow, type ProtocolRow, type RecordRow, type Role } from './db.js';
 
 /** Wer synchronisiert (aus der Sitzung). */
 export interface SyncUser {
@@ -224,7 +224,7 @@ function write(db: DatabaseSync, id: string, c: ClientChange, deleted: boolean, 
      ON CONFLICT(id) DO UPDATE SET title=excluded.title, folderId=excluded.folderId, datum=excluded.datum, beginn=excluded.beginn,
        ende=excluded.ende, ort=excluded.ort, leitung=excluded.leitung, content=excluded.content,
        ownerId=excluded.ownerId, shared=excluded.shared, hiddenRev=excluded.hiddenRev,
-       rev=excluded.rev, updatedAt=excluded.updatedAt, deletedAt=excluded.deletedAt`,
+       rev=excluded.rev, updatedAt=excluded.updatedAt, deletedAt=excluded.deletedAt, purgedAt=NULL`,
   ).run(
     id,
     str(c.title, 200),
@@ -243,6 +243,38 @@ function write(db: DatabaseSync, id: string, c: ClientChange, deleted: boolean, 
     deleted ? now : null,
   );
   return rev;
+}
+
+/**
+ * Leert ein Protokoll im Papierkorb endgültig: Titel und Inhalt verschwinden, die Zeile bleibt als Grabstein mit neuer Revision,
+ * damit jedes Gerät die Löschung erfährt (sonst bliebe die Kopie auf einem lange offline gewesenen Gerät stehen und käme beim
+ * nächsten „Alles neu abgleichen“ zurück). Liefert false, wenn das Protokoll nicht im Papierkorb liegt oder schon geleert ist.
+ */
+export function purgeProtocol(db: DatabaseSync, id: string, now = Date.now()): boolean {
+  const r = db
+    .prepare(
+      `UPDATE protocols SET title = '', content = '{"type":"doc","content":[]}', ort = '', leitung = '', purgedAt = ?, rev = ?
+       WHERE id = ? AND deletedAt IS NOT NULL AND purgedAt IS NULL`,
+    )
+    .run(now, nextRev(db), id);
+  return r.changes > 0;
+}
+
+const DAY = 86_400_000;
+
+/**
+ * Räumt den Papierkorb auf: Einträge, die länger als `trashDays` darin liegen, werden geleert (der Grabstein bleibt), und
+ * Grabsteine verschwinden erst nach `max(tokenDays, 90)` Tagen. So lange kann ein Gerät offline gewesen sein, ohne
+ * dass Gelöschtes bei ihm wieder auftaucht.
+ */
+export function sweepTrash(db: DatabaseSync, now = Date.now()): { purged: number; removed: number } {
+  const settings = getSettings(db);
+  const trashDays = Number(settings.trashDays) || 30;
+  const stoneDays = Math.max(Number(settings.tokenDays) || 90, 90);
+  const due = db.prepare('SELECT id FROM protocols WHERE deletedAt IS NOT NULL AND purgedAt IS NULL AND deletedAt < ?').all(now - trashDays * DAY) as { id: string }[];
+  for (const { id } of due) purgeProtocol(db, id, now);
+  const gone = db.prepare('DELETE FROM protocols WHERE purgedAt IS NOT NULL AND purgedAt < ?').run(now - stoneDays * DAY);
+  return { purged: due.length, removed: Number(gone.changes) };
 }
 
 /** Steht genau diese Fassung (Kopfdaten und Inhalt) schon beim Server? Dann ist eine veraltete Basis kein Konflikt. */
