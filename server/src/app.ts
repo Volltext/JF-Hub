@@ -48,6 +48,7 @@ import { DEMO_ACCOUNTS, demoBlock, formatResetAt, isDemoAccount, msUntilReset, p
 import { API_VERSION, MIN_SCHEMA } from './versions.js';
 import { exchange, type ExchangeRequest } from './collab/exchange.js';
 import { createPeers } from './collab/peers.js';
+import { collabStats, migrateYjs } from './collab/migrate.js';
 
 export const VERSION = '2.3.0';
 export { API_VERSION, MIN_SCHEMA };
@@ -130,12 +131,22 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
   migrateLegacy(db);
   // Fotos und Dateien lagen bis 2.1.x im Inhalt der Protokolle. Hier ziehen sie in Blobs um (mit Backup davor, wiederholbar).
   if (!opts.demo) {
+    let backedUp = false;
     try {
-      migrateBlobs(db, { backupDir: opts.backupDir, log: (message) => app.log.info(message) });
+      backedUp = migrateBlobs(db, { backupDir: opts.backupDir, log: (message) => app.log.info(message) }).backup !== undefined;
     } catch (e) {
       // Nichts ist verloren (die Änderung läuft in einer Transaktion, vorher gab es ein Backup), und alte Protokolle bleiben les- und ausgebbar.
       // Der Server soll deshalb laufen; der nächste Start versucht es noch einmal.
       app.log.error({ err: e }, 'Fotos und Dateien konnten nicht aus den Protokollen ausgelagert werden');
+    }
+    // Seit 3.0.0 wird der Text zusammen bearbeitet (Yjs). Der Bestand zieht hier um (mit Backup davor, wiederholbar). Was sich nicht
+    // verlustfrei umwandeln lässt, bleibt unverändert und nur lesbar; die Verwaltung zeigt es an.
+    try {
+      const done = migrateYjs(db, { backupDir: opts.backupDir, backedUp, log: (message) => app.log.info(message) });
+      if (done.failed.length) app.log.warn(`${done.failed.length} Protokoll(e) konnten nicht für das gemeinsame Bearbeiten umgestellt werden und bleiben nur lesbar`);
+    } catch (e) {
+      // Nichts ist verloren (je Protokoll eine Transaktion, vorher gab es ein Backup). Der Server läuft, der nächste Start versucht es erneut.
+      app.log.error({ err: e }, 'Der Text der Protokolle konnte nicht für das gemeinsame Bearbeiten umgestellt werden');
     }
     // Die Verweise (wer braucht welchen Anhang) sind abgeleitet; hier werden sie gegen den Inhalt geprüft, bevor aufgeräumt wird.
     try {
@@ -244,7 +255,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
     resetAt: formatResetAt(demoAt),
     accounts: DEMO_ACCOUNTS.map(({ username, password, displayName, role, hint }) => ({ username, password, displayName, role, hint })),
   };
-  app.get('/api/status', async () => ({ setupRequired: countUsers(db) === 0, version: VERSION, api: API_VERSION, minSchema, features: ['blobs'], orgName: getSettings(db).orgName, ...(demoInfo ? { demo: demoInfo } : {}) }));
+  app.get('/api/status', async () => ({ setupRequired: countUsers(db) === 0, version: VERSION, api: API_VERSION, minSchema, features: ['blobs', 'collab'], orgName: getSettings(db).orgName, ...(demoInfo ? { demo: demoInfo } : {}) }));
 
   app.post<{ Body: { code?: string; username?: string; displayName?: string; password?: string; device?: string } }>(
     '/api/setup',
@@ -495,7 +506,9 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
       let base = pdfFileName(doc);
       while (used.has(dir + base)) base += '_';
       used.add(dir + base);
-      files[`json/${dir}${base}.json`] = strToU8(JSON.stringify(doc, null, 2));
+      // Wie der Server den Text intern führt (Yjs-Modus, Feldzeiten), gehört nicht in die Ausgabe.
+      const { ymode: _ymode, metaAt: _metaAt, ...exported } = doc;
+      files[`json/${dir}${base}.json`] = strToU8(JSON.stringify(exported, null, 2));
       for (const node of blobNodesOf(doc.content)) addAttachment(node);
       try {
         files[`${dir}${base}.pdf`] = new Uint8Array(await renderPdf(doc, st, { image: imageOf }));
@@ -580,6 +593,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
       users: countUsers(db),
       blobs: blobs.count,
       blobBytes: blobs.bytes,
+      collab: collabStats(db),
     };
   });
 

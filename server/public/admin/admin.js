@@ -236,6 +236,13 @@
         stat(i.users, 'Benutzer'), stat(i.protocols, 'Protokolle'), stat(i.trashed, 'im Papierkorb'), stat(r[1].length, 'angemeldete Geräte'),
         stat(i.blobs === undefined ? '–' : i.blobs + ' · ' + fmtSize(i.blobBytes), 'Fotos und Anhänge'),
         stat(i.version, 'Serverversion'), stat(up, 'Laufzeit')));
+      // Texte, die sich nicht für das gemeinsame Bearbeiten umstellen ließen, bleiben unverändert und sind nur lesbar.
+      if (i.collab && i.collab.pending > 0) {
+        stats.appendChild(h('div', { class: 'msg err', role: 'alert' },
+          h('b', null, i.collab.pending + (i.collab.pending === 1 ? ' Protokoll ist' : ' Protokolle sind') + ' nur lesbar: '),
+          'Der Text ließ sich nicht für das gemeinsame Bearbeiten umstellen. Bei jedem Start versucht der Server es erneut. ',
+          i.collab.failed.map(function (f) { return '„' + (f.title || 'Ohne Titel') + '“ (' + f.reason + ')'; }).join('; ')));
+      }
     }).catch(function (e) { stats.appendChild(h('div', { class: 'msg err' }, e.message)); });
     wrap.appendChild(pageHead('Übersicht', 'Die Web-App (PWA) für alle Betreuer erreichst du unter dem Hauptpfad dieser Adresse.'));
     wrap.appendChild(h('div', { class: 'row' }, h('a', { class: 'btn primary', href: '/' }, 'Web-App öffnen')));

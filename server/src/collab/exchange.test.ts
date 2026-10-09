@@ -112,6 +112,15 @@ describe('Austausch: Anlegen und Abholen', () => {
     expect(stored(id)!.state).toEqual(stateBefore);
   });
 
+  it('ein leerer Zustand beim Server ist kein Text: die Basis wird angenommen', () => {
+    const id = putProtocol(db, { ownerId: ANNA.id });
+    const empty = new Y.Doc();
+    db.prepare('INSERT INTO ydocs(id, state, sv, updatedAt) VALUES(?,?,?,?)').run(id, Y.encodeStateAsUpdate(empty), Y.encodeStateVector(empty), 1);
+    const r = new Device(ANNA, id, doc(p(t('Altbestand')))).run({ create: true });
+    expect(r.status).toBe('ok');
+    expect(JSON.parse(row(id).content)).toEqual(doc(p(t('Altbestand'))));
+  });
+
   it('eine Wiederholung nach verlorener Antwort ist keine fremde Basis', () => {
     const id = putProtocol(db, { ownerId: ANNA.id });
     const anna = new Device(ANNA, id, doc(p(t('Hallo'))));

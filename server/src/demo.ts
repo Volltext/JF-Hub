@@ -1,6 +1,7 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 import { hashPassword } from './auth.js';
+import { migrateYjs } from './collab/migrate.js';
 import { currentRev, getConfig, nextRev, setConfig, type Role } from './db.js';
 import { DEMO_NAMES, demoData } from './demoData.js';
 
@@ -123,6 +124,9 @@ export async function resetDemo(db: DatabaseSync, now = new Date()): Promise<voi
     db.exec('ROLLBACK');
     throw e;
   }
+  // Der Text der Beispielprotokolle wird zusammen bearbeitet wie überall (Yjs); die Beispieldaten kommen aus dem Code und müssen sich umstellen lassen.
+  const converted = migrateYjs(db);
+  if (converted.failed.length) throw new Error(`Beispieldaten ließen sich nicht umstellen: ${converted.failed.map((f) => `${f.id}: ${f.reason}`).join('; ')}`);
   // Platz von großen Anhängen der Besucher freigeben; klappt das nicht (z. B. Platte voll), gilt das Zurücksetzen trotzdem.
   try {
     db.exec('VACUUM');

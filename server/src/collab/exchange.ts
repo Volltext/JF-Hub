@@ -177,7 +177,7 @@ function one(db: DatabaseSync, d: ExchangeDoc, user: SyncUser, peers: Peers, now
   if (update && !isEmptyUpdate(update)) {
     try {
       // Eine Basis aus altem Inhalt wird nur angenommen, wenn der Server noch keinen Text hat oder der Client ihn selbst geschickt hat.
-      if (d.create && current && !sharesHistory(update, current.sv)) return { id, status: 'exists' };
+      if (d.create && current && Y.decodeStateVector(current.sv).size > 0 && !sharesHistory(update, current.sv)) return { id, status: 'exists' };
     } catch {
       return reject('ungültige Änderung');
     }

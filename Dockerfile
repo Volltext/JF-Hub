@@ -44,7 +44,8 @@ COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh && mkdir -p /data && chown node:node /data
 VOLUME /data
 EXPOSE 8080
-HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+# Beim ersten Start nach dem Update auf 3.0.0 stellt der Server die Texte aller Protokolle um (mit Backup davor); das kann bei vielen Protokollen dauern.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:8080/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 # Startet als root nur, um die Rechte des gemounteten Datenordners zu richten, und läuft dann als `node`.
 ENTRYPOINT ["/sbin/tini", "--", "/usr/local/bin/entrypoint.sh"]

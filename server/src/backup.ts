@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { migrateLegacy } from './auth.js';
 import { getConfig, openDb, setConfig } from './db.js';
 import { migrateBlobs } from './migrate.js';
+import { migrateYjs } from './collab/migrate.js';
 
 /**
  * Backups der SQLite-Datenbank: automatisch (täglich), manuell, als Sicherheitskopie vor einer Wiederherstellung oder vor einem
@@ -141,6 +142,7 @@ export function restoreFromFile(db: DatabaseSync, file: string): void {
     try {
       migrateLegacy(prepared);
       migrateBlobs(prepared); // Sicherungen vor 2.2.0 tragen Fotos und Dateien noch im Inhalt der Protokolle.
+      migrateYjs(prepared); // Sicherungen vor 3.0.0 kennen den gemeinsam bearbeiteten Text noch nicht.
       const admins = prepared.prepare("SELECT COUNT(*) AS n FROM users WHERE role = 'admin' AND disabled = 0 AND passwordHash IS NOT NULL").get() as { n: number };
       if (!admins.n) throw new RestoreError('Die Sicherung enthält kein nutzbares Admin-Konto, du könntest dich danach nicht mehr anmelden.');
     } finally {

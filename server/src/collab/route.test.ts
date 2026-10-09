@@ -23,7 +23,7 @@ afterEach(async () => {
 });
 
 const post = (token: string | undefined, body: unknown, headers: Record<string, string> = {}) =>
-  app.inject({ method: 'POST', url: '/api/collab/exchange', headers: { ...(token ? { authorization: `Bearer ${token}` } : {}), 'x-jfh-schema': '4', ...headers }, payload: body as never });
+  app.inject({ method: 'POST', url: '/api/collab/exchange', headers: { ...(token ? { authorization: `Bearer ${token}` } : {}), 'x-jfh-schema': '5', ...headers }, payload: body as never });
 
 const doc = (text: string): DocNode => ({ type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text }] }] });
 const b64 = (u: Uint8Array) => Buffer.from(u).toString('base64');
@@ -35,7 +35,7 @@ describe('POST /api/collab/exchange', () => {
   });
 
   it('weist Apps mit zu altem Dokumentformat ab (426), ohne etwas anzuwenden', async () => {
-    const { db, token, userId } = await start({ minSchema: 5 });
+    const { db, token, userId } = await start();
     const id = putProtocol(db, { ownerId: userId });
     const update = b64(Y.encodeStateAsUpdate(jsonToYDoc(doc('Hallo'))));
     const r = await post(token, { docs: [{ id, update, create: true }] }, { 'x-jfh-schema': '4' });
