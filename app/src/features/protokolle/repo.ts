@@ -33,7 +33,8 @@ export const protokolleRepo = {
     const row = await db.protokolle.get(id);
     if (row && isUnchanged(row, patch)) return row.updatedAt;
     const updatedAt = Date.now();
-    await db.protokolle.update(id, { ...patch, updatedAt, dirty: 1 });
+    // Eine Änderung gibt dem Server einen neuen Versuch (eine frühere Ablehnung gilt nur für die alte Fassung).
+    await db.protokolle.update(id, { ...patch, updatedAt, dirty: 1, rejected: undefined });
     scheduleSync();
     return updatedAt;
   },

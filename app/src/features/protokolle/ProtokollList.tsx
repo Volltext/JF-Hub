@@ -181,7 +181,13 @@ export function ProtokollList() {
                   <div className="item__sub">{[p.datum && formatDate(p.datum), p.ort].filter(Boolean).join(' · ')}</div>
                 </div>
                 {(p.shared || !isMine(p, account)) && <span className="chip">{visibilityLabel(p, account, users)}</span>}
-                {p.dirty === 1 && <span className="chip chip--warn">nicht gesendet</span>}
+                {p.rejected ? (
+                  <span className="chip chip--warn" title={p.rejected}>
+                    abgelehnt
+                  </span>
+                ) : (
+                  p.dirty === 1 && <span className="chip chip--warn">nicht gesendet</span>
+                )}
               </Link>
             ))}
           </div>

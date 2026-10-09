@@ -110,6 +110,8 @@ export interface SyncResponse {
   counts: { protocols: number; folders: number; records: number };
   /** Eigene Fassung des Clients wurde als Kopie `copyId` gesichert, weil der Server eine neuere hatte. */
   conflicts: { id: string; copyId: string }[];
+  /** Änderungen, die der Server nicht annimmt (ungültig, zu groß …). Die übrigen sind trotzdem angewendet. */
+  rejected: { kind: 'protocol' | 'folder' | 'record'; id: string; collection?: string; reason: string }[];
 }
 
 const str = (v: unknown, max: number) => (typeof v === 'string' ? v.slice(0, max) : '');
@@ -164,10 +166,40 @@ const hiddenDoc = (id: string, rev: number): ServerDoc => ({
   deleted: true,
 });
 
+const MAX_DEPTH = 100;
+const MAX_NODES = 300_000;
+
+/**
+ * Prüft Form und Umfang des Inhalts, bevor er gespeichert wird: Wurzel `doc`, jeder Knoten ein Objekt mit Typ, `content` eine Liste,
+ * begrenzte Tiefe und Anzahl. Was Clients schicken, ist sonst beliebig – und PDF, Suche und Export laufen später darüber.
+ * Welche Knotentypen es gibt, prüft das nicht (das ist Sache des Editors).
+ */
+export function validateContent(content: unknown): string | null {
+  if (content === undefined || content === null) return null; // leer = leeres Dokument
+  if (typeof content !== 'object' || Array.isArray(content) || (content as { type?: unknown }).type !== 'doc') return 'Inhalt ist kein Dokument';
+  let nodes = 0;
+  const walk = (n: unknown, depth: number): string | null => {
+    if (depth > MAX_DEPTH) return 'Inhalt ist zu tief verschachtelt';
+    if (!n || typeof n !== 'object' || Array.isArray(n)) return 'Inhalt enthält einen ungültigen Knoten';
+    if (++nodes > MAX_NODES) return 'Inhalt hat zu viele Knoten';
+    const node = n as { type?: unknown; content?: unknown };
+    if (typeof node.type !== 'string') return 'Inhalt enthält einen Knoten ohne Typ';
+    if (node.content === undefined) return null;
+    if (!Array.isArray(node.content)) return 'Inhalt enthält einen Knoten, dessen Inhalt keine Liste ist';
+    for (const child of node.content) {
+      const err = walk(child, depth + 1);
+      if (err) return err;
+    }
+    return null;
+  };
+  return walk(content, 0);
+}
+
 function validate(c: ClientChange): string | null {
+  if (!c || typeof c !== 'object') return 'ungültige Änderung';
   if (typeof c.id !== 'string' || !/^[A-Za-z0-9_-]{6,64}$/.test(c.id)) return 'ungültige ID';
   if (typeof c.baseRev !== 'number' || c.baseRev < 0) return 'ungültige Basisrevision';
-  return null;
+  return validateContent(c.content);
 }
 
 interface Meta {
@@ -246,6 +278,27 @@ export function applySync(db: DatabaseSync, req: SyncRequest, user: SyncUser): S
   const conflicts: SyncResponse['conflicts'] = [];
   /** Dokumente, die in die Antwort gehören, auch wenn ihre Revision nicht über dem Stand des Clients liegt. */
   const resend = new Set<string>();
+  const rejected: SyncResponse['rejected'] = [];
+  /**
+   * Führt eine einzelne Änderung isoliert aus: Scheitert sie, wird nur sie zurückgenommen und gemeldet, die übrigen laufen weiter.
+   * Sonst sperrt ein einziges unbrauchbares Protokoll (zu groß, ungültig) den Abgleich des ganzen Geräts, und zwar dauerhaft.
+   */
+  const isolated = (what: { kind: SyncResponse['rejected'][number]['kind']; id: unknown; collection?: unknown }, fn: () => void): void => {
+    db.exec('SAVEPOINT change');
+    try {
+      fn();
+      db.exec('RELEASE change');
+    } catch (e) {
+      db.exec('ROLLBACK TO change');
+      db.exec('RELEASE change');
+      rejected.push({
+        kind: what.kind,
+        id: typeof what.id === 'string' ? what.id : '',
+        ...(typeof what.collection === 'string' ? { collection: what.collection } : {}),
+        reason: e instanceof Error ? e.message : 'unbekannter Fehler',
+      });
+    }
+  };
   const epoch = getEpoch(db);
   let since = Number.isFinite(req.since) ? req.since : 0;
   // Der gemerkte Stand des Clients passt nicht zu dieser Datenbank (neu angelegt/zurückgesetzt/ersetzt):
@@ -255,77 +308,85 @@ export function applySync(db: DatabaseSync, req: SyncRequest, user: SyncUser): S
   db.exec('BEGIN IMMEDIATE');
   try {
     for (const c of req.changes ?? []) {
-      const err = validate(c);
-      if (err) throw new Error(err);
-      const existing = db.prepare('SELECT * FROM protocols WHERE id = ?').get(c.id) as ProtocolRow | undefined;
-      if (!existing) {
-        write(db, c.id, c, c.deleted, { ownerId: user.id, shared: c.shared === true ? 1 : 0 });
-        continue;
-      }
-      if (!canSee(existing, user)) continue; // fremdes privates Protokoll: ignorieren
-      const isOwner = existing.ownerId === user.id;
-      const meta: Meta = {
-        ownerId: existing.ownerId,
-        shared: isOwner && typeof c.shared === 'boolean' ? (c.shared ? 1 : 0) : (existing.shared as 0 | 1),
-        prev: existing,
-      };
-      const serverDeleted = existing.deletedAt !== null;
-      if (c.deleted) {
-        if (!isOwner && user.role !== 'admin') continue;
-        // Löschen nur, wenn der Client den aktuellen Stand kannte; sonst hat Bearbeitung Vorrang.
-        if (serverDeleted || existing.rev === c.baseRev) write(db, c.id, { ...c, ...rowFields(existing) }, true, { ...meta, shared: existing.shared as 0 | 1 });
-        continue;
-      }
-      if (existing.rev === c.baseRev || serverDeleted) {
-        write(db, c.id, c, false, meta);
-        continue;
-      }
-      // Das Gerät baut auf einem veralteten Stand auf. Das Original geht in jedem Fall mit zurück, damit es aufholen kann,
-      // auch wenn sein Stand schon darüber hinausgerückt ist.
-      resend.add(c.id);
-      // Steht genau diese Fassung schon beim Server (Wiederholung nach verlorener Antwort, gleiche Änderung auf zwei Geräten), ist nichts zu tun.
-      if (sameDoc(existing, c)) continue;
-      // Sonst bleibt die Server-Fassung, und die Fassung des Geräts wird als Kopie gesichert. Dieselbe Kopie wird fortgeschrieben,
-      // solange das Gerät auf derselben veralteten Basis weitertippt und niemand die Kopie geändert hat.
-      let copyId = conflictCopyId(user.id, c);
-      const prev = db.prepare('SELECT rev, conflictRev, deletedAt FROM protocols WHERE id = ?').get(copyId) as
-        | { rev: number; conflictRev: number | null; deletedAt: number | null }
-        | undefined;
-      if (prev && (prev.deletedAt !== null || prev.conflictRev !== prev.rev)) copyId = randomUUID().replace(/-/g, '');
-      const copyRev = write(db, copyId, { ...c, title: `${str(c.title, 180) || 'Protokoll'} (Konflikt)` }, false, { ownerId: user.id, shared: existing.shared as 0 | 1 });
-      db.prepare('UPDATE protocols SET conflictRev = ? WHERE id = ?').run(copyRev, copyId);
-      conflicts.push({ id: c.id, copyId });
+      isolated({ kind: 'protocol', id: c?.id }, () => {
+        const err = validate(c);
+        if (err) throw new Error(err);
+        const existing = db.prepare('SELECT * FROM protocols WHERE id = ?').get(c.id) as ProtocolRow | undefined;
+        if (!existing) {
+          write(db, c.id, c, c.deleted, { ownerId: user.id, shared: c.shared === true ? 1 : 0 });
+          return;
+        }
+        if (!canSee(existing, user)) return; // fremdes privates Protokoll: ignorieren
+        const isOwner = existing.ownerId === user.id;
+        const meta: Meta = {
+          ownerId: existing.ownerId,
+          shared: isOwner && typeof c.shared === 'boolean' ? (c.shared ? 1 : 0) : (existing.shared as 0 | 1),
+          prev: existing,
+        };
+        const serverDeleted = existing.deletedAt !== null;
+        if (c.deleted) {
+          if (!isOwner && user.role !== 'admin') return;
+          // Löschen gewinnt, auch gegen eine Bearbeitung auf veraltetem Stand: Der Papierkorb macht es umkehrbar, und sonst bliebe ein
+          // bewusst gelöschtes Protokoll durch ein Gerät am Leben, das nur noch nicht abgeglichen hatte.
+          if (serverDeleted) resend.add(c.id);
+          else write(db, c.id, { ...c, ...rowFields(existing) }, true, { ...meta, shared: existing.shared as 0 | 1 });
+          return;
+        }
+        if (existing.rev === c.baseRev || serverDeleted) {
+          write(db, c.id, c, false, meta);
+          return;
+        }
+        // Das Gerät baut auf einem veralteten Stand auf. Das Original geht in jedem Fall mit zurück, damit es aufholen kann,
+        // auch wenn sein Stand schon darüber hinausgerückt ist.
+        resend.add(c.id);
+        // Steht genau diese Fassung schon beim Server (Wiederholung nach verlorener Antwort, gleiche Änderung auf zwei Geräten), ist nichts zu tun.
+        if (sameDoc(existing, c)) return;
+        // Sonst bleibt die Server-Fassung, und die Fassung des Geräts wird als Kopie gesichert. Dieselbe Kopie wird fortgeschrieben,
+        // solange das Gerät auf derselben veralteten Basis weitertippt und niemand die Kopie geändert hat.
+        let copyId = conflictCopyId(user.id, c);
+        const prev = db.prepare('SELECT rev, conflictRev, deletedAt FROM protocols WHERE id = ?').get(copyId) as
+          | { rev: number; conflictRev: number | null; deletedAt: number | null }
+          | undefined;
+        if (prev && (prev.deletedAt !== null || prev.conflictRev !== prev.rev)) copyId = randomUUID().replace(/-/g, '');
+        const copyRev = write(db, copyId, { ...c, title: `${str(c.title, 180) || 'Protokoll'} (Konflikt)` }, false, { ownerId: user.id, shared: existing.shared as 0 | 1 });
+        db.prepare('UPDATE protocols SET conflictRev = ? WHERE id = ?').run(copyRev, copyId);
+        conflicts.push({ id: c.id, copyId });
+      });
     }
     const now = Date.now();
     for (const f of req.folders ?? []) {
-      if (typeof f.id !== 'string' || !/^[A-Za-z0-9_-]{6,64}$/.test(f.id)) throw new Error('ungültige Ordner-ID');
-      db.prepare(
-        `INSERT INTO folders(id, name, parentId, rev, updatedAt, deletedAt) VALUES(?,?,?,?,?,?)
-         ON CONFLICT(id) DO UPDATE SET name=excluded.name, parentId=excluded.parentId, rev=excluded.rev,
-           updatedAt=excluded.updatedAt, deletedAt=excluded.deletedAt`,
-      ).run(f.id, str(f.name, 120), str(f.parentId, 64), nextRev(db), Number.isFinite(f.updatedAt) ? f.updatedAt : now, f.deleted ? now : null);
+      isolated({ kind: 'folder', id: f?.id }, () => {
+        if (typeof f?.id !== 'string' || !/^[A-Za-z0-9_-]{6,64}$/.test(f.id)) throw new Error('ungültige Ordner-ID');
+        db.prepare(
+          `INSERT INTO folders(id, name, parentId, rev, updatedAt, deletedAt) VALUES(?,?,?,?,?,?)
+           ON CONFLICT(id) DO UPDATE SET name=excluded.name, parentId=excluded.parentId, rev=excluded.rev,
+             updatedAt=excluded.updatedAt, deletedAt=excluded.deletedAt`,
+        ).run(f.id, str(f.name, 120), str(f.parentId, 64), nextRev(db), Number.isFinite(f.updatedAt) ? f.updatedAt : now, f.deleted ? now : null);
+      });
     }
     for (const r of req.records ?? []) {
-      if (!COLLECTIONS.includes(r.collection) || typeof r.id !== 'string' || !/^[\w.:-]{1,100}$/.test(r.id)) throw new Error('ungültiger Datensatz');
-      const data = JSON.stringify(r.data ?? {});
-      if (data.length > 200_000) throw new Error('Datensatz zu groß');
-      const at = Number.isFinite(r.updatedAt) ? r.updatedAt : now;
-      const privateCapable = PRIVATE_CAPABLE.includes(r.collection);
-      const old = db.prepare('SELECT updatedAt, ownerId, shared, hiddenRev FROM records WHERE collection = ? AND id = ?').get(r.collection, r.id) as
-        | { updatedAt: number; ownerId: string; shared: number; hiddenRev: number | null }
-        | undefined;
-      if (old && privateCapable && !canSee(old, user)) continue;
-      if (old && old.updatedAt > at) continue; // Server hat die neuere Fassung: letzte Änderung gewinnt
-      const isOwner = !old || old.ownerId === user.id || old.ownerId === '';
-      if (old && r.deleted && privateCapable && !isOwner && user.role !== 'admin') continue;
-      const shared = !privateCapable ? 1 : isOwner ? (r.shared === true ? 1 : 0) : old!.shared;
-      const rev = nextRev(db);
-      const hiddenRev = old && old.shared === 1 && shared === 0 ? rev : (old?.hiddenRev ?? null);
-      db.prepare(
-        `INSERT INTO records(collection, id, data, ownerId, shared, hiddenRev, rev, updatedAt, deletedAt) VALUES(?,?,?,?,?,?,?,?,?)
-         ON CONFLICT(collection, id) DO UPDATE SET data=excluded.data, ownerId=excluded.ownerId, shared=excluded.shared,
-           hiddenRev=excluded.hiddenRev, rev=excluded.rev, updatedAt=excluded.updatedAt, deletedAt=excluded.deletedAt`,
-      ).run(r.collection, r.id, data, old?.ownerId || user.id, shared, hiddenRev, rev, at, r.deleted ? now : null);
+      isolated({ kind: 'record', id: r?.id, collection: r?.collection }, () => {
+        if (!COLLECTIONS.includes(r.collection) || typeof r.id !== 'string' || !/^[\w.:-]{1,100}$/.test(r.id)) throw new Error('ungültiger Datensatz');
+        const data = JSON.stringify(r.data ?? {});
+        if (data.length > 200_000) throw new Error('Datensatz zu groß');
+        const at = Number.isFinite(r.updatedAt) ? r.updatedAt : now;
+        const privateCapable = PRIVATE_CAPABLE.includes(r.collection);
+        const old = db.prepare('SELECT updatedAt, ownerId, shared, hiddenRev FROM records WHERE collection = ? AND id = ?').get(r.collection, r.id) as
+          | { updatedAt: number; ownerId: string; shared: number; hiddenRev: number | null }
+          | undefined;
+        if (old && privateCapable && !canSee(old, user)) return;
+        if (old && old.updatedAt > at) return; // Server hat die neuere Fassung: letzte Änderung gewinnt
+        const isOwner = !old || old.ownerId === user.id || old.ownerId === '';
+        if (old && r.deleted && privateCapable && !isOwner && user.role !== 'admin') return;
+        const shared = !privateCapable ? 1 : isOwner ? (r.shared === true ? 1 : 0) : old!.shared;
+        const rev = nextRev(db);
+        const hiddenRev = old && old.shared === 1 && shared === 0 ? rev : (old?.hiddenRev ?? null);
+        db.prepare(
+          `INSERT INTO records(collection, id, data, ownerId, shared, hiddenRev, rev, updatedAt, deletedAt) VALUES(?,?,?,?,?,?,?,?,?)
+           ON CONFLICT(collection, id) DO UPDATE SET data=excluded.data, ownerId=excluded.ownerId, shared=excluded.shared,
+             hiddenRev=excluded.hiddenRev, rev=excluded.rev, updatedAt=excluded.updatedAt, deletedAt=excluded.deletedAt`,
+        ).run(r.collection, r.id, data, old?.ownerId || user.id, shared, hiddenRev, rev, at, r.deleted ? now : null);
+      });
     }
     db.exec('COMMIT');
   } catch (e) {
@@ -381,6 +442,7 @@ export function applySync(db: DatabaseSync, req: SyncRequest, user: SyncUser): S
     users,
     counts,
     conflicts,
+    rejected,
   };
 }
 

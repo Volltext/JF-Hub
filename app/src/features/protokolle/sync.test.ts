@@ -132,6 +132,46 @@ describe('performSync: übersprungene Server-Dokumente', () => {
   });
 });
 
+describe('performSync: vom Server abgelehnte Protokolle', () => {
+  const rejection = (id: string) => ({ rev: 6, changes: [], folders: [], records: [], conflicts: [], rejected: [{ kind: 'protocol' as const, id, reason: 'Protokoll zu groß' }] });
+
+  it('merkt die Ablehnung, lädt dieselbe Fassung nicht erneut hoch und sendet sie erst nach einer Änderung oder mit „Alles neu“', async () => {
+    const p = { ...newProtokoll(), title: 'Riesig' };
+    await db.protokolle.add(p);
+    const seen: string[][] = [];
+    const send = async (req: SyncRequest) => {
+      seen.push(req.changes.map((c) => c.id));
+      return rejection(p.id);
+    };
+    const first = await performSync(send);
+    expect(first.rejected).toBe(1);
+    expect(await db.protokolle.get(p.id)).toMatchObject({ dirty: 1, rejected: 'Protokoll zu groß' }); // bleibt ungesendet und sichtbar markiert
+
+    await performSync(send);
+    expect(seen).toEqual([[p.id], []]); // beim zweiten Mal nicht noch einmal hochgeladen
+
+    await performSync(send, { full: true }); // „Alles neu abgleichen“ versucht es wieder
+    expect(seen[2]).toEqual([p.id]);
+  });
+
+  it('merkt die Ablehnung nicht, wenn inzwischen weitergetippt wurde (die neuere Fassung bekommt ihre Chance)', async () => {
+    const p = { ...newProtokoll(), title: 'v1' };
+    await db.protokolle.add(p);
+    await performSync(async () => {
+      await db.protokolle.update(p.id, { title: 'v2', updatedAt: p.updatedAt + 50, dirty: 1 });
+      return rejection(p.id);
+    });
+    expect((await db.protokolle.get(p.id))?.rejected).toBeUndefined();
+  });
+
+  it('kommt ein älterer Server ohne `rejected` aus, ändert sich nichts', async () => {
+    const p = newProtokoll();
+    await db.protokolle.add(p);
+    const res = await performSync(async () => ({ rev: 2, changes: [serverDoc(p.id, { updatedAt: p.updatedAt, rev: 2 })], folders: [], conflicts: [] }));
+    expect(res.rejected).toBe(0);
+  });
+});
+
 describe('performSync: Ordner', () => {
   it('sendet geänderte Ordner und übernimmt Ordner vom Server', async () => {
     await db.folders.add({ id: 'ordner-lokal', name: 'Lokal', parentId: '', rev: 0, updatedAt: 5, dirty: 1, deleted: 0 });

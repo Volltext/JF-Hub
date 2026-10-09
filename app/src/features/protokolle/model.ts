@@ -28,6 +28,8 @@ export interface Protokoll {
   dirty: 0 | 1;
   /** 1 = zum Löschen vorgemerkt, wird beim nächsten Sync gemeldet. */
   deleted: 0 | 1;
+  /** Grund, wenn der Server genau diese Fassung abgelehnt hat (zu groß, ungültig). Sie wird erst nach einer Änderung erneut gesendet. */
+  rejected?: string;
 }
 
 /** Ordner zum Strukturieren der Protokolle (beliebig verschachtelbar). */

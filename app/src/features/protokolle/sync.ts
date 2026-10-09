@@ -64,6 +64,14 @@ export interface SyncRequest {
   records: RecordChange[];
 }
 
+/** Eine Änderung, die der Server nicht annimmt; die übrigen sind trotzdem angewendet. */
+export interface Rejected {
+  kind: 'protocol' | 'folder' | 'record';
+  id: string;
+  collection?: string;
+  reason: string;
+}
+
 export interface SyncCounts {
   protocols: number;
   folders: number;
@@ -83,12 +91,16 @@ export interface SyncResponse {
   users?: DirectoryUser[];
   counts?: SyncCounts;
   conflicts: { id: string; copyId: string }[];
+  /** Ab Server 2.1.0; ältere Server lehnen einen ungültigen Eintrag mit einem Fehler für den ganzen Abgleich ab. */
+  rejected?: Rejected[];
 }
 
 export interface SyncResult {
   pushed: number;
   pulled: number;
   conflicts: number;
+  /** Anzahl der Protokolle, die der Server abgelehnt hat. */
+  rejected: number;
   /** Anzahl lokaler Einträge, die dem Server fehlten und neu hochgeladen werden. */
   reuploaded: number;
   counts: SyncCounts | null;
@@ -136,7 +148,9 @@ export async function performSync(send: (req: SyncRequest) => Promise<SyncRespon
   const full = !!opts.full || !hadRecordsBefore;
   const since = full ? 0 : await getRev(store);
 
-  const dirty = await store.protokolle.where('dirty').equals(1).toArray();
+  // Was der Server abgelehnt hat, wird nicht bei jedem Abgleich erneut hochgeladen (es bliebe ja abgelehnt); erst nach einer Änderung
+  // oder mit „Alles neu abgleichen“ gibt es einen neuen Versuch.
+  const dirty = (await store.protokolle.where('dirty').equals(1).toArray()).filter((p) => full || !p.rejected);
   const sentAt = new Map(dirty.map((d) => [d.id, d.updatedAt]));
   const dirtyFolders = await store.folders.where('dirty').equals(1).toArray();
   const folderSentAt = new Map(dirtyFolders.map((f) => [f.id, f.updatedAt]));
@@ -205,6 +219,13 @@ export async function performSync(send: (req: SyncRequest) => Promise<SyncRespon
       await store.protokolle.put({ ...fields, dirty: 0, deleted: 0 });
     }
 
+    // Vom Server abgelehnte Fassungen merken, solange sie noch genau die gesendete ist (sonst gibt es schon eine neuere).
+    for (const r of res.rejected ?? []) {
+      if (r.kind !== 'protocol') continue;
+      const local = await store.protokolle.get(r.id);
+      if (local?.dirty === 1 && local.updatedAt === sentAt.get(r.id)) await store.protokolle.update(r.id, { rejected: r.reason });
+    }
+
     // Mitglieder, Dienste, Aufgaben …: jüngere lokale Änderung (noch nicht gesendet) bleibt, sonst gilt der Server.
     for (const r of res.records ?? []) {
       if (!isKnown(r.collection)) continue; // Sammlung einer neueren App-Version
@@ -268,6 +289,7 @@ export async function performSync(send: (req: SyncRequest) => Promise<SyncRespon
     pushed: dirty.length + dirtyFolders.length + records.length,
     pulled: res.changes.length + (res.folders?.length ?? 0) + (res.records?.length ?? 0),
     conflicts: res.conflicts.length,
+    rejected: (res.rejected ?? []).filter((r) => r.kind === 'protocol').length,
     reuploaded,
     counts: res.counts ?? null,
   };
@@ -299,7 +321,12 @@ export function syncNow(opts: SyncOptions = {}): Promise<SyncResult | null> {
         state: 'idle',
         lastSyncAt: Date.now(),
         counts: result.counts ?? st.counts,
-        message: result.conflicts ? `${result.conflicts} Konflikt(e): Kopie mit „(Konflikt)“ im Titel angelegt.` : '',
+        message: [
+          result.conflicts ? `${result.conflicts} Konflikt(e): Kopie mit „(Konflikt)“ im Titel angelegt.` : '',
+          result.rejected ? `${result.rejected} Protokoll(e) vom Server abgelehnt (zu groß oder ungültig).` : '',
+        ]
+          .filter(Boolean)
+          .join(' '),
       });
       if (result.reuploaded) again = true;
       return result;

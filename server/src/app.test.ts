@@ -225,8 +225,10 @@ describe('Sync', () => {
     expect(r3.records[0]!.data.title).toBe('neuer');
     const r4 = await post(r3.rev, [rec('', 300, true)]);
     expect(r4.records[0]!.deleted).toBe(true);
+    // Eine unbekannte Sammlung wird einzeln abgelehnt; der Abgleich selbst gelingt.
     const bad = await app.inject({ method: 'POST', url: '/api/sync', headers: auth(t), payload: { since: 0, changes: [], records: [{ collection: 'users', id: 'abcdef', data: {}, updatedAt: 1, deleted: false }] } });
-    expect(bad.statusCode).toBe(400);
+    expect(bad.statusCode).toBe(200);
+    expect(bad.json().rejected).toEqual([{ kind: 'record', id: 'abcdef', collection: 'users', reason: 'ungültiger Datensatz' }]);
   });
 
   it('nimmt Kleidergrößen an und meldet die erlaubten Sammlungen', async () => {
@@ -294,12 +296,67 @@ describe('Sync', () => {
     expect(c.changes).toHaveLength(0);
   });
 
-  it('lehnt ungültige IDs ab', async () => {
+  it('lehnt ungültige IDs einzeln ab, ohne den Abgleich zu sperren', async () => {
     const t = await login();
-    const r = await app.inject({ method: 'POST', url: '/api/sync', headers: auth(t), payload: { since: 0, changes: [change('../x')] } });
-    expect(r.statusCode).toBe(400);
+    const r = await app.inject({ method: 'POST', url: '/api/sync', headers: auth(t), payload: { since: 0, changes: [change('../x'), change('gut-0001')] } });
+    expect(r.statusCode).toBe(200);
+    expect(r.json().rejected).toEqual([{ kind: 'protocol', id: '../x', reason: 'ungültige ID' }]);
+    expect((r.json() as SyncResponse).changes.map((c) => c.id)).toEqual(['gut-0001']); // das gültige Protokoll wurde gespeichert
+  });
+
+  it('ein unbrauchbares oder zu großes Protokoll sperrt den Abgleich nicht: nur es wird abgelehnt', async () => {
+    const t = await login();
+    const huge = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'x'.repeat(12_100_000) }] }] };
+    const r = await app.inject({
+      method: 'POST',
+      url: '/api/sync',
+      headers: auth(t),
+      payload: {
+        since: 0,
+        changes: [
+          change('gross-0001', { content: huge }),
+          change('liste-001', { content: { type: 'doc', content: [{ type: 'bulletList', content: 5 }] } }),
+          change('wurzel-01', { content: { type: 'paragraph' } }),
+          change('tief-0001', { content: nest(150) }),
+          change('gut-0001'),
+        ],
+        folders: [{ id: '../kaputt', name: 'x', parentId: '', updatedAt: 1, deleted: false }, { id: 'ordner-0001', name: 'Gut', parentId: '', updatedAt: 1, deleted: false }],
+      },
+    });
+    expect(r.statusCode).toBe(200);
+    const res = r.json() as SyncResponse & { rejected: { kind: string; id: string; reason: string }[]; folders: { id: string }[] };
+    expect(res.changes.map((c) => c.id)).toEqual(['gut-0001']);
+    expect(res.folders.map((f) => f.id)).toEqual(['ordner-0001']);
+    expect(Object.fromEntries(res.rejected.map((x) => [x.id, x.reason]))).toEqual({
+      'gross-0001': 'Protokoll zu groß',
+      'liste-001': 'Inhalt enthält einen Knoten, dessen Inhalt keine Liste ist',
+      'wurzel-01': 'Inhalt ist kein Dokument',
+      'tief-0001': 'Inhalt ist zu tief verschachtelt',
+      '../kaputt': 'ungültige Ordner-ID',
+    });
+    // Abgelehntes hinterlässt nichts: Revisionen laufen weiter, und ein zweiter Abgleich liefert nur das Gespeicherte.
+    expect((await sync(t, 0, [])).changes.map((c) => c.id)).toEqual(['gut-0001']);
+  });
+
+  it('Löschen gewinnt auch gegen eine Bearbeitung auf veraltetem Stand (der Papierkorb macht es umkehrbar)', async () => {
+    const t = await login();
+    const r1 = await sync(t, 0, [change('doc-0001')]);
+    const base = r1.changes[0]!.rev;
+    await sync(t, r1.rev, [change('doc-0001', { baseRev: base, title: 'Von einem anderen Gerät bearbeitet' })]);
+    const r3 = await sync(t, r1.rev, [change('doc-0001', { baseRev: base, deleted: true })]);
+    expect(r3.changes.find((c) => c.id === 'doc-0001')!.deleted).toBe(true);
+    // Die Bearbeitung ist nicht verloren, sondern liegt im Papierkorb.
+    expect((await app.inject({ method: 'POST', url: '/api/admin/protocols/doc-0001/restore', headers: auth(t) })).statusCode).toBe(200);
+    expect((await sync(t, 0, [])).changes.find((c) => c.id === 'doc-0001')).toMatchObject({ deleted: false, title: 'Von einem anderen Gerät bearbeitet' });
   });
 });
+
+/** Verschachtelt Absätze `n` Ebenen tief (für den Test der Tiefenbegrenzung). */
+function nest(n: number): unknown {
+  let node: unknown = { type: 'paragraph' };
+  for (let i = 0; i < n; i++) node = { type: 'blockquote', content: [node] };
+  return { type: 'doc', content: [node] };
+}
 
 describe('PDF und Admin', () => {
   it('erzeugt ein gültiges PDF', async () => {

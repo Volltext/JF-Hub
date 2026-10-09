@@ -59,6 +59,20 @@ describe('protokolleRepo.save', () => {
     expect(await db.protokolle.get(p.id)).toMatchObject({ folderId: 'ordner-1' });
   });
 
+  it('eine Änderung räumt die frühere Ablehnung durch den Server ab', async () => {
+    const p = await stored({ dirty: 1, rejected: 'Protokoll zu groß' });
+    await protokolleRepo.save(p.id, { title: 'Kleiner' });
+    const row = await db.protokolle.get(p.id);
+    expect(row).toMatchObject({ dirty: 1, title: 'Kleiner' });
+    expect(row?.rejected).toBeUndefined();
+  });
+
+  it('ohne Änderung bleibt die Ablehnung stehen', async () => {
+    const p = await stored({ dirty: 1, rejected: 'Protokoll zu groß' });
+    await protokolleRepo.save(p.id, { title: 'Sitzung' });
+    expect((await db.protokolle.get(p.id))?.rejected).toBe('Protokoll zu groß');
+  });
+
   it('ein verschwundenes Protokoll legt nichts neu an', async () => {
     await protokolleRepo.save('gibt-es-nicht', { title: 'x' });
     expect(await db.protokolle.count()).toBe(0);

@@ -210,6 +210,11 @@ function EditorInner({ initial }: { initial: Protokoll }) {
           {error}
         </p>
       )}
+      {current.rejected && (
+        <p role="alert" className="proto-error">
+          Der Server hat dieses Protokoll abgelehnt ({current.rejected}). Es bleibt auf diesem Gerät, bis du es änderst.
+        </p>
+      )}
 
       <section className="proto-sheet">
         <textarea

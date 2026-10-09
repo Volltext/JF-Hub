@@ -172,7 +172,7 @@ describe('Export', () => {
 
   it('ein Protokoll mit kaputtem Inhalt bricht PDF und ZIP nicht für alle', async () => {
     const t = await adminToken();
-    await sync(t, [change('gut-0001', { title: 'Gut' }), change('kaputt-1', { title: 'Kaputt', content: { type: 'doc', content: [{ type: 'bulletList', content: 5 }] } })]);
+    await sync(t, [change('gut-0001', { title: 'Gut' }), change('kaputt-1', { title: 'Kaputt', content: { type: 'doc', content: [{ type: 'photo', attrs: { src: 'data:image/jpeg;base64,AAAA', w: 1, h: 1 } }] } })]);
     const pdf = await app.inject({ method: 'GET', url: '/api/protocols/kaputt-1/pdf', headers: auth(t) });
     expect(pdf.statusCode).toBe(422);
     expect(pdf.json().error).toContain('PDF');
