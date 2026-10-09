@@ -63,7 +63,7 @@ describe('PDF: Tabellen', () => {
     expect(t.table.body).toHaveLength(2);
     expect(t.table.body[0]).toHaveLength(2);
     expect(t.table.headerRows).toBe(1);
-    expect(t.table.widths).toEqual(['*', '*']);
+    expect(t.table.widths).toHaveLength(2);
     expect(textsOf(t.table.body)).toEqual(['Name', 'Status', 'Anna', 'anwesend']);
     expect(t.table.body[0][0]).toMatchObject({ bold: true }); // Kopfzellen sind fett
   });
@@ -158,6 +158,17 @@ describe('PDF: Tabellen gegen feindliche Eingaben', () => {
     expect(textsOf(body).join(' ')).toMatch(/Tabelle zu groß für das PDF/);
   });
 
+  it('die Spaltenbreiten sind feste Zahlen, die samt Rändern und Linien auf die Seite passen (lange Wörter schieben keine Spalte hinaus)', () => {
+    for (const cols of [1, 2, 3, 5, 6, 8, 12, 13, 24]) {
+      const t = tableOf(doc(table(row(...Array.from({ length: cols }, (_, i) => td(`Fahrgemeinschaften${i}`))))));
+      expect(t.table.widths, `${cols} Spalten`).toHaveLength(cols);
+      for (const w of t.table.widths) expect(typeof w, `${cols} Spalten`).toBe('number');
+      const total = (t.table.widths as number[]).reduce((a, b) => a + b, 0) + cols * (t.layout.paddingLeft() + t.layout.paddingRight()) + (cols + 1) * t.layout.vLineWidth();
+      expect(total, `${cols} Spalten`).toBeLessThanOrEqual(495.001); // Seitenbreite ohne Ränder
+      expect(total, `${cols} Spalten`).toBeGreaterThan(480); // und nicht unnötig schmal
+    }
+  });
+
   it('Zeilen dürfen über den Seitenumbruch laufen: mit dontBreakRows verlöre pdfmake eine Zeile, die höher ist als eine Seite, ganz', () => {
     const t = tableOf(doc(table(row(td('kurz'), cell(Array.from({ length: 300 }, (_, i) => para(text(`Absatz ${i}`)))))))); // höher als eine Seite
     expect(t.table).not.toHaveProperty('dontBreakRows');
@@ -197,6 +208,7 @@ describe('PDF: Links und Hervorhebung', () => {
 
   it('ein Link wird anklickbar, unterstrichen und in der Akzentfarbe gesetzt', () => {
     expect(runOf([link('https://example.de/seite')])).toMatchObject({ text: 'Text', link: 'https://example.de/seite', decoration: 'underline', color: st.accent });
+    expect(runOf([link('https://example.de')])).toMatchObject({ link: 'https://example.de/' }); // so schreibt die URL-Klasse die Adresse
     expect(runOf([link('mailto:anna@example.de')])).toMatchObject({ link: 'mailto:anna@example.de' });
     expect(runOf([link('tel:+491701234567')])).toMatchObject({ link: 'tel:+491701234567' });
   });
@@ -210,12 +222,19 @@ describe('PDF: Links und Hervorhebung', () => {
     }
   });
 
+  it('Adressen mit Umlauten oder internationalen Domains stehen als reines ASCII im PDF (UTF-16 mit BOM wäre ungültig)', () => {
+    const run = runOf([link('https://müller-feuerwehr.de/größe?q=ä')]);
+    expect(run.link).toMatch(/^https:\/\/xn--[a-z0-9-]+\.de\/gr%C3%B6%C3%9Fe\?q=%C3%A4$/);
+    expect(runOf([link('mailto:anna@exämple.de')]).link).toMatch(/^mailto:anna@ex%C3%A4mple\.de$/);
+    for (const href of ['https://example.de/ä', 'https://bücher.example/straße', 'mailto:jörg@example.de']) expect(runOf([link(href)]).link, href).toMatch(/^[\x21-\x7e]+$/);
+  });
+
   it('ein Link ohne Angaben (attrs fehlt) stört nicht', () => {
     expect(runOf([{ type: 'link' }])).not.toHaveProperty('link');
   });
 
   it('Link und Fettdruck lassen sich verbinden', () => {
-    expect(runOf([{ type: 'bold' }, link('https://example.de')])).toMatchObject({ bold: true, link: 'https://example.de' });
+    expect(runOf([{ type: 'bold' }, link('https://example.de/x')])).toMatchObject({ bold: true, link: 'https://example.de/x' });
   });
 
   it('Hervorhebung ist ein farbiger Hintergrund; eine eigene Farbe nur als #rrggbb', () => {

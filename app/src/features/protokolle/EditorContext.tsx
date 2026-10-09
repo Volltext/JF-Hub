@@ -1,7 +1,9 @@
 import { findParentNode, type Editor } from '@tiptap/core';
 import { TableMap } from '@tiptap/pm/tables';
 import { useEditorState } from '@tiptap/react';
-import { Link2 } from 'lucide-react';
+import { ExternalLink, Link2, Pencil, Unlink } from 'lucide-react';
+import { confirmDialog } from '@/core/ui/dialog';
+import { MAX_TABLE_COLS, MAX_TABLE_ROWS } from './editorSchema';
 import { allowedLink, displayUrl } from './linkUrl';
 import { openLink } from './openLink';
 
@@ -36,22 +38,29 @@ const same = (a: Context, b: Context): boolean =>
 interface TableOp {
   label: string;
   text: string;
-  run: (e: Editor) => void;
+  run: (e: Editor) => unknown;
   disabled?: (t: TableInfo) => boolean;
   pressed?: (t: TableInfo) => boolean;
   danger?: boolean;
 }
 
+/** Löscht die Tabelle, in der der Cursor steht; enthält sie Text, fragt der Editor vorher nach (Rückgängig liegt am Handy nicht griffbereit). */
+async function deleteTable(e: Editor): Promise<void> {
+  const table = findParentNode((n) => n.type.name === 'table')(e.state.selection);
+  if (table?.node.textContent.trim() && !(await confirmDialog('Diese Tabelle samt ihrem Inhalt löschen?', { title: 'Tabelle löschen', confirmLabel: 'Löschen', danger: true }))) return;
+  e.chain().focus().deleteTable().run();
+}
+
 const TABLE_OPS: TableOp[] = [
-  { label: 'Zeile oben einfügen', text: '+ Zeile oben', run: (e) => e.chain().focus().addRowBefore().run() },
-  { label: 'Zeile unten einfügen', text: '+ Zeile unten', run: (e) => e.chain().focus().addRowAfter().run() },
+  { label: 'Zeile oben einfügen', text: '+ Zeile oben', run: (e) => e.chain().focus().addRowBefore().run(), disabled: (t) => t.rows >= MAX_TABLE_ROWS },
+  { label: 'Zeile unten einfügen', text: '+ Zeile unten', run: (e) => e.chain().focus().addRowAfter().run(), disabled: (t) => t.rows >= MAX_TABLE_ROWS },
   // Die letzte Zeile oder Spalte zu löschen würde die ganze Tabelle löschen: Dafür gibt es „Tabelle löschen“.
   { label: 'Zeile löschen', text: '− Zeile', run: (e) => e.chain().focus().deleteRow().run(), disabled: (t) => t.rows <= 1 },
-  { label: 'Spalte links einfügen', text: '+ Spalte links', run: (e) => e.chain().focus().addColumnBefore().run() },
-  { label: 'Spalte rechts einfügen', text: '+ Spalte rechts', run: (e) => e.chain().focus().addColumnAfter().run() },
+  { label: 'Spalte links einfügen', text: '+ Spalte links', run: (e) => e.chain().focus().addColumnBefore().run(), disabled: (t) => t.cols >= MAX_TABLE_COLS },
+  { label: 'Spalte rechts einfügen', text: '+ Spalte rechts', run: (e) => e.chain().focus().addColumnAfter().run(), disabled: (t) => t.cols >= MAX_TABLE_COLS },
   { label: 'Spalte löschen', text: '− Spalte', run: (e) => e.chain().focus().deleteColumn().run(), disabled: (t) => t.cols <= 1 },
   { label: 'Kopfzeile ein oder aus', text: 'Kopfzeile', run: (e) => e.chain().focus().toggleHeaderRow().run(), pressed: (t) => t.header },
-  { label: 'Tabelle löschen', text: 'Tabelle löschen', run: (e) => e.chain().focus().deleteTable().run(), danger: true },
+  { label: 'Tabelle löschen', text: 'Tabelle löschen', run: deleteTable, danger: true },
 ];
 
 /** Fokus im Editor halten, damit die Bildschirmtastatur offen bleibt. */
@@ -65,20 +74,21 @@ export function EditorContext({ editor, onEditLink }: { editor: Editor; onEditLi
   const ctx = useEditorState({ editor, selector: ({ editor: e }) => contextOf(e), equalityFn: (a, b) => !!b && same(a, b) });
 
   if (ctx.link) {
+    // Symbole statt Text: Am Handy bleibt so Platz für das Ziel, das die Leiste zeigen soll.
     return (
       <div className="ed-context" role="toolbar" aria-label="Link">
         <span className="ed-context__label" title={ctx.link}>
           <Link2 size={16} aria-hidden />
-          <span>{displayUrl(ctx.link) || 'Link'}</span>
+          <span>{displayUrl(ctx.link, 60) || 'Link'}</span>
         </span>
-        <button type="button" className="ed-chip" disabled={!allowedLink(ctx.link)} onMouseDown={keepFocus} onClick={() => openLink(ctx.link)}>
-          Öffnen
+        <button type="button" className="ed-tool" aria-label="Link öffnen" title="Link öffnen" disabled={!allowedLink(ctx.link)} onMouseDown={keepFocus} onClick={() => openLink(ctx.link)}>
+          <ExternalLink size={20} />
         </button>
-        <button type="button" className="ed-chip" onMouseDown={keepFocus} onClick={onEditLink}>
-          Ändern
+        <button type="button" className="ed-tool" aria-label="Link ändern" title="Link ändern" onMouseDown={keepFocus} onClick={onEditLink}>
+          <Pencil size={20} />
         </button>
-        <button type="button" className="ed-chip" onMouseDown={keepFocus} onClick={() => editor.chain().focus().unsetLink().run()}>
-          Entfernen
+        <button type="button" className="ed-tool" aria-label="Link entfernen" title="Link entfernen" onMouseDown={keepFocus} onClick={() => editor.chain().focus().unsetLink().run()}>
+          <Unlink size={20} />
         </button>
       </div>
     );
@@ -97,7 +107,7 @@ export function EditorContext({ editor, onEditLink }: { editor: Editor; onEditLi
           aria-pressed={op.pressed ? op.pressed(table) : undefined}
           disabled={op.disabled?.(table)}
           onMouseDown={keepFocus}
-          onClick={() => op.run(editor)}
+          onClick={() => void op.run(editor)}
         >
           {op.text}
         </button>

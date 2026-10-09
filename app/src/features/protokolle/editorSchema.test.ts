@@ -108,6 +108,51 @@ describe('Tabellen, Links und Hervorhebung (Schema 4)', () => {
     for (const bad of [null, '', 'red', 'red;position:fixed', 'url(x)', '#fff', '#ggg000', 42]) expect(attrs(bad), String(bad)).toEqual({});
   });
 
+  it('Spannen in Zellen sind begrenzt: ein Protokoll mit colspan 1 000 000 darf keinen Editor lahmlegen', () => {
+    const withCell = (attrs: Record<string, unknown>, type: 'tableCell' | 'tableHeader' = 'tableCell') => doc(table([cell(type, [para(text('x'))], attrs)]));
+    for (const attrs of [{ colspan: 25 }, { colspan: 1_000_000 }, { colspan: 0 }, { colspan: -1 }, { colspan: 1.5 }, { colspan: '2' }, { colspan: null }, { rowspan: 401 }, { rowspan: 1_000_000_000 }, { rowspan: 0 }]) {
+      expect(schemaAccepts(withCell(attrs)), JSON.stringify(attrs)).toBe(false); // das Protokoll wird nur gelesen
+      expect(schemaAccepts(withCell(attrs, 'tableHeader')), `Kopfzelle ${JSON.stringify(attrs)}`).toBe(false);
+    }
+    for (const attrs of [{}, { colspan: 24 }, { rowspan: 400 }, { colspan: 3, rowspan: 2 }]) expect(schemaAccepts(withCell(attrs)), JSON.stringify(attrs)).toBe(true);
+  });
+
+  it('aus eingefügtem HTML werden Spannen auf den erlaubten Bereich begrenzt', () => {
+    const rules = schema.nodes.tableCell!.spec.parseDOM!;
+    const getAttrs = rules[rules.length - 1]!.getAttrs as (dom: unknown) => Record<string, unknown>;
+    const td = (attrs: Record<string, string>) => ({ getAttribute: (n: string) => attrs[n] ?? null, hasAttribute: (n: string) => n in attrs, closest: () => null, style: {} });
+    expect(getAttrs(td({ colspan: '5000', rowspan: '-3' }))).toMatchObject({ colspan: 24, rowspan: 1 });
+    expect(getAttrs(td({ colspan: '3', rowspan: '2' }))).toMatchObject({ colspan: 3, rowspan: 2 });
+    expect(getAttrs(td({ colspan: 'abc' }))).toMatchObject({ colspan: 1 });
+  });
+
+  it('ein Link rendert immer dieselben Zusatzangaben: class, target und rel aus dem Inhalt oder aus eingefügtem HTML gelten nicht', () => {
+    const link = schema.marks.link!;
+    const dom = (attrs: Record<string, unknown>) => (link.spec.toDOM!(link.create({ href: 'https://example.de', ...attrs }), true) as unknown as [string, Record<string, unknown>, 0])[1];
+    for (const hostile of [{ class: 'photo-lightbox', target: '_self', rel: '' }, { class: 'btn nav', target: '_top', rel: 'opener' }]) {
+      const out = dom(hostile);
+      expect(out.class ?? null, JSON.stringify(hostile)).toBeNull();
+      expect(out).toMatchObject({ target: '_blank', rel: 'noopener noreferrer nofollow', href: 'https://example.de' });
+    }
+    const getAttrs = link.spec.parseDOM![0]!.getAttrs as (dom: unknown) => Record<string, unknown>;
+    const a = (attrs: Record<string, string>) => ({ getAttribute: (n: string) => attrs[n] ?? null, hasAttribute: (n: string) => n in attrs, closest: () => null, style: {} });
+    const pasted = getAttrs(a({ href: 'https://example.de', class: 'btn nav', target: '_self', rel: '' }));
+    expect(pasted).toMatchObject({ href: 'https://example.de', target: '_blank', rel: 'noopener noreferrer nofollow' });
+    expect(pasted).not.toHaveProperty('class');
+  });
+
+  it('eine Adresse wird nur dann von selbst zum Link, wenn daraus ein erlaubtes Ziel entsteht (auch beim Einfügen über markiertem Text)', () => {
+    const { shouldAutoLink } = (EXTENSIONS.find((e) => e.name === 'link') as unknown as { options: { shouldAutoLink: (url: string) => boolean } }).options;
+    for (const ok of ['https://example.de', 'www.example.de', 'name@example.de', 'mailto:a@example.de']) expect(shouldAutoLink(ok), ok).toBe(true);
+    for (const bad of ['ftp://example.de', 'ftps://x.de/y', 'file:///etc/passwd', 'sms:+49170123456', 'javascript:alert(1)']) expect(shouldAutoLink(bad), bad).toBe(false);
+  });
+
+  it('==Text== wird nicht still zur Hervorhebung: die Eingaberegeln der Erweiterung sind abgeschaltet', () => {
+    const ext = EXTENSIONS.find((e) => e.name === 'highlight') as unknown as { config: { addInputRules?: () => unknown[]; addPasteRules?: () => unknown[] } };
+    expect(ext.config.addInputRules?.()).toEqual([]);
+    expect(ext.config.addPasteRules?.()).toEqual([]);
+  });
+
   it('Zellen nehmen Absätze und Listen auf, keine Tabellen, Fotos oder Zeichnungen', () => {
     const make = (name: string) => schema.nodes[name]!.createAndFill() ?? schema.nodes[name]!.create();
     const accepts = (cellType: string, ...names: string[]) => schema.nodes[cellType]!.validContent(Fragment.from(names.map(make)));
@@ -136,5 +181,38 @@ describe('Tabellen, Links und Hervorhebung (Schema 4)', () => {
 
   it('SCHEMA_VERSION 4 gehört zu dieser Liste von Erweiterungen', () => {
     expect(SCHEMA_VERSION).toBe(4);
+  });
+
+  it('das Dokumentformat entspricht dem Stand von SCHEMA_VERSION 4: Wer es ändert, erhöht die Version und passt diese Liste an', () => {
+    // Knoten (Attribute, Inhalt) und Markierungen (Attribute) in der Reihenfolge des Schemas. Ältere Apps verlassen sich darauf, dass
+    // sich das Format nur mit einer neuen Versionsnummer ändert (Schutz vor unbekannten Inhalten, docs/entwicklung.md).
+    const names = (spec: { attrs?: object } | undefined) => Object.keys(spec?.attrs ?? {}).sort().join(',');
+    const nodes = Object.values(schema.nodes).map((n) => `${n.name}(${names(n.spec)}) ${n.spec.content ?? ''}`.trim());
+    const marks = Object.values(schema.marks).map((m) => `${m.name}(${names(m.spec)})`);
+    expect({ nodes, marks }).toEqual({
+      nodes: [
+        'paragraph() inline*',
+        'blockquote() block+',
+        'bulletList() listItem+',
+        'codeBlock(language) text*',
+        'doc() block+',
+        'hardBreak()',
+        'heading(level) inline*',
+        'horizontalRule()',
+        'listItem() paragraph block*',
+        'orderedList(start,type) listItem+',
+        'text()',
+        'taskList() taskItem+',
+        'taskItem(checked) paragraph block*',
+        'table() tableRow+',
+        'tableRow() (tableCell | tableHeader)*',
+        'tableHeader(align,colspan,colwidth,rowspan) (paragraph | bulletList | orderedList | taskList)+',
+        'tableCell(align,colspan,colwidth,rowspan) (paragraph | bulletList | orderedList | taskList)+',
+        'ink(ink,variant)',
+        'photo(blobId,caption,h,mime,src,w)',
+        'attachment(blobId,data,mime,name,size)',
+      ],
+      marks: ['link(class,href,rel,target,title)', 'bold()', 'code()', 'italic()', 'strike()', 'underline()', 'highlight(color)'],
+    });
   });
 });

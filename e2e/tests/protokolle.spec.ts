@@ -1,4 +1,14 @@
+import { execFileSync } from 'node:child_process';
 import { expect, test, type APIRequestContext, type Browser, type Page } from '@playwright/test';
+
+/** Der Text eines PDFs, oder null, wenn `pdftotext` (poppler) auf diesem Rechner fehlt. */
+function pdfText(pdf: Buffer): string | null {
+  try {
+    return execFileSync('pdftotext', ['-', '-'], { input: pdf, maxBuffer: 10_000_000 }).toString('utf8');
+  } catch {
+    return null;
+  }
+}
 
 // Eigener Server (siehe playwright.config.ts), damit die Anmeldungen dieser Tests das Anmelde-Limit des Rauchtests nicht aufbrauchen.
 test.use({ baseURL: 'http://127.0.0.1:8096' });
@@ -268,13 +278,13 @@ test.describe.serial('Protokolle: Tabellen, Links und Hervorhebung', () => {
     await expect(link).toHaveAttribute('href', 'https://beispiel.de');
     await expect(editor.locator('p').first()).toContainText('Mehr unter Webseite und mehr');
 
-    // Ein Klick in den Link zeigt die Link-Leiste: Öffnen, Ändern, Entfernen
+    // Ein Klick in den Link zeigt die Link-Leiste: Link öffnen, ändern, entfernen
     await link.click();
     const linkBar = page.getByRole('toolbar', { name: 'Link' });
     await expect(linkBar).toContainText('beispiel.de');
-    await linkBar.getByRole('button', { name: 'Öffnen' }).click();
+    await linkBar.getByRole('button', { name: 'Link öffnen' }).click();
     expect(await page.evaluate(() => (window as unknown as { __opened: string[] }).__opened)).toEqual(['https://beispiel.de']);
-    await linkBar.getByRole('button', { name: 'Ändern' }).click();
+    await linkBar.getByRole('button', { name: 'Link ändern' }).click();
     await expect(page.getByLabel('Adresse')).toHaveValue('https://beispiel.de');
     await page.getByLabel('Adresse').fill('javascript:alert(1)');
     await page.getByRole('button', { name: 'Übernehmen' }).click();
@@ -304,6 +314,8 @@ test.describe.serial('Protokolle: Tabellen, Links und Hervorhebung', () => {
     const bytes = (await pdf.body()).toString('latin1');
     expect(bytes.startsWith('%PDF-')).toBe(true);
     expect(bytes).toContain('https://www.example.de/seite');
+    const text = pdfText(await pdf.body());
+    if (text !== null) for (const part of ['Wer', 'Aufgabe', 'Anna', 'Schläuche', 'Ben', 'Material', 'Webseite']) expect(text, part).toContain(part);
     await context.close();
   });
 
@@ -345,6 +357,94 @@ test.describe.serial('Protokolle: Tabellen, Links und Hervorhebung', () => {
     await context.close();
   });
 
+  test('die Wahl „Ohne Kopfzeile“ schickt das Formular nicht ab; eine Tabelle mit Inhalt wird erst nach Rückfrage gelöscht', async ({ browser, request }) => {
+    await adminToken(request);
+    const { context, page } = await newSession(browser);
+    await signIn(page, ADMIN);
+    await writeProtocol(page, 'Tabelle ohne Kopf', 'Text.');
+    const editor = page.getByLabel('Protokolltext', { exact: true });
+    await page.getByRole('button', { name: 'Einfügen', exact: true }).click();
+    await page.getByRole('dialog', { name: 'Einfügen' }).getByRole('button', { name: /^Tabelle/ }).click();
+    await page.getByRole('button', { name: 'Ohne Kopfzeile' }).click();
+    await expect(page.getByRole('dialog', { name: 'Tabelle einfügen' })).toBeVisible(); // nicht abgeschickt
+    await expect(editor.locator('table')).toHaveCount(0);
+    await page.getByLabel(/^Zeilen/).fill('2');
+    await page.getByLabel(/^Spalten/).fill('2');
+    await page.getByRole('button', { name: 'Tabelle einfügen', exact: true }).click();
+    await expect(editor.locator('tr')).toHaveCount(2);
+    await expect(editor.locator('th')).toHaveCount(0);
+
+    // Löschen: Bei Inhalt fragt der Editor nach; „Abbrechen“ lässt die Tabelle stehen
+    await page.keyboard.type('Wichtiger Eintrag');
+    const bar = page.getByRole('toolbar', { name: 'Tabelle' });
+    await bar.getByRole('button', { name: 'Tabelle löschen' }).click();
+    const ask = page.getByRole('alertdialog', { name: 'Tabelle löschen' });
+    await expect(ask).toBeVisible();
+    await ask.getByRole('button', { name: 'Abbrechen' }).click();
+    await expect(editor.locator('table')).toHaveCount(1);
+    await bar.getByRole('button', { name: 'Tabelle löschen' }).click();
+    await page.getByRole('alertdialog', { name: 'Tabelle löschen' }).getByRole('button', { name: 'Löschen' }).click();
+    await expect(editor.locator('table')).toHaveCount(0);
+    await context.close();
+  });
+
+  test('Einfügen aus anderen Programmen: Tabellen bleiben ganz, Spannen sind begrenzt, unzulässige Adressen werden kein Link', async ({ browser, request }) => {
+    await adminToken(request);
+    const { context, page } = await newSession(browser);
+    await signIn(page, ADMIN);
+    await writeProtocol(page, 'Einfügen von außen', 'Wort');
+    const editor = page.getByLabel('Protokolltext', { exact: true });
+    const paste = (text: string, html?: string) =>
+      page.evaluate(
+        ({ text, html }) => {
+          const data = new DataTransfer();
+          data.setData('text/plain', text);
+          if (html) data.setData('text/html', html);
+          document.querySelector('.ed-content')!.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
+        },
+        { text, html },
+      );
+    const clear = async () => {
+      await editor.click();
+      await page.keyboard.press('Control+A');
+      await page.keyboard.press('Delete');
+    };
+
+    // Überschrift, Zitat, Trennlinie, Codeblock und eine Tabelle in der Zelle zerreißen die Tabelle nicht: Der Text bleibt.
+    await clear();
+    await paste(
+      'x',
+      '<table><tr><td><h2>Titel</h2><p>x</p></td><td><blockquote>zitat</blockquote><hr><pre>code\nzwei</pre></td></tr>' +
+        '<tr><td>außen<table><tr><td>innen1</td><td>innen2</td></tr></table></td><td>b</td></tr></table>',
+    );
+    await expect(editor.locator('table')).toHaveCount(1);
+    await expect(editor.locator('tr')).toHaveCount(2);
+    await expect(editor.locator('td h1, td h2, td h3, td blockquote, td pre, td hr, td table')).toHaveCount(0);
+    for (const part of ['Titel', 'zitat', 'code', 'zwei', 'außen', 'innen1', 'innen2']) await expect(editor.locator('table')).toContainText(part);
+
+    // Riesige Spannen werden gekürzt, statt dem Editor Tausende Spalten aufzuzwingen
+    await clear();
+    await paste('x', '<table><tr><td colspan="5000" rowspan="9999">breit</td></tr></table>');
+    await expect(editor.locator('table')).toHaveCount(1);
+    expect(await editor.locator('col').count()).toBeLessThanOrEqual(24);
+
+    // Eine Adresse über markiertem Text: nur erlaubte Ziele werden zum Link
+    for (const bad of ['ftp://example.com/x', 'ftps://example.com/y', 'file:///etc/passwd']) {
+      await clear();
+      await page.keyboard.type('Wort');
+      await page.keyboard.press('Control+A');
+      await paste(bad);
+      await expect(editor.locator('a'), bad).toHaveCount(0);
+    }
+    await clear();
+    await page.keyboard.type('Wort');
+    await page.keyboard.press('Control+A');
+    await paste('www.example.de');
+    await expect(editor.locator('a')).toHaveAttribute('href', 'https://www.example.de');
+    await expect(editor.locator('a')).toHaveText('Wort');
+    await context.close();
+  });
+
   test('am Handy: Leiste, Tabelle und Link passen auf den Bildschirm', async ({ browser, request }) => {
     const title = 'Handy mit Tabelle';
     await adminToken(request);
@@ -353,6 +453,12 @@ test.describe.serial('Protokolle: Tabellen, Links und Hervorhebung', () => {
     await signIn(page, ADMIN);
     await writeProtocol(page, title, 'Kurz.');
     const editor = page.getByLabel('Protokolltext', { exact: true });
+    // Was beim Notieren gebraucht wird, steht ohne Wischen in der Leiste (sonst bliebe „Einfügen“, der einzige Weg zu Tabellen, verborgen)
+    for (const name of ['Fett', 'Kursiv', 'Aufzählung', 'Nummerierung', 'Checkliste', 'Foto oder Datei anhängen', 'Einfügen']) {
+      const box = await page.getByRole('toolbar', { name: 'Formatierung' }).getByRole('button', { name, exact: true }).boundingBox();
+      expect(box, name).not.toBeNull();
+      expect(box!.x + box!.width, `${name} ragt über den Bildschirmrand`).toBeLessThanOrEqual(390);
+    }
     await page.getByRole('button', { name: 'Einfügen', exact: true }).tap();
     await page.getByRole('dialog', { name: 'Einfügen' }).getByRole('button', { name: /^Tabelle/ }).tap();
     await page.getByLabel(/^Spalten/).fill('6');
@@ -367,6 +473,31 @@ test.describe.serial('Protokolle: Tabellen, Links und Hervorhebung', () => {
     expect(sizes.wrapperScrolls).toBe(true);
     expect(sizes.pageWidth).toBeLessThanOrEqual(sizes.viewport);
     await page.screenshot({ path: 'test-results/tabelle-am-handy.png' });
+    await context.close();
+  });
+});
+
+test.describe.serial('Protokolle: feindliche Tabellen', () => {
+  test('ein Protokoll mit absurder Zellspanne wird nur gelesen, statt den Editor lahmzulegen', async ({ browser, request }) => {
+    const title = 'Tabelle mit Riesenspanne';
+    const token = await adminToken(request);
+    const p = (text: string) => ({ type: 'paragraph', content: [{ type: 'text', text }] });
+    const cell = (colspan: number) => ({ type: 'tableCell', attrs: { colspan, rowspan: 1, colwidth: null, align: null }, content: [p('Zelle')] });
+    const content = { type: 'doc', content: [p('Davor'), { type: 'table', content: [{ type: 'tableRow', content: [cell(1_000_000)] }] }] };
+    const sent = await request.post('/api/sync', {
+      headers: { Authorization: `Bearer ${token}`, ...SCHEMA },
+      data: { since: 0, changes: [{ id: 'spanne-0001', baseRev: 0, title, datum: '2026-10-01', beginn: '', ende: '', ort: '', leitung: '', content, updatedAt: Date.now(), deleted: false }] },
+    });
+    expect(sent.ok()).toBeTruthy();
+
+    const { context, page } = await newSession(browser);
+    await signIn(page, ADMIN);
+    await page.goto('/#/protokolle');
+    await page.getByText(title).click();
+    // Mit einer Million Spalten bräuchte der Editor Minuten: Das Protokoll öffnet nur lesend, und zwar sofort.
+    await expect(page.getByRole('alert')).toContainText('Elemente, die diese App-Version nicht kennt', { timeout: 5000 });
+    await expect(page.getByLabel('Protokolltext', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('Zelle')).toBeVisible();
     await context.close();
   });
 });

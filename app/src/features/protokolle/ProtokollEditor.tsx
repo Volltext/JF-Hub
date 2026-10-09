@@ -18,6 +18,7 @@ import { EditorToolbar } from './EditorToolbar';
 import { FolderPicker } from './FolderPicker';
 import { folderPathLabel, liveFolders, shownFolder } from './folders';
 import { openLink } from './openLink';
+import { flattenCellContent } from './pasteTables';
 import { SyncBadge } from './SyncBadge';
 import type { Protokoll } from './model';
 import { exportPdf, protokolleRepo } from './repo';
@@ -104,6 +105,8 @@ function EditorInner({ initial }: { initial: Protokoll }) {
     content: initial.content,
     editorProps: {
       attributes: { class: 'ed-content', 'aria-label': 'Protokolltext', lang: 'de', spellcheck: 'true' },
+      // Eingefügte Tabellen aus anderen Programmen: Was eine Zelle nicht aufnimmt, wird zu Absätzen (sonst zerreißt die Tabelle).
+      transformPastedHTML: flattenCellContent,
       handleDOMEvents: {
         // Strg/Cmd+Klick öffnet einen Link (am Handy dient dazu die Link-Leiste); ein einfacher Klick setzt nur den Cursor.
         click: (_view, event) => {

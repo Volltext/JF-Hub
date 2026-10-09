@@ -42,11 +42,35 @@ export const RULE = '#d9dce1';
 
 // eslint-disable-next-line no-control-regex
 const CONTROL = /[\u0000-\u001f\u007f]/;
-const LINK = /^(?:https?:\/\/[^\s/?#\\@]\S*|mailto:\S+|tel:\+?[0-9().-]*[0-9][0-9().-]*)$/i;
 
-/** Nur http(s), mailto und tel kommen als anklickbarer Link ins PDF (dieselbe Allowlist wie im Editor), alles andere bleibt Text. */
-function safeLink(href: unknown): string | null {
-  return typeof href === 'string' && href.length <= 2000 && !CONTROL.test(href) && LINK.test(href) ? href : null;
+/**
+ * Das Ziel eines Links fürs PDF, oder null. Dieselbe Allowlist wie `allowedLink` in der App (`app/src/features/protokolle/linkUrl.ts`;
+ * ein Test hält beide gleich): http(s) mit Host, mailto und tel, ohne Leerzeichen, höchstens 2000 Zeichen. Zurück kommt die
+ * Schreibweise der URL-Klasse: reines ASCII (Umlaute werden kodiert, internationale Domains zu Punycode), denn eine PDF-Adresse
+ * muss 7-Bit-ASCII sein; pdfkit schriebe sonst UTF-16 mit BOM, das manche Viewer nicht lesen.
+ */
+export function safeLink(href: unknown): string | null {
+  if (typeof href !== 'string' || href.length === 0 || href.length > 2000) return null;
+  if (/\s/.test(href) || CONTROL.test(href)) return null;
+  let ok = false;
+  if (/^https?:\/\//i.test(href)) {
+    // Die Adresse nach „//“ darf nicht leer sein und nicht mit „@“ oder „\“ beginnen oder einen „\“ enthalten.
+    const authority = /^https?:\/\/([^/?#]+)/i.exec(href)?.[1];
+    if (authority && !authority.startsWith('@') && !authority.includes('\\')) {
+      try {
+        ok = new URL(href).hostname.length > 0;
+      } catch {
+        ok = false;
+      }
+    }
+  } else if (/^mailto:/i.test(href)) ok = href.length > 'mailto:'.length;
+  else if (/^tel:/i.test(href)) ok = /^tel:\+?[0-9().-]*[0-9][0-9().-]*$/i.test(href);
+  if (!ok) return null;
+  try {
+    return new URL(href).href;
+  } catch {
+    return null;
+  }
 }
 
 const hexColor = (v: unknown): string | null => (typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v) ? v.toLowerCase() : null);
@@ -110,6 +134,9 @@ const TABLE_MAX_COLS = 24;
 const TABLE_MAX_CELLS = 4000;
 const TABLE_MAX_HEADER_ROWS = 3;
 const HEAD_FILL = '#eef0f3';
+/** Textbreite einer A4-Seite (595 pt − 2 × 50 pt Rand) und Linienstärke der Tabelle. */
+const PAGE_WIDTH = 495;
+const TABLE_LINE = 0.6;
 
 const isCell = (n: Node | undefined): n is Node => n?.type === 'tableCell' || n?.type === 'tableHeader';
 /** Spannweite einer Zelle: ganze Zahl ab 1, höchstens `max`; alles andere zählt als 1. */
@@ -184,17 +211,21 @@ function tableBlock(n: Node, st: PdfStyle, depth: number, image?: ImageLoader): 
     }),
   );
 
+  // Feste, gleiche Spaltenbreiten, die samt Rändern und Linien genau auf die Seite passen. Mit `'*'` wächst jede Spalte auf das längste
+  // unteilbare Wort („Atemschutzgeräteträger“), und bei fünf oder mehr Spalten läuft die Tabelle über den Seitenrand hinaus.
+  const pad = cols <= 6 ? 5 : cols <= 12 ? 3 : 2;
+  const colWidth = Math.floor(((PAGE_WIDTH - TABLE_LINE * (cols + 1) - 2 * pad * cols) / cols) * 100) / 100;
   // Bewusst kein `dontBreakRows`: pdfmake lässt eine Zeile, die höher ist als eine Seite, damit stumm komplett weg (geprüft mit 300
   // Absätzen in einer Zelle); eine Zeile über den Seitenumbruch zu teilen sieht schlechter aus, verliert aber keinen Text.
   return {
-    table: { headerRows, widths: Array.from({ length: cols }, () => '*'), body },
+    table: { headerRows, widths: Array.from({ length: cols }, () => colWidth), body },
     layout: {
-      hLineWidth: () => 0.6,
-      vLineWidth: () => 0.6,
+      hLineWidth: () => TABLE_LINE,
+      vLineWidth: () => TABLE_LINE,
       hLineColor: () => RULE,
       vLineColor: () => RULE,
-      paddingLeft: () => 5,
-      paddingRight: () => 5,
+      paddingLeft: () => pad,
+      paddingRight: () => pad,
       paddingTop: () => 3,
       paddingBottom: () => 3,
     },

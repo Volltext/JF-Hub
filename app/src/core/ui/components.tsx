@@ -131,7 +131,8 @@ export function Segmented<T extends string>(props: {
   return (
     <div className={`segmented${props.compact ? ' segmented--compact' : ''}`} role="group">
       {props.options.map((o) => (
-        <button key={o.value} disabled={props.disabled} aria-pressed={props.value === o.value} onClick={() => props.onChange(o.value)}>
+        // type="button": Sonst schickt ein Segmented in einem Formular es beim Antippen ab.
+        <button key={o.value} type="button" disabled={props.disabled} aria-pressed={props.value === o.value} onClick={() => props.onChange(o.value)}>
           {o.label}
         </button>
       ))}

@@ -70,6 +70,15 @@ describe('normalizeUrl', () => {
     expect(normalizeUrl('tel:+49 170 1234567')).toBe('tel:+491701234567');
   });
 
+  it('kurze Nummern wie der Notruf sind Telefonnummern, bloße Zahlen mit Punkten keine Webadressen', () => {
+    expect(normalizeUrl('112')).toBe('tel:112');
+    expect(normalizeUrl('110')).toBe('tel:110');
+    expect(normalizeUrl('116 117')).toBe('tel:116117');
+    expect(allowedLink('tel:112')).toBe(true);
+    // „12“, „1.2.3“ und ein Datum sind weder Nummer noch Adresse (URL macht aus „https://12“ den Host „0.0.0.12“)
+    for (const u of ['12', '1.2.3', '12.10.2026', '1.2.3.4.5']) expect(normalizeUrl(u), u).toBeNull();
+  });
+
   it('lehnt unzulässige Ziele ab', () => {
     const bad = [
       'javascript:alert(1)',

@@ -34,7 +34,15 @@ body.web .icon-btn { cursor: pointer; }
 
 /* Formatierungsleiste: ein „Dock“ aus Werkzeugleiste und Kontextzeile (Link, Tabelle) */
 .ed-dock { display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); z-index: 5; }
-.ed-toolbar { display: flex; align-items: center; gap: 2px; padding: var(--s-1); overflow-x: auto; scrollbar-width: none; }
+.ed-toolbar {
+  display: flex; align-items: center; gap: 2px; padding: var(--s-1); overflow-x: auto; scrollbar-width: none;
+  /* Schatten an den Rändern, solange sich die Leiste in diese Richtung weiterwischen lässt (die mitlaufenden Deckflächen blenden sie am Anfang und Ende aus) */
+  background:
+    linear-gradient(to right, var(--surface), var(--surface)) left center / 24px 100% no-repeat local,
+    linear-gradient(to left, var(--surface), var(--surface)) right center / 24px 100% no-repeat local,
+    linear-gradient(to right, rgba(0, 0, 0, 0.3), transparent) left center / 16px 100% no-repeat scroll,
+    linear-gradient(to left, rgba(0, 0, 0, 0.3), transparent) right center / 16px 100% no-repeat scroll;
+}
 .ed-toolbar::-webkit-scrollbar, .ed-context::-webkit-scrollbar { display: none; }
 .ed-tool { flex: 0 0 auto; width: 44px; height: 44px; display: grid; place-items: center; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text); cursor: pointer; }
 .ed-tool:hover { background: var(--surface-2); }
@@ -81,7 +89,11 @@ body.web .icon-btn { cursor: pointer; }
 .ed-content hr { border: 0; border-top: 1px solid var(--border); margin: 1.2em 0; }
 .ed-content code { background: var(--surface-2); padding: 0.1em 0.35em; border-radius: 4px; font-family: var(--font-mono); font-size: 0.92em; }
 .ed-content u { text-underline-offset: 3px; }
-.ed-content a { color: var(--primary); text-decoration: underline; text-underline-offset: 3px; }
+/* Im dunklen Design ist --primary auf der Fläche knapp unter 4,5:1: heller mischen. */
+.ed-content a { color: color-mix(in srgb, var(--primary) 72%, var(--text)); text-decoration: underline; text-underline-offset: 3px; }
+:root[data-theme='light'] .ed-content a { color: var(--primary); }
+/* Der Cursor zwischen zwei Blöcken (etwa vor einer Tabelle am Anfang) ist sonst schwarz auf dunkel. */
+.ed-content .ProseMirror-gapcursor::after { border-top-color: var(--text); }
 .ed-content mark { background: color-mix(in srgb, #facc15 38%, transparent); color: inherit; padding: 0 0.12em; border-radius: 3px; }
 :root[data-theme='light'] .ed-content mark { background: #fff1a6; }
 

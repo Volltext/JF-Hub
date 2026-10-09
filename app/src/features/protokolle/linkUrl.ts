@@ -30,10 +30,10 @@ export function allowedLink(url: unknown): boolean {
   return false;
 }
 
-/** „+49 (170) 123-45 67“ → „+491701234567“, oder null, wenn das keine Telefonnummer ist. */
+/** „+49 (170) 123-45 67“ → „+491701234567“, oder null, wenn das keine Telefonnummer ist (ab drei Ziffern, damit 110 und 112 gehen). */
 function phoneDigits(raw: string): string | null {
   const p = raw.replace(/[\s()./-]/g, '');
-  return /^\+?[0-9]{5,15}$/.test(p) ? p : null;
+  return /^\+?[0-9]{3,15}$/.test(p) ? p : null;
 }
 
 /**
@@ -59,11 +59,14 @@ export function normalizeUrl(input: string): string | null {
     if (!/^\d{1,5}(?:[/?#]|$)/.test(rest)) return null;
   }
 
-  if (!IPV4.test(s) && /^\+?\(?[0-9][0-9\s()./-]{3,}$/.test(s)) {
+  // Ziffern mit Leerzeichen, Klammern, Strichen oder Schrägstrich sind eine Telefonnummer (ohne Punkte: „12.10.2026“ ist ein Datum).
+  if (!IPV4.test(s) && /^\+?\(?[0-9][0-9\s()/-]{2,}$/.test(s)) {
     const digits = phoneDigits(s);
     return digits ? `tel:${digits}` : null;
   }
   if (/\s/.test(s)) return null;
+  // Nur Ziffern und Punkte, aber keine IP-Adresse („12“, „1.2.3“): Die URL-Klasse machte daraus „https://0.0.0.12“.
+  if (/^[\d.]+(?::\d+)?(?:[/?#].*)?$/.test(s) && !IPV4.test(s)) return null;
   if (MAIL.test(s)) return `mailto:${s}`;
   if (/^[/#?.@\\]/.test(s)) return null; // relative Adressen, Anker, Anfragen
 

@@ -4,8 +4,9 @@ import { Minus, NotebookPen, PenLine, Quote, Table2 } from 'lucide-react';
 import { Button, MenuGroup, MenuRow, Segmented, Sheet } from '@/core/ui/components';
 import { insertBlocks } from './insertBlocks';
 
-export const TABLE_MAX_ROWS = 20;
-export const TABLE_MAX_COLS = 6;
+/** So groß darf eine neue Tabelle im Fenster „Tabelle einfügen“ sein; weitere Zeilen und Spalten kommen über die Tabellen-Leiste. */
+export const NEW_TABLE_MAX_ROWS = 20;
+export const NEW_TABLE_MAX_COLS = 6;
 
 const clamp = (v: string, max: number) => Math.min(max, Math.max(1, Math.round(Number(v)) || 1));
 
@@ -18,19 +19,19 @@ function TableForm({ editor, onClose }: { editor: Editor; onClose: () => void })
   function submit(e: FormEvent) {
     e.preventDefault();
     onClose();
-    editor.chain().focus().insertTable({ rows: clamp(rows, TABLE_MAX_ROWS), cols: clamp(cols, TABLE_MAX_COLS), withHeaderRow: header }).run();
+    editor.chain().focus().insertTable({ rows: clamp(rows, NEW_TABLE_MAX_ROWS), cols: clamp(cols, NEW_TABLE_MAX_COLS), withHeaderRow: header }).run();
   }
 
   return (
     <Sheet title="Tabelle einfügen" onClose={onClose}>
       <form className="stack" onSubmit={submit}>
         <label className="field">
-          <span>Zeilen (höchstens {TABLE_MAX_ROWS})</span>
-          <input type="number" inputMode="numeric" min={1} max={TABLE_MAX_ROWS} value={rows} onChange={(e) => setRows(e.target.value)} onFocus={(e) => e.target.select()} />
+          <span>Zeilen (höchstens {NEW_TABLE_MAX_ROWS})</span>
+          <input type="number" inputMode="numeric" min={1} max={NEW_TABLE_MAX_ROWS} value={rows} onChange={(e) => setRows(e.target.value)} onFocus={(e) => e.target.select()} />
         </label>
         <label className="field">
-          <span>Spalten (höchstens {TABLE_MAX_COLS})</span>
-          <input type="number" inputMode="numeric" min={1} max={TABLE_MAX_COLS} value={cols} onChange={(e) => setCols(e.target.value)} onFocus={(e) => e.target.select()} />
+          <span>Spalten (höchstens {NEW_TABLE_MAX_COLS})</span>
+          <input type="number" inputMode="numeric" min={1} max={NEW_TABLE_MAX_COLS} value={cols} onChange={(e) => setCols(e.target.value)} onFocus={(e) => e.target.select()} />
         </label>
         <Segmented
           value={header ? 'mit' : 'ohne'}
