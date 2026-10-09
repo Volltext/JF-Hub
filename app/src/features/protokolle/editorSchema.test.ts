@@ -6,7 +6,9 @@ import { TaskItem } from '@tiptap/extension-task-item';
 import { TaskList } from '@tiptap/extension-task-list';
 import { InkNode } from '@/features/ink/InkNode';
 import { FileNode, PhotoNode } from '@/features/attachments/AttachmentNodes';
+import { API_VERSION, MIN_SCHEMA } from '../../../../server/src/versions';
 import { EXTENSIONS, SCHEMA_VERSION, schemaAccepts } from './editorSchema';
+import { MIN_SERVER_API } from './schemaVersion';
 
 const text = (t: string, marks?: NonNullable<JSONContent['marks']>): JSONContent => ({ type: 'text', text: t, ...(marks ? { marks } : {}) });
 const para = (...c: JSONContent[]): JSONContent => ({ type: 'paragraph', content: c });
@@ -179,11 +181,26 @@ describe('Tabellen, Links und Hervorhebung (Schema 4)', () => {
     }
   });
 
-  it('SCHEMA_VERSION 4 gehört zu dieser Liste von Erweiterungen', () => {
-    expect(SCHEMA_VERSION).toBe(4);
+  it('SCHEMA_VERSION 5 gehört zu dieser Liste von Erweiterungen', () => {
+    expect(SCHEMA_VERSION).toBe(5);
   });
 
-  it('das Dokumentformat entspricht dem Stand von SCHEMA_VERSION 4: Wer es ändert, erhöht die Version und passt diese Liste an', () => {
+  it('die Zahlen von App und Server gehören zusammen: Wer das Vokabular ändert, erhöht alle vier im selben Release', () => {
+    // Ein Client mit anderem Vokabular würde im geteilten Dokument löschen, was er nicht kennt (siehe schemaVersion.ts).
+    expect(MIN_SCHEMA).toBeLessThanOrEqual(SCHEMA_VERSION);
+    expect(MIN_SERVER_API).toBeLessThanOrEqual(API_VERSION);
+    // Mit 3.0.0 (Text als Yjs-Dokument) fordert der Server genau das Format, das diese App spricht, und umgekehrt.
+    expect(MIN_SCHEMA).toBe(SCHEMA_VERSION);
+    expect(MIN_SERVER_API).toBe(API_VERSION);
+  });
+
+  it('Rückgängig und der Absatz am Ende kommen nicht aus dem Schema, sondern von der Zusammenarbeit und von LocalTrailingNode', () => {
+    const names = EXTENSIONS.flatMap((e) => [e.name, ...((e.options as { _extensions?: { name: string }[] })?._extensions?.map((x) => x.name) ?? [])]);
+    expect(names).not.toContain('undoRedo');
+    expect(names).not.toContain('trailingNode');
+  });
+
+  it('das Dokumentformat entspricht dem Stand von SCHEMA_VERSION 5: Wer es ändert, erhöht die Version und passt diese Liste an', () => {
     // Knoten (Attribute, Inhalt) und Markierungen (Attribute) in der Reihenfolge des Schemas. Ältere Apps verlassen sich darauf, dass
     // sich das Format nur mit einer neuen Versionsnummer ändert (Schutz vor unbekannten Inhalten, docs/entwicklung.md).
     const names = (spec: { attrs?: object } | undefined) => Object.keys(spec?.attrs ?? {}).sort().join(',');

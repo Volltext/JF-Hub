@@ -1,21 +1,41 @@
-import { db } from '@/core/db/db';
+import { db, type HubDb } from '@/core/db/db';
 import { jsonEqual } from '@/core/domain/equal';
 import { DEMO_NEEDS_SERVER, IS_DEMO } from '@/core/env';
 import { loadSettings } from '@/core/settings/settings';
 import { shareBinaryFile } from '@/core/native/files';
+import { getOpenSession } from './collab/session';
 import { ProtoError, loadConn, request } from './http';
-import { newProtokoll, type Protokoll, type ProtokollPatch } from './model';
+import { META_FIELDS, newProtokoll, stampMeta, type MetaField, type Protokoll, type ProtokollPatch } from './model';
 import { scheduleSync, syncNow } from './sync';
 
 /** Wert eines Feldes, so wie er verglichen wird: fehlender Ordner = oberste Ebene, fehlendes `shared` = privat. */
-function fieldValue(p: Partial<Protokoll>, key: keyof ProtokollPatch): unknown {
+function fieldValue(p: Partial<Protokoll>, key: MetaField): unknown {
   if (key === 'folderId') return p.folderId ?? '';
   if (key === 'shared') return p.shared === true;
   return p[key];
 }
 
-function isUnchanged(row: Protokoll, patch: ProtokollPatch): boolean {
-  return (Object.keys(patch) as (keyof ProtokollPatch)[]).every((key) => jsonEqual(fieldValue(row, key), fieldValue(patch, key)));
+/** Welche der Felder des Patches unterscheiden sich von der Zeile? */
+function changedFields(row: Protokoll, patch: ProtokollPatch): MetaField[] {
+  return (Object.keys(patch) as MetaField[]).filter((key) => (META_FIELDS as readonly string[]).includes(key) && !jsonEqual(fieldValue(row, key), fieldValue(patch, key)));
+}
+
+/**
+ * Schreibt geänderte Kopfdaten in die Zeile des Protokolls (ohne den Abgleich anzustoßen). Liefert die Änderungszeit und ob sich etwas
+ * geändert hat. Ein verschwundenes Protokoll legt nichts neu an.
+ */
+export async function saveHeader(store: HubDb, id: string, patch: ProtokollPatch): Promise<{ updatedAt: number; changed: boolean }> {
+  const row = await store.protokolle.get(id);
+  if (!row) return { updatedAt: Date.now(), changed: false };
+  const changed = changedFields(row, patch);
+  if (!changed.length) return { updatedAt: row.updatedAt, changed: false };
+  const updatedAt = Date.now();
+  // Felder ohne eigene Zeit (Zeile aus der Zeit vor 3.0.0) gelten als zuletzt zur Änderungszeit der Zeile geändert, nicht als eben jetzt.
+  const known = { ...Object.fromEntries(META_FIELDS.map((f) => [f, row.updatedAt])), ...row.metaAt };
+  const values = Object.fromEntries(changed.map((f) => [f, patch[f]]));
+  // Eine Änderung gibt dem Server einen neuen Versuch (eine frühere Ablehnung gilt nur für die alte Fassung).
+  await store.protokolle.update(id, { ...values, metaAt: stampMeta(known, changed, updatedAt), updatedAt, dirty: 1, rejected: undefined });
+  return { updatedAt, changed: true };
 }
 
 export const protokolleRepo = {
@@ -26,25 +46,27 @@ export const protokolleRepo = {
   },
 
   /**
-   * Speichert lokal (sofort) und stößt den Abgleich verzögert an. Ändert der Patch nichts, bleibt alles unberührt
-   * (keine neue Änderungszeit, kein Abgleich) und die bisherige Änderungszeit kommt zurück.
+   * Speichert die Kopfdaten lokal (sofort) und stößt den Abgleich verzögert an. Nur was sich wirklich ändert, bekommt eine neue
+   * Änderungszeit: Der Server führt die Felder einzeln zusammen, und ein Feld, das hier nur mitgeschrieben wurde, würde sonst die
+   * Änderung eines anderen Geräts überstimmen. Ändert der Patch nichts, bleibt alles unberührt (kein Abgleich), und die bisherige
+   * Änderungszeit kommt zurück. Der Text gehört nicht hierher, er wird zusammen bearbeitet (`collab/`).
    */
   async save(id: string, patch: ProtokollPatch): Promise<number> {
-    const row = await db.protokolle.get(id);
-    if (row && isUnchanged(row, patch)) return row.updatedAt;
-    const updatedAt = Date.now();
-    // Eine Änderung gibt dem Server einen neuen Versuch (eine frühere Ablehnung gilt nur für die alte Fassung).
-    await db.protokolle.update(id, { ...patch, updatedAt, dirty: 1, rejected: undefined });
-    scheduleSync();
+    const { updatedAt, changed } = await saveHeader(db, id, patch);
+    if (changed) scheduleSync();
     return updatedAt;
   },
 
-  /** Nie gesendete Protokolle verschwinden sofort, alle anderen werden beim nächsten Abgleich gelöscht. */
+  /** Nie gesendete Protokolle verschwinden sofort (mit ihrem Text), alle anderen werden beim nächsten Abgleich gelöscht. */
   async remove(id: string): Promise<void> {
     const p = await db.protokolle.get(id);
     if (!p) return;
-    if (p.rev === 0) await db.protokolle.delete(id);
-    else await db.protokolle.update(id, { deleted: 1, dirty: 1, updatedAt: Date.now() });
+    if (p.rev === 0) {
+      await db.transaction('rw', [db.protokolle, db.ydocs], async () => {
+        await db.protokolle.delete(id);
+        await db.ydocs.delete(id);
+      });
+    } else await db.protokolle.update(id, { deleted: 1, dirty: 1, updatedAt: Date.now() });
     scheduleSync(300);
   },
 };
@@ -59,14 +81,24 @@ export async function exportPdf(id: string): Promise<void> {
   if (IS_DEMO) throw new ProtoError(DEMO_NEEDS_SERVER);
   const p = await db.protokolle.get(id);
   if (!p) throw new ProtoError('Protokoll nicht gefunden.');
-  await syncNow();
-  let after = await db.protokolle.get(id);
-  // Lief schon ein Abgleich, bekommt man dessen Ergebnis: Er kann vor dem letzten Speichern begonnen haben. Dann noch einmal.
-  if (after?.dirty === 1) {
+  // Kopfdaten und Text müssen beim Server sein: Das PDF entsteht dort aus seiner Fassung. Ein offener Editor tauscht seinen Text selbst
+  // aus (der Hintergrund-Abgleich lässt ihn aus), deshalb zuerst ihn.
+  const settled = async (): Promise<boolean> => {
+    const [row, text] = await Promise.all([db.protokolle.get(id), db.ydocs.get(id)]);
+    return !!row && row.dirty !== 1 && text?.dirty !== 1;
+  };
+  for (let round = 0; round < 2; round++) {
+    const open = getOpenSession(id);
+    if (open) {
+      await open.flush();
+      await open.exchangeNow();
+    }
     await syncNow();
-    after = await db.protokolle.get(id);
+    // Lief schon ein Abgleich, bekommt man dessen Ergebnis: Er kann vor dem letzten Speichern begonnen haben. Dann noch einmal.
+    if (await settled()) break;
   }
-  if (!after || after.dirty === 1) throw new ProtoError('Das PDF braucht eine Verbindung zum Server, damit die neueste Fassung verwendet wird.');
+  const after = await db.protokolle.get(id);
+  if (!after || !(await settled())) throw new ProtoError('Das PDF braucht eine Verbindung zum Server, damit die neueste Fassung verwendet wird.');
   const conn = await loadConn();
   const base64 = await request<string>(conn, 'GET', `/api/protocols/${encodeURIComponent(id)}/pdf`, undefined, true);
   await shareBinaryFile(pdfName(after), base64, 'application/pdf');

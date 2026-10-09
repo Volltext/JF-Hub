@@ -19,6 +19,8 @@ export class ProtoError extends Error {
     readonly status = 0,
     /** Bei Status 0: Die Anfrage hat zu lange gedauert (eine Verbindung gibt es, sie ist aber zu langsam oder bricht ab), das Gerät ist nicht offline. */
     readonly timedOut = false,
+    /** Antwortinhalt bei einem Fehlerstatus (zum Beispiel `{ reset: true }` beim Austausch des Textes). */
+    readonly body?: unknown,
   ) {
     super(message);
   }
@@ -101,5 +103,5 @@ export async function request<T>(conn: ProtoConn, method: string, path: string, 
   const msg = (res.data as { error?: string } | null)?.error;
   if (res.status === 401) throw new ProtoError(msg ?? 'Nicht angemeldet.', 401);
   if (res.status === 429) throw new ProtoError('Zu viele Versuche. Bitte später erneut probieren.', 429);
-  throw new ProtoError(msg ?? `Serverfehler ${res.status}.`, res.status);
+  throw new ProtoError(msg ?? `Serverfehler ${res.status}.`, res.status, false, res.data);
 }

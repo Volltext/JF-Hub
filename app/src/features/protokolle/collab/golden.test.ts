@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { canonicalJson, FIELD, jsonToYDoc, MARK_DEFAULTS, NODE_DEFAULTS, yDocToJson } from '../../../../../server/src/collab/convert';
 import { demoData } from '../../../../../server/src/demoData';
 import { EXTENSIONS } from '../editorSchema';
+import { docProblem, vocabularyProblem, yDocToJson as appYDocToJson } from './yJson';
 
 /**
  * Golden-Test: Der Konverter des Servers (schema-frei) muss genau das Yjs-Dokument bauen und lesen, das @tiptap/y-tiptap mit dem echten
@@ -179,5 +180,62 @@ describe('Konverter des Servers gegen y-tiptap', () => {
       Y.applyUpdate(b, Y.encodeStateAsUpdate(a));
       expect(canonicalJson(yDocToJson(b))).toBe(canonicalJson(json));
     });
+  });
+});
+
+describe('App-Zwilling von yDocToJson', () => {
+  describe.each(CORPUS)('%s', (_name, json) => {
+    it('liest dasselbe wie der Konverter des Servers (aus beiden Quellen)', () => {
+      for (const ydoc of [fromServer(json), fromEditor(json)]) {
+        expect(appYDocToJson(ydoc)).toEqual(yDocToJson(ydoc));
+      }
+    });
+
+    it('besteht die Vokabularprüfung des Editors', () => {
+      expect(docProblem(fromServer(json))).toBeNull();
+      expect(docProblem(fromEditor(json))).toBeNull();
+    });
+  });
+});
+
+describe('Vokabularprüfung: was der Editor nicht bauen kann, wird nie gebunden', () => {
+  const doc = (...content: JSONContent[]): JSONContent => ({ type: 'doc', content });
+
+  it('erkennt ein unbekanntes Element, eine unbekannte Markierung und unbekannte Attribute', () => {
+    expect(vocabularyProblem(doc({ type: 'callout', content: [p(t('x'))] }))).toContain('Unbekanntes Element „callout“');
+    expect(vocabularyProblem(doc(p(t('x', [{ type: 'sparkle' }]))))).toContain('Unbekannte Markierung „sparkle“');
+    expect(vocabularyProblem(doc({ type: 'heading', attrs: { level: 2, fancy: true }, content: [t('x')] }))).toContain('Unbekanntes Attribut „fancy“');
+    expect(vocabularyProblem(doc(p(t('x', [{ type: 'link', attrs: { href: 'https://a.de', glow: 1 } }]))))).toContain('Unbekanntes Attribut „glow“ der Markierung „link“');
+  });
+
+  it('erkennt einen ungültigen Attributwert und eine verletzte Inhaltsregel', () => {
+    const cell = (colspan: number) => ({ type: 'table', content: [{ type: 'tableRow', content: [{ type: 'tableCell', attrs: { colspan, rowspan: 1 }, content: [p(t('x'))] }] }] });
+    expect(vocabularyProblem(doc(cell(2)))).toBeNull();
+    expect(vocabularyProblem(doc(cell(1_000_000)))).not.toBeNull();
+    expect(vocabularyProblem(doc({ type: 'listItem', content: [p(t('x'))] }))).not.toBeNull(); // ein Listenpunkt gehört in eine Liste
+    expect(vocabularyProblem(doc({ type: 'tableRow', content: [] }))).not.toBeNull();
+  });
+
+  it('ein leeres Dokument ist gültig (der Editor legt den ersten Absatz beim Tippen an)', () => {
+    expect(vocabularyProblem(doc())).toBeNull();
+  });
+
+  it('erkennt Y-Strukturen, die kein Editor baut', () => {
+    const topText = new Y.Doc();
+    const x = new Y.XmlText();
+    x.insert(0, 'lose');
+    topText.getXmlFragment(FIELD).insert(0, [x]);
+    expect(docProblem(topText)).toContain('Text außerhalb eines Absatzes');
+
+    const odd = new Y.Doc();
+    const el = new Y.XmlElement('paragraph');
+    el.setAttribute('daten', new Uint8Array([1, 2, 3]) as never);
+    odd.getXmlFragment(FIELD).insert(0, [el]);
+    expect(docProblem(odd)).toContain('ungültigem Wert');
+
+    const fromAuthor = new Y.Doc();
+    const unknown = new Y.XmlElement('callout');
+    fromAuthor.getXmlFragment(FIELD).insert(0, [unknown]);
+    expect(docProblem(fromAuthor)).toContain('Unbekanntes Element „callout“');
   });
 });

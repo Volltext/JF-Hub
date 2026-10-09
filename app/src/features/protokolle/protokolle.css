@@ -8,6 +8,9 @@
 .proto-error { margin: 0; padding: var(--s-3); border-radius: var(--r-md); background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); }
 .proto-notice { margin: 0; padding: var(--s-3); border-radius: var(--r-md); background: color-mix(in srgb, var(--warning) 14%, transparent); display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2) var(--s-3); }
 .proto-notice a { font-weight: 600; }
+/* Wer das Protokoll gerade noch geöffnet hat; ohne Mitschreibende ist die Zeile ausgeblendet. */
+.proto-peers { margin: 0; display: flex; align-items: center; gap: var(--s-2); font-size: 0.85rem; font-weight: 600; color: var(--success); }
+.proto-peers[hidden] { display: none; }
 body.web .icon-btn { cursor: pointer; }
 
 .sync-badge { min-height: 40px; padding: 0 var(--s-3); display: inline-flex; align-items: center; gap: var(--s-2); border-radius: var(--r-md); border: 1px solid var(--border); background: var(--surface-2); color: var(--muted); font-size: 0.85rem; font-weight: 600; cursor: pointer; }

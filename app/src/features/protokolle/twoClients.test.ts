@@ -1,161 +1,311 @@
+import * as Y from 'yjs';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { DatabaseSync } from 'node:sqlite';
 import { putLocalBlob } from '@/core/db/blobs';
-import { HubDb } from '@/core/db/db';
-import { bytesToBase64 } from '@/core/domain/base64';
-import { BlobError, checkUpload, findBlob, readBlobData, storeBlob } from '../../../../server/src/blobs';
-import { openDb } from '../../../../server/src/db';
-import { applySync, type SyncRequest as ServerRequest, type SyncUser } from '../../../../server/src/sync';
-import { ensureBlob, type BlobTransport } from './blobSync';
-import { ProtoError } from './http';
-import { newProtokoll } from './model';
-import { MIN_SERVER_API } from './schemaVersion';
-import { performSync, type SyncResponse } from './sync';
+import type { HubDb } from '@/core/db/db';
+import { findBlob } from '../../../../server/src/blobs';
+import type { SyncUser } from '../../../../server/src/sync';
+import { ensureBlob } from './blobSync';
+import { ANNA, BEN, TestServer, closeDevices, newDevice, textOf, typeInto } from './collab/harness';
+import { openProtocol } from './collab/openPlan';
+import type { CollabSession } from './collab/session';
+import { loadDoc } from './collab/yStore';
+import { newProtokoll, type Protokoll } from './model';
+import { saveHeader } from './repo';
 
 /**
- * Zwei Geräte gleichen sich gegen den echten Server-Code ab (`applySync` mit einer Datenbank im Speicher).
- * So stehen Client- und Server-Regeln für Konflikte in einem Test zusammen.
+ * Zwei Geräte gleichen sich gegen den echten Server-Code ab (`applySync` und `exchange` mit einer Datenbank im Speicher):
+ * Client- und Server-Regeln für das gemeinsame Bearbeiten stehen in einem Test zusammen.
  */
-const ANNA: SyncUser = { id: 'user-anna', role: 'betreuer' };
-const BEN: SyncUser = { id: 'user-ben', role: 'betreuer' };
-
-let server: DatabaseSync;
+let server: TestServer;
 let anna: HubDb;
 let ben: HubDb;
-let n = 0;
-let clock = 1_000;
 
 beforeEach(() => {
-  server = openDb(':memory:');
-  n++;
-  anna = new HubDb(`test-anna-${n}`);
-  ben = new HubDb(`test-ben-${n}`);
+  server = new TestServer();
+  anna = newDevice('anna');
+  ben = newDevice('ben');
 });
-afterEach(async () => {
-  await anna.delete();
-  await ben.delete();
-});
+afterEach(closeDevices);
 
-const wire = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
-
-/** Anhänge über dieselben Regeln wie der echte Server (Prüfung beim Hochladen, Zugriff beim Abruf). */
-function blobsOf(user: SyncUser): BlobTransport {
-  return {
-    upload: async (meta, data) => {
-      try {
-        const upload = checkUpload({ id: meta.id, kind: meta.kind, name: meta.name, mime: meta.mime, data: bytesToBase64(data) });
-        storeBlob(server, { id: meta.id, ...upload, uploaderId: user.id });
-      } catch (e) {
-        if (e instanceof BlobError) throw new ProtoError(e.message, e.status);
-        throw e;
-      }
-    },
-    download: async (id) => {
-      if (!findBlob(server, id, user.id)) throw new ProtoError('Nicht gefunden', 404);
-      return new Uint8Array(readBlobData(server, id)!);
-    },
-  };
-}
-
-/** Ein Abgleich eines Geräts. `during` läuft, während die Anfrage unterwegs ist (der Nutzer tippt weiter). */
-function syncOf(store: HubDb, user: SyncUser, during?: () => Promise<void>) {
-  return performSync(
-    async (req) => {
-      const res = applySync(server, wire(req) as unknown as ServerRequest, user);
-      await during?.();
-      return { ...wire(res), api: MIN_SERVER_API } as unknown as SyncResponse;
-    },
-    {},
-    store,
-    blobsOf(user),
-  );
-}
-
-const edit = async (store: HubDb, id: string, title: string): Promise<void> => {
-  await store.protokolle.update(id, { title, updatedAt: ++clock, dirty: 1 });
+const para = (text: string) => ({ type: 'paragraph', content: [{ type: 'text', text }] });
+const doc = (...content: object[]) => ({ type: 'doc', content }) as never;
+const serverText = (id: string): string => {
+  const j = JSON.parse(server.row(id)!.content) as { content?: { content?: { text?: string }[] }[] };
+  return (j.content ?? []).map((b) => (b.content ?? []).map((t) => t.text ?? '').join('')).join('\n');
 };
-const copies = () => (server.prepare("SELECT COUNT(*) AS n FROM protocols WHERE title LIKE '% (Konflikt)'").get() as { n: number }).n;
 
-async function sharedDoc(): Promise<string> {
-  const doc = { ...newProtokoll('', true), title: 'Sitzung' };
-  await anna.protokolle.add(doc);
-  await syncOf(anna, ANNA);
-  await syncOf(ben, BEN);
-  expect((await ben.protokolle.get(doc.id))?.title).toBe('Sitzung');
-  return doc.id;
+async function open(store: HubDb, user: SyncUser, id: string): Promise<CollabSession> {
+  const r = await openProtocol(id, { store, transport: server.transport(user), hasServer: async () => true });
+  if (r.kind !== 'edit') throw new Error(`nicht zu öffnen: ${r.reason}`);
+  return r.session;
+}
+const exchange = async (...ss: CollabSession[]) => {
+  for (const s of ss) {
+    await s.flush();
+    await s.exchangeNow();
+  }
+};
+
+/** Ein veröffentlichtes Protokoll, das beide Geräte kennen. */
+async function sharedDoc(text = 'Basis'): Promise<string> {
+  const id = server.put({ id: 'doc-00001', title: 'Sitzung', ownerId: ANNA.id, shared: true, content: doc(para(text)) });
+  await server.syncOf(anna, ANNA);
+  await server.syncOf(ben, BEN);
+  expect((await ben.protokolle.get(id))?.title).toBe('Sitzung');
+  expect(await ben.ydocs.get(id)).toBeDefined(); // der Text ist schon vorgeladen
+  return id;
 }
 
-describe('zwei Geräte, ein veröffentlichtes Protokoll', () => {
-  it('gleichzeitiges Bearbeiten ergibt genau eine Kopie und geht nichts verloren', async () => {
+describe('zwei Geräte, ein veröffentlichtes Protokoll: der Text', () => {
+  it('gleichzeitiges Tippen läuft zusammen, ohne Kopie und ohne Verlust', async () => {
     const id = await sharedDoc();
-    await edit(anna, id, 'Anna: Anfang');
-    await edit(ben, id, 'Ben: Anfang');
-    await syncOf(ben, BEN); // Ben ist zuerst beim Server
-    await syncOf(anna, ANNA);
-    expect(copies()).toBe(1);
-    expect(await anna.protokolle.get(id)).toMatchObject({ title: 'Ben: Anfang', dirty: 0 });
-    expect(server.prepare("SELECT title FROM protocols WHERE title LIKE '% (Konflikt)'").get()).toMatchObject({ title: 'Anna: Anfang (Konflikt)' });
+    const a = await open(anna, ANNA, id);
+    const b = await open(ben, BEN, id);
+    typeInto(a.doc, ' Anna');
+    typeInto(b.doc, ' Ben');
+    await exchange(a, b, a);
+    expect(textOf(a.doc)).toBe(textOf(b.doc));
+    expect(textOf(a.doc)).toContain('Anna');
+    expect(textOf(a.doc)).toContain('Ben');
+    expect(serverText(id)).toBe(textOf(a.doc));
+    expect(server.db.prepare('SELECT COUNT(*) AS n FROM protocols').get()).toEqual({ n: 1 }); // keine Konfliktkopie
   });
 
-  it('weiteres Tippen während des Abgleichs erzeugt keine weiteren Kopien', async () => {
+  it('Ben schreibt ohne Netz, Anna inzwischen mit: beim Zusammenführen bleibt beides, ohne Konflikt', async () => {
     const id = await sharedDoc();
-    await edit(anna, id, 'Anna: Anfang');
-    await edit(ben, id, 'Ben: Anfang');
-    await syncOf(ben, BEN);
-
-    // Anna tippt bei jedem Abgleich weiter; ihre Fassung des Servers bleibt dabei veraltet.
-    for (let i = 0; i < 4; i++) await syncOf(anna, ANNA, () => edit(anna, id, `Anna: Stand ${i}`));
-    expect(copies()).toBe(1);
-    expect(await anna.protokolle.get(id)).toMatchObject({ title: 'Anna: Stand 3', dirty: 1 }); // die Arbeit am Gerät bleibt erhalten
-
-    // Sobald Anna aufhört, übernimmt ihr Gerät die Fassung des Servers; ihre Arbeit liegt in der einen Kopie.
-    await syncOf(anna, ANNA);
-    expect(copies()).toBe(1);
-    expect(await anna.protokolle.get(id)).toMatchObject({ title: 'Ben: Anfang', dirty: 0 });
-    expect(server.prepare("SELECT title FROM protocols WHERE title LIKE '% (Konflikt)'").get()).toMatchObject({ title: 'Anna: Stand 3 (Konflikt)' });
-    await syncOf(anna, ANNA);
-    expect(copies()).toBe(1);
+    // Ben: der Editor ist offen, die Verbindung bricht ab
+    const b = await open(ben, BEN, id);
+    server.offline = true;
+    typeInto(b.doc, ' (Ben im Zug)');
+    await exchange(b);
+    expect(b.getInfo().offline).toBe(true);
+    await b.destroy();
+    // Anna schreibt, sobald der Server wieder da ist
+    server.offline = false;
+    const a = await open(anna, ANNA, id);
+    typeInto(a.doc, ' (Anna im Büro)');
+    await exchange(a);
+    await a.destroy();
+    // Ben ist wieder online, ohne Editor: der Abgleich im Hintergrund führt zusammen
+    await server.syncOf(ben, BEN);
+    await server.syncOf(anna, ANNA);
+    const merged = serverText(id);
+    expect(merged).toContain('Ben im Zug');
+    expect(merged).toContain('Anna im Büro');
+    expect(textOf((await loadDoc(id, ben))!.doc)).toBe(merged);
+    expect(textOf((await loadDoc(id, anna))!.doc)).toBe(merged);
+    expect(await ben.ydocs.get(id)).toMatchObject({ dirty: 0 });
+    expect(server.db.prepare('SELECT COUNT(*) AS n FROM protocols').get()).toEqual({ n: 1 });
   });
 
-  it('eine verlorene Antwort führt bei der Wiederholung nicht zu einer Kopie', async () => {
-    const doc = { ...newProtokoll('', true), title: 'Sitzung' };
-    await anna.protokolle.add(doc);
+  it('eine Person auf zwei Geräten verhält sich wie zwei Personen; die Mitschreibenden nennen sie nur einmal und nie sich selbst', async () => {
+    const id = await sharedDoc();
+    const handy = newDevice('anna-handy');
+    await server.syncOf(handy, ANNA);
+    const a1 = await open(anna, ANNA, id);
+    const a2 = await open(handy, ANNA, id);
+    const b = await open(ben, BEN, id);
+    typeInto(a1.doc, ' vom Rechner');
+    typeInto(a2.doc, ' vom Handy');
+    await exchange(a1, a2, a1, b, a1);
+    expect(textOf(a1.doc)).toBe(textOf(a2.doc));
+    expect(a1.getInfo().peers).toEqual([BEN.id]);
+    expect(b.getInfo().peers.sort()).toEqual([ANNA.id]);
+  });
+
+  it('jedes Gerät sendet nur, was dem Server fehlt (nicht den ganzen Text bei jedem Takt)', async () => {
+    const id = await sharedDoc('x'.repeat(2000));
+    const a = await open(anna, ANNA, id);
+    await exchange(a);
+    const calls = server.exchanges.length;
+    typeInto(a.doc, '!');
+    await exchange(a);
+    const sent = server.exchanges.slice(calls).flatMap((r) => r.docs).find((d) => d.update)!;
+    expect(Buffer.from(sent.update!, 'base64').length).toBeLessThan(100);
+  });
+});
+
+describe('zwei Geräte: Kopfdaten', () => {
+  const edit = (store: HubDb, id: string, patch: Parameters<typeof saveHeader>[2]) => saveHeader(store, id, patch);
+
+  it('verschiedene Felder zweier Geräte gelten beide', async () => {
+    const id = await sharedDoc();
+    await edit(anna, id, { title: 'Neuer Titel' });
+    await edit(ben, id, { ort: 'Gerätehaus' });
+    await server.syncOf(anna, ANNA);
+    await server.syncOf(ben, BEN);
+    await server.syncOf(anna, ANNA);
+    for (const store of [anna, ben]) expect(await store.protokolle.get(id)).toMatchObject({ title: 'Neuer Titel', ort: 'Gerätehaus', dirty: 0 });
+    expect(server.db.prepare("SELECT COUNT(*) AS n FROM protocols WHERE title LIKE '%Konflikt%'").get()).toEqual({ n: 0 });
+  });
+
+  it('dasselbe Feld: die jüngere Änderung gewinnt, auf beiden Geräten', async () => {
+    const id = await sharedDoc();
+    await edit(anna, id, { title: 'Annas Titel' });
+    await new Promise((r) => setTimeout(r, 5));
+    await edit(ben, id, { title: 'Bens Titel' }); // später
+    await server.syncOf(ben, BEN); // Ben ist zuerst beim Server
+    await server.syncOf(anna, ANNA);
+    await server.syncOf(ben, BEN);
+    expect((await anna.protokolle.get(id))!.title).toBe('Bens Titel');
+    expect((await ben.protokolle.get(id))!.title).toBe('Bens Titel');
+    expect(server.row(id)!.title).toBe('Bens Titel');
+  });
+
+  it('weitertippen im Titel während des Abgleichs geht nicht verloren', async () => {
+    const id = await sharedDoc();
+    await edit(anna, id, { title: 'v1' });
+    let typed = false;
+    const res = await (async () => {
+      const { performSync } = await import('./sync');
+      const { applySync } = await import('../../../../server/src/sync');
+      return performSync(
+        async (req) => {
+          const out = applySync(server.db, JSON.parse(JSON.stringify(req)), ANNA);
+          if (!typed) {
+            typed = true;
+            await edit(anna, id, { title: 'v2' }); // der Nutzer tippt weiter, während die Anfrage unterwegs ist
+          }
+          return { ...JSON.parse(JSON.stringify(out)), api: 4 };
+        },
+        {},
+        anna,
+        server.blobsOf(ANNA),
+        server.transport(ANNA),
+      );
+    })();
+    expect(res.pushed).toBeGreaterThan(0);
+    expect(await anna.protokolle.get(id)).toMatchObject({ title: 'v2', dirty: 1 }); // die neuere Eingabe wartet auf den nächsten Abgleich
+    await server.syncOf(anna, ANNA);
+    expect(server.row(id)!.title).toBe('v2');
+    expect(await anna.protokolle.get(id)).toMatchObject({ title: 'v2', dirty: 0 });
+  });
+
+  it('eine verlorene Antwort führt bei der Wiederholung zu keinem zweiten Protokoll', async () => {
+    const { performSync } = await import('./sync');
+    const { applySync } = await import('../../../../server/src/sync');
+    const p: Protokoll = { ...newProtokoll('', true), title: 'Neu' };
+    await anna.protokolle.add(p);
     await expect(
       performSync(
         async (req) => {
-          applySync(server, wire(req) as unknown as ServerRequest, ANNA); // der Server hat gespeichert …
+          applySync(server.db, JSON.parse(JSON.stringify(req)), ANNA); // der Server hat gespeichert …
           throw new Error('Antwort verloren'); // … die Antwort kommt nicht an
         },
         {},
         anna,
       ),
     ).rejects.toThrow();
-    expect(await anna.protokolle.get(doc.id)).toMatchObject({ dirty: 1, rev: 0 });
+    expect(await anna.protokolle.get(p.id)).toMatchObject({ dirty: 1, rev: 0 });
+    await server.syncOf(anna, ANNA);
+    expect(server.db.prepare('SELECT COUNT(*) AS n FROM protocols').get()).toEqual({ n: 1 });
+    expect(await anna.protokolle.get(p.id)).toMatchObject({ dirty: 0 });
+  });
+});
 
-    await syncOf(anna, ANNA);
-    expect(copies()).toBe(0);
-    const stored = await anna.protokolle.get(doc.id);
-    expect(stored).toMatchObject({ dirty: 0 });
-    expect(stored!.rev).toBeGreaterThan(0);
+describe('zurückgezogen, gelöscht, ersetzt', () => {
+  it('zieht Anna das Protokoll zurück, während Ben ungesendeten Text hat, bleibt Bens Text als private Kopie', async () => {
+    const id = await sharedDoc();
+    const b = await open(ben, BEN, id);
+    typeInto(b.doc, ' Bens Ergänzung');
+    await b.flush();
+    await b.destroy();
+    await saveHeader(anna, id, { shared: false });
+    await server.syncOf(anna, ANNA); // privat
+    await server.syncOf(ben, BEN); // Ben erfährt es
+    expect(await ben.protokolle.get(id)).toBeUndefined();
+    expect(await ben.ydocs.get(id)).toBeUndefined();
+    const copy = (await ben.protokolle.toArray()).find((p) => p.title === 'Sitzung (lokale Fassung)');
+    expect(copy).toMatchObject({ shared: false });
+    expect(textOf((await loadDoc(copy!.id, ben))!.doc)).toBe('Basis Bens Ergänzung');
+    // die Kopie geht als neues, privates Protokoll von Ben hoch
+    await server.syncOf(ben, BEN);
+    const sent = server.db.prepare("SELECT ownerId, shared, content FROM protocols WHERE title = 'Sitzung (lokale Fassung)'").get() as { ownerId: string; shared: number; content: string };
+    expect(sent).toMatchObject({ ownerId: BEN.id, shared: 0 });
+    expect(sent.content).toContain('Bens Ergänzung');
   });
 
-  it('dieselbe Änderung auf einem veralteten Stand wird nicht zur Kopie, wenn der Inhalt schon beim Server liegt', async () => {
+  it('wird die Datenbank des Servers ersetzt (ältere Sicherung), gilt der Stand des Servers, ungesendetes bleibt als Kopie', async () => {
+    const id = await sharedDoc('Stand der Sicherung');
+    const a = await open(anna, ANNA, id);
+    typeInto(a.doc, ' und später geschrieben');
+    await exchange(a);
+    await a.destroy();
+    await server.syncOf(ben, BEN);
+    expect(textOf((await loadDoc(id, ben))!.doc)).toBe('Stand der Sicherung und später geschrieben');
+
+    // Anna schreibt noch etwas, das den Server nicht mehr erreicht, dann wird die ältere Sicherung eingespielt
+    const a2 = await open(anna, ANNA, id);
+    server.offline = true;
+    typeInto(a2.doc, ' (nur hier)');
+    await exchange(a2);
+    await a2.destroy();
+    server.offline = false;
+    const rows = server.db.prepare('SELECT * FROM protocols').all();
+    server.replaceDatabase();
+    server.put({ id, title: 'Sitzung', ownerId: ANNA.id, shared: true, content: doc(para('Stand der Sicherung')) });
+    expect(rows.length).toBe(1);
+
+    await server.syncOf(anna, ANNA); // erkennt die neue Datenbank
+    await server.syncOf(ben, BEN);
+    // beide haben den Stand der Sicherung; die Texte nach der Sicherung sind weg, wie bei einer Wiederherstellung gewollt
+    expect(textOf((await loadDoc(id, ben))!.doc)).toBe('Stand der Sicherung');
+    expect(textOf((await loadDoc(id, anna))!.doc)).toBe('Stand der Sicherung');
+    // aber was Anna nicht mehr abgeben konnte, ist nicht verloren
+    const copy = (await anna.protokolle.toArray()).find((p) => p.title.endsWith('(lokale Fassung)'))!;
+    expect(textOf((await loadDoc(copy.id, anna))!.doc)).toBe('Stand der Sicherung und später geschrieben (nur hier)');
+  });
+
+  it('der Server verliert den Text eines Protokolls, das nur dieses Gerät kennt: er geht mit dem ganzen Zustand hoch', async () => {
     const id = await sharedDoc();
-    await edit(anna, id, 'Gleicher Titel');
-    await edit(ben, id, 'Gleicher Titel');
-    await syncOf(ben, BEN);
-    await syncOf(anna, ANNA);
-    expect(copies()).toBe(0);
-    expect(await anna.protokolle.get(id)).toMatchObject({ title: 'Gleicher Titel', dirty: 0 });
+    const a = await open(anna, ANNA, id);
+    typeInto(a.doc, ' nur Anna');
+    await exchange(a);
+    await a.destroy();
+    server.replaceDatabase(); // der Server kennt das Protokoll nicht mehr
+    await server.syncOf(anna, ANNA);
+    await server.syncOf(anna, ANNA);
+    expect(serverText(id)).toBe('Basis nur Anna');
+  });
+});
+
+describe('Protokolle aus der Zeit vor 3.0.0', () => {
+  const legacyDoc = (title = 'Alt') => ({ ...newProtokoll('', true), title, rev: 0, content: doc(para('Aus 2.3.0')) });
+
+  it('ein nie gesendetes Protokoll mit Text geht mit seiner Basis hoch; der Server hat den Text', async () => {
+    const p = legacyDoc();
+    await anna.protokolle.add(p);
+    await server.syncOf(anna, ANNA);
+    expect(serverText(p.id)).toBe('Aus 2.3.0');
+    expect(await anna.ydocs.get(p.id)).toMatchObject({ dirty: 0 });
+    await server.syncOf(ben, BEN);
+    expect(textOf((await loadDoc(p.id, ben))!.doc)).toBe('Aus 2.3.0');
+  });
+
+  it('dieselbe Sicherung auf zwei Geräten (gleiche Kennung, beide nie gesendet): der Text wird nicht doppelt', async () => {
+    const p = legacyDoc();
+    // beide Geräte haben dasselbe Protokoll mit Kennung und Inhalt, zum Beispiel aus derselben Sicherung der App
+    await anna.protokolle.add(p);
+    await ben.protokolle.add({ ...p });
+    await server.syncOf(anna, ANNA);
+    await server.syncOf(ben, BEN); // Ben ist Betreuer: sieht es, weil veröffentlicht; eigener Text mit anderer Geschichte
+    await server.syncOf(ben, BEN); // der Zustand des Servers wird nachgeholt
+    const text = serverText(p.id);
+    expect(text).toBe('Aus 2.3.0'); // nicht „Aus 2.3.0Aus 2.3.0“
+    // Bens Fassung liegt als Kopie vor, der Zustand des Servers gilt
+    const copy = (await ben.protokolle.toArray()).find((x) => x.title === 'Alt (lokale Fassung)');
+    expect(copy).toBeDefined();
+    expect(textOf((await loadDoc(p.id, ben))!.doc)).toBe('Aus 2.3.0');
   });
 });
 
 describe('Fotos zwischen zwei Geräten', () => {
   const JPEG = Uint8Array.from([0xff, 0xd8, 0xff, 0xe0, 9, 8, 7, 6]);
-  const photoDoc = (blobId: string, shared: boolean) => ({
+  const photoDoc = (blobId: string, shared: boolean): Protokoll => ({
     ...newProtokoll('', shared),
     title: 'Mit Foto',
-    content: { type: 'doc', content: [{ type: 'paragraph' }, { type: 'photo', attrs: { blobId, mime: 'image/jpeg', w: 8, h: 6, caption: 'Teich' } }] },
+    rev: 0,
+    content: doc({ type: 'paragraph' }, { type: 'photo', attrs: { blobId, mime: 'image/jpeg', w: 8, h: 6, caption: 'Teich' } }),
   });
   const info = { id: 'foto-0001', kind: 'photo' as const, mime: 'image/jpeg', name: '' };
   const addPhoto = (store: HubDb) => putLocalBlob({ id: 'foto-0001', kind: 'photo', mime: 'image/jpeg', name: '', data: JPEG }, store);
@@ -163,13 +313,13 @@ describe('Fotos zwischen zwei Geräten', () => {
   it('ein veröffentlichtes Foto kommt bei Ben an, sobald er es anschaut', async () => {
     await addPhoto(anna);
     await anna.protokolle.add(photoDoc('foto-0001', true));
-    await syncOf(anna, ANNA);
+    await server.syncOf(anna, ANNA);
     expect(await anna.blobs.get('foto-0001')).toMatchObject({ state: 'synced' });
 
-    await syncOf(ben, BEN);
+    await server.syncOf(ben, BEN);
     expect(await ben.protokolle.count()).toBe(1);
     expect(await ben.blobs.count()).toBe(0); // geladen wird erst beim Anschauen
-    const got = await ensureBlob(info, blobsOf(BEN), ben);
+    const got = await ensureBlob(info, server.blobsOf(BEN), ben);
     expect(Array.from(got.data)).toEqual(Array.from(JPEG));
     expect(await ben.blobs.get('foto-0001')).toMatchObject({ state: 'synced' });
   });
@@ -177,42 +327,45 @@ describe('Fotos zwischen zwei Geräten', () => {
   it('ein privates Foto bekommt niemand sonst', async () => {
     await addPhoto(anna);
     await anna.protokolle.add(photoDoc('foto-0001', false));
-    await syncOf(anna, ANNA);
-    await expect(ensureBlob(info, blobsOf(BEN), ben)).rejects.toMatchObject({ reason: 'missing' });
+    await server.syncOf(anna, ANNA);
+    await expect(ensureBlob(info, server.blobsOf(BEN), ben)).rejects.toMatchObject({ reason: 'missing' });
   });
 
   it('zieht Anna das Protokoll zurück, ist das Foto für Ben weg, für sie nicht', async () => {
     await addPhoto(anna);
-    const doc = photoDoc('foto-0001', true);
-    await anna.protokolle.add(doc);
-    await syncOf(anna, ANNA);
-    await anna.protokolle.update(doc.id, { shared: false, updatedAt: ++clock, dirty: 1 });
-    await syncOf(anna, ANNA);
-    await expect(ensureBlob(info, blobsOf(BEN), ben)).rejects.toMatchObject({ reason: 'missing' });
-    expect(Array.from((await ensureBlob(info, blobsOf(ANNA), anna)).data)).toEqual(Array.from(JPEG));
+    const p = photoDoc('foto-0001', true);
+    await anna.protokolle.add(p);
+    await server.syncOf(anna, ANNA);
+    await saveHeader(anna, p.id, { shared: false });
+    await server.syncOf(anna, ANNA);
+    await expect(ensureBlob(info, server.blobsOf(BEN), ben)).rejects.toMatchObject({ reason: 'missing' });
+    expect(Array.from((await ensureBlob(info, server.blobsOf(ANNA), anna)).data)).toEqual(Array.from(JPEG));
   });
 
   it('wird die Server-Datenbank ersetzt, lädt das Gerät das Foto mit dem Protokoll erneut hoch', async () => {
     await addPhoto(anna);
     await anna.protokolle.add(photoDoc('foto-0001', true));
-    await syncOf(anna, ANNA);
-    server = openDb(':memory:'); // zum Beispiel eine ältere Sicherung eingespielt: das Foto ist weg
+    await server.syncOf(anna, ANNA);
+    server.replaceDatabase(); // zum Beispiel eine ältere Sicherung eingespielt: das Foto ist weg
 
-    await syncOf(anna, ANNA); // erkennt die neue Datenbank, merkt das Protokoll zum erneuten Senden vor
-    await syncOf(anna, ANNA); // sendet es; der Server meldet das fehlende Foto
-    expect(findBlob(server, 'foto-0001', ANNA.id)).toBeUndefined();
-    await syncOf(anna, ANNA); // lädt es hoch
-    expect(findBlob(server, 'foto-0001', ANNA.id)).toBeDefined();
+    await server.syncOf(anna, ANNA); // erkennt die neue Datenbank, merkt das Protokoll zum erneuten Senden vor
+    await server.syncOf(anna, ANNA); // sendet es samt Text; der Server meldet das fehlende Foto
+    expect(findBlob(server.db, 'foto-0001', ANNA.id)).toBeUndefined();
+    await server.syncOf(anna, ANNA); // lädt es hoch
+    expect(findBlob(server.db, 'foto-0001', ANNA.id)).toBeDefined();
     expect((await anna.blobs.get('foto-0001'))!.state).toBe('synced');
   });
 
   it('ein Server, der das Foto ablehnt, lässt den Rest des Abgleichs durch', async () => {
     await putLocalBlob({ id: 'kein-jpeg-1', kind: 'photo', mime: 'image/jpeg', name: '', data: Uint8Array.from([1, 2, 3, 4, 5]) }, anna);
     await anna.protokolle.add(photoDoc('kein-jpeg-1', true));
-    const res = await syncOf(anna, ANNA);
+    const res = await server.syncOf(anna, ANNA);
     expect(res.blobs).toEqual({ uploaded: 0, rejected: 1, failed: 0 });
     expect(await anna.protokolle.where('dirty').equals(1).count()).toBe(0);
     expect(await anna.blobs.get('kein-jpeg-1')).toMatchObject({ state: 'local' });
     expect((await anna.blobs.get('kein-jpeg-1'))!.rejected).toContain('JPEG');
   });
 });
+
+// Y bleibt eingebunden, auch wenn einzelne Tests es nicht brauchen (Typ für die Hilfsfunktionen oben).
+export type _Doc = Y.Doc;

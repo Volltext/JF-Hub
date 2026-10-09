@@ -8,6 +8,7 @@ import { TaskList } from '@tiptap/extension-task-list';
 import { TaskItem } from '@tiptap/extension-task-item';
 import { InkNode } from '@/features/ink/InkNode';
 import { FileNode, PhotoNode } from '@/features/attachments/AttachmentNodes';
+import { localOnly } from './collab/localExtensions';
 import { allowedLink, normalizeUrl } from './linkUrl';
 
 export { SCHEMA_VERSION } from './schemaVersion';
@@ -79,6 +80,11 @@ const Marker = Highlight.extend({
  */
 const SafeLink = Link.extend({
   inclusive: false,
+  // Die automatische Verlinkung läuft nur nach eigenen Eingaben: Bei einer Änderung eines anderen Geräts oder beim Öffnen würde sie
+  // sonst ins gemeinsame Dokument schreiben (und das andere Gerät reagierte darauf).
+  addProseMirrorPlugins() {
+    return (this.parent?.() ?? []).map(localOnly);
+  },
   addAttributes() {
     return {
       ...this.parent?.(),
@@ -101,9 +107,15 @@ function cellAttributes(this: { parent?: () => Record<string, unknown> }) {
   return { ...this.parent?.(), colspan: span('colspan', MAX_TABLE_COLS), rowspan: span('rowspan', MAX_TABLE_ROWS) };
 }
 
-/** Die Erweiterungen, die das Dokumentformat bestimmen (Knoten und Markierungen). Der Editor ergänzt sie nur um reine Oberfläche. */
+/**
+ * Die Erweiterungen, die das Dokumentformat bestimmen (Knoten und Markierungen). Der Editor ergänzt sie um die Anbindung an das
+ * geteilte Dokument und reine Oberfläche.
+ *
+ * Rückgängig/Wiederholen kommt von der Zusammenarbeit (macht nur eigene Schritte rückgängig), und der Absatz am Ende des Dokuments
+ * von `LocalTrailingNode`: Die Standardfassungen würden auch beim Öffnen oder bei fremden Änderungen schreiben.
+ */
 export const EXTENSIONS = [
-  StarterKit.configure({ heading: { levels: [1, 2, 3] }, link: false }),
+  StarterKit.configure({ heading: { levels: [1, 2, 3] }, link: false, undoRedo: false, trailingNode: false }),
   SafeLink,
   Marker,
   TaskList,
@@ -119,7 +131,8 @@ export const EXTENSIONS = [
 ];
 
 let schema: Schema | undefined;
-const appSchema = (): Schema => (schema ??= getSchema(EXTENSIONS));
+/** Das Schema des Editors dieser App-Version. */
+export const appSchema = (): Schema => (schema ??= getSchema(EXTENSIONS));
 
 /**
  * Kennt diese App-Version alle Knoten und Markierungen des Dokuments?

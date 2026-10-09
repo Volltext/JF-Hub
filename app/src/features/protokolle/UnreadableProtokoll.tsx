@@ -5,11 +5,15 @@ import { SyncBadge } from './SyncBadge';
 import type { Protokoll } from './model';
 import { extractText } from './search';
 
+const UNKNOWN_ELEMENTS =
+  'Dieses Protokoll enthält Elemente, die diese App-Version nicht kennt (zum Beispiel aus einer neueren Version). Es wird nur gelesen und nicht verändert. Bitte die App aktualisieren, um es zu bearbeiten.';
+
 /**
- * Protokoll, dessen Inhalt diese App-Version nicht vollständig versteht (zum Beispiel eine Tabelle aus einer neueren Version).
- * Es wird nur als Text gezeigt und nie gespeichert; so gehen die Elemente nicht verloren, die ein Editor verwerfen würde.
+ * Protokoll, das nicht bearbeitet werden kann: Es enthält Elemente, die diese App-Version nicht kennt (zum Beispiel eine Tabelle aus einer
+ * neueren Version), der Server hat den Text noch nicht umgestellt, oder der Text ist erst nach einem Abgleich zu haben. Es wird nur als
+ * Text gezeigt und nie gespeichert; so gehen die Elemente nicht verloren, die ein Editor verwerfen würde.
  */
-export function UnreadableProtokoll({ doc, backTo }: { doc: Protokoll; backTo: string }) {
+export function UnreadableProtokoll({ doc, backTo, message = UNKNOWN_ELEMENTS, onRetry }: { doc: Protokoll; backTo: string; message?: string; onRetry?: () => void }) {
   const meta = [doc.datum && formatDate(doc.datum, true), [doc.beginn, doc.ende].filter(Boolean).join('–'), doc.ort, doc.leitung].filter(Boolean).join(' · ');
   return (
     <div className="proto">
@@ -21,9 +25,15 @@ export function UnreadableProtokoll({ doc, backTo }: { doc: Protokoll; backTo: s
         <SyncBadge compact />
       </div>
       <p role="alert" className="proto-error">
-        Dieses Protokoll enthält Elemente, die diese App-Version nicht kennt (zum Beispiel aus einer neueren Version). Es wird nur gelesen und nicht verändert.
-        Bitte die App aktualisieren, um es zu bearbeiten.
+        {message}
       </p>
+      {onRetry && (
+        <p>
+          <button type="button" className="btn" onClick={onRetry}>
+            Erneut versuchen
+          </button>
+        </p>
+      )}
       <section className="proto-sheet">
         <h1 className="page__title">{doc.title || 'Ohne Titel'}</h1>
         {meta && <p className="muted">{meta}</p>}

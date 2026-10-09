@@ -1,3 +1,4 @@
+import * as Y from 'yjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { putLocalBlob } from '@/core/db/blobs';
 import { db } from '@/core/db/db';
@@ -14,14 +15,14 @@ vi.mock('./http', async () => {
 import { ProtoError } from './http';
 import { syncNow } from './sync';
 
-const reply = (over: Record<string, unknown> = {}) => ({ rev: 1, changes: [], folders: [], records: [], conflicts: [], api: 3, ...over });
+const reply = (over: Record<string, unknown> = {}) => ({ rev: 1, changes: [], folders: [], records: [], conflicts: [], api: 4, ...over });
 const status = () => useSyncStatus.getState();
 
 beforeEach(async () => {
   request.mockReset();
   conn = { url: 'https://hub.example', token: 't' };
   useSyncStatus.setState({ state: 'off', message: '', lastSyncAt: null, counts: null });
-  await Promise.all([db.protokolle.clear(), db.folders.clear(), db.outbox.clear(), db.blobs.clear(), db.blobData.clear(), db.kv.clear()]);
+  await Promise.all([db.protokolle.clear(), db.ydocs.clear(), db.folders.clear(), db.outbox.clear(), db.blobs.clear(), db.blobData.clear(), db.kv.clear()]);
   // Ein Gerät, das sich schon einmal mit einem aktuellen Server abgeglichen hat (sonst käme ein vollständiger Abgleich mit Nachlauf).
   await db.kv.put({ key: 'protokolle.serverRecords', value: true });
 });
@@ -104,6 +105,36 @@ describe('syncNow', () => {
     await db.protokolle.update(p.id, { content: { type: 'doc', content: [{ type: 'paragraph' }] } });
     await syncNow();
     expect(status().message).not.toContain('Anhang');
+  });
+
+  it('nach den Kopfdaten wird der Text ausgetauscht; ein Text, der nicht mehr abrufbar war, wird im Hinweis genannt', async () => {
+    const p = { ...newProtokoll(), dirty: 0 as const, rev: 5, title: 'Sitzung' };
+    await db.protokolle.add(p);
+    const text = new Y.Doc();
+    const para = new Y.XmlElement('paragraph');
+    const t = new Y.XmlText();
+    t.insert(0, 'ungesendet');
+    para.insert(0, [t]);
+    text.getXmlFragment('body').insert(0, [para]);
+    await db.ydocs.put({ id: p.id, update: Y.encodeStateAsUpdate(text), dirty: 1, seq: 1 });
+    request.mockImplementation(async (_conn: unknown, _method: string, path: string) => (path === '/api/sync' ? reply() : { docs: [{ id: p.id, status: 'gone' }] }));
+    const res = await syncNow();
+    expect(res?.text).toMatchObject({ copies: 1 });
+    expect(request.mock.calls.map((c) => c[2])).toEqual(['/api/sync', '/api/collab/exchange']);
+    expect(status().message).toContain('als Kopie „(lokale Fassung)“ vor');
+    expect(await db.protokolle.filter((x) => x.title.endsWith('(lokale Fassung)')).count()).toBe(1);
+  });
+
+  it('steht noch Text aus (mehr als ein Lauf fasst), folgt gleich ein weiterer Lauf', async () => {
+    const ids = Array.from({ length: 25 }, (_, i) => `doc-${String(i).padStart(6, '0')}`);
+    await db.protokolle.bulkAdd(ids.map((id, i) => ({ ...newProtokoll(), id, dirty: 0 as const, rev: 5, datum: `2026-01-${String(i + 1).padStart(2, '0')}` })));
+    request.mockImplementation(async (_c: unknown, _m: string, path: string, body: { docs?: { id: string }[] }) =>
+      path === '/api/sync' ? reply() : { docs: (body.docs ?? []).map((d) => ({ id: d.id, status: 'ok', rev: 5 })) },
+    );
+    await syncNow();
+    await vi.waitFor(() => expect(request.mock.calls.filter((c) => c[2] === '/api/collab/exchange')).toHaveLength(2));
+    await new Promise((r) => setTimeout(r, 30));
+    expect(request.mock.calls.filter((c) => c[2] === '/api/collab/exchange')).toHaveLength(2); // dann ist nichts mehr offen
   });
 
   it('ein Server mit zu alter Schnittstelle wird als Fehler gemeldet', async () => {

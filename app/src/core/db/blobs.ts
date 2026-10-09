@@ -133,7 +133,9 @@ export async function evictBlobs(limit: number = CACHE_LIMIT_BYTES, store: HubDb
   const copies = await store.blobs.where('state').equals('synced').toArray();
   let total = copies.reduce((sum, b) => sum + b.size, 0);
   if (total <= limit) return 0;
-  const inUse = new Set((await store.protokolle.where('dirty').equals(1).toArray()).flatMap((p) => blobIdsIn(p.content)));
+  // Auch Texte mit ungesendeten Änderungen: Ihre Anhänge hat womöglich nur dieses Gerät.
+  const unsent = new Set([...((await store.protokolle.where('dirty').equals(1).primaryKeys()) as string[]), ...((await store.ydocs.where('dirty').equals(1).primaryKeys()) as string[])]);
+  const inUse = new Set((await store.protokolle.bulkGet([...unsent])).flatMap((p) => (p ? blobIdsIn(p.content) : [])));
   const drop: string[] = [];
   for (const b of copies.sort((a, c) => a.lastUsedAt - c.lastUsedAt)) {
     if (total <= limit) break;

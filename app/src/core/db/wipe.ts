@@ -20,9 +20,10 @@ const SYNC_KV_KEYS = [
  * Einstellungen, Ferien-Zwischenspeicher und die laufende Stoppuhr, Aufstellung und Wertung dieses Geräts bleiben.
  */
 export async function wipeLocalData(): Promise<void> {
-  await db.transaction('rw', [db.protokolle, db.folders, db.members, db.sessions, db.tasks, db.clothing, db.clothingItems, db.runs, db.lineupTemplates, db.outbox, db.blobs, db.blobData, db.kv], async () => {
+  await db.transaction('rw', [db.protokolle, db.ydocs, db.folders, db.members, db.sessions, db.tasks, db.clothing, db.clothingItems, db.runs, db.lineupTemplates, db.outbox, db.blobs, db.blobData, db.kv], async () => {
     await Promise.all([
       db.protokolle.clear(),
+      db.ydocs.clear(),
       db.folders.clear(),
       db.members.clear(),
       db.sessions.clear(),
@@ -39,7 +40,13 @@ export async function wipeLocalData(): Promise<void> {
   });
 }
 
-/** Zahl der Einträge, die noch nicht auf dem Server sind (geht beim Abmelden verloren), Fotos und Dateien eingeschlossen. */
+/**
+ * Zahl der Einträge, die noch nicht auf dem Server sind (geht beim Abmelden verloren), Fotos und Dateien eingeschlossen.
+ * Ein Protokoll, dessen Kopfdaten und Text beide ungesendet sind, zählt einmal.
+ */
 export async function unsyncedCount(): Promise<number> {
-  return (await db.protokolle.where('dirty').equals(1).count()) + (await db.folders.where('dirty').equals(1).count()) + (await db.outbox.count()) + (await localBlobCount());
+  const headers = (await db.protokolle.where('dirty').equals(1).primaryKeys()) as string[];
+  const texts = (await db.ydocs.where('dirty').equals(1).primaryKeys()) as string[];
+  const protocols = new Set([...headers, ...texts]).size;
+  return protocols + (await db.folders.where('dirty').equals(1).count()) + (await db.outbox.count()) + (await localBlobCount());
 }

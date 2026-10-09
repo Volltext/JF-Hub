@@ -1,18 +1,27 @@
+import * as Y from 'yjs';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { db } from '@/core/db/db';
 import { putLocalBlob } from '@/core/db/blobs';
-import { newProtokoll } from './model';
+import { newProtokoll, type Protokoll } from './model';
 import type { BlobTransport } from './blobSync';
+import type { ExchangeTransport } from './collab/wire';
 import { ProtoError } from './http';
 import { MIN_SERVER_API } from './schemaVersion';
 import { performSync as syncAgainstServer, type ServerDoc, type SyncRequest, type SyncResponse } from './sync';
 
 /** Die Server dieser Tests sprechen die Schnittstelle, die die App verlangt (außer ein Test sagt ausdrücklich etwas anderes). */
-const performSync: typeof syncAgainstServer = (send, opts, store, blobs) =>
-  syncAgainstServer(async (req) => {
-    const res = await send(req);
-    return 'api' in res ? res : { ...res, api: MIN_SERVER_API };
-  }, opts, store, blobs);
+const performSync: typeof syncAgainstServer = (send, opts, store, blobs, text) =>
+  syncAgainstServer(
+    async (req) => {
+      const res = await send(req);
+      return 'api' in res ? res : { ...res, api: MIN_SERVER_API };
+    },
+    opts,
+    store,
+    blobs,
+    // Ohne Angabe ist der Server für den Text nicht erreichbar (wie ohne Netz): Der Abgleich der Kopfdaten kommt trotzdem zum Ende.
+    text ?? (async () => Promise.reject(new ProtoError('Keine Verbindung zum Server.', 0))),
+  );
 
 
 const serverDoc = (id: string, over: Partial<ServerDoc> = {}): ServerDoc => ({
@@ -27,11 +36,30 @@ const serverDoc = (id: string, over: Partial<ServerDoc> = {}): ServerDoc => ({
   updatedAt: 1,
   rev: 5,
   deleted: false,
+  ymode: 1,
+  metaAt: {},
   ...over,
 });
 
+/** So sieht der Server eine lokale Zeile, nachdem er ihre Kopfdaten angenommen hat. */
+const echo = (p: Protokoll, over: Partial<ServerDoc> = {}): ServerDoc =>
+  serverDoc(p.id, {
+    title: p.title,
+    datum: p.datum,
+    beginn: p.beginn,
+    ende: p.ende,
+    ort: p.ort,
+    leitung: p.leitung,
+    folderId: p.folderId ?? '',
+    shared: p.shared === true,
+    content: p.content,
+    updatedAt: p.updatedAt,
+    metaAt: p.metaAt,
+    ...over,
+  });
+
 beforeEach(async () => {
-  await Promise.all([db.protokolle.clear(), db.folders.clear(), db.outbox.clear(), db.tasks.clear(), db.members.clear(), db.sessions.clear(), db.clothing.clear(), db.clothingItems.clear(), db.runs.clear(), db.lineupTemplates.clear(), db.blobs.clear(), db.blobData.clear(), db.kv.clear()]);
+  await Promise.all([db.protokolle.clear(), db.ydocs.clear(), db.folders.clear(), db.outbox.clear(), db.tasks.clear(), db.members.clear(), db.sessions.clear(), db.clothing.clear(), db.clothingItems.clear(), db.runs.clear(), db.lineupTemplates.clear(), db.blobs.clear(), db.blobData.clear(), db.kv.clear()]);
 });
 
 describe('performSync', () => {
@@ -42,14 +70,29 @@ describe('performSync', () => {
     let seen: SyncRequest | undefined;
     const res = await performSync(async (req) => {
       seen = req;
-      return { rev: 7, changes: [serverDoc(a.id, { title: 'A', updatedAt: a.updatedAt, rev: 7 })], folders: [], conflicts: [] };
+      return { rev: 7, changes: [echo(a, { rev: 7 })], folders: [], conflicts: [] };
     });
-    expect(seen!.changes.map((c) => c.id)).toEqual([a.id]);
-    expect(seen!.changes[0]!.baseRev).toBe(0);
+    expect(seen!.protocols.map((c) => c.id)).toEqual([a.id]);
+    expect(seen!.protocols[0]!.baseRev).toBe(0);
     expect(res.pushed).toBe(1);
     const stored = await db.protokolle.get(a.id);
     expect(stored).toMatchObject({ dirty: 0, rev: 7 });
     expect((await db.kv.get('protokolle.rev'))?.value).toBe(7);
+  });
+
+  it('sendet nur die Kopfdaten mit ihren Änderungszeiten, nie den Text', async () => {
+    const a = { ...newProtokoll(), title: 'A', metaAt: { title: 1000, datum: 500 } };
+    await db.protokolle.add(a);
+    let seen: SyncRequest | undefined;
+    await performSync(async (req) => {
+      seen = req;
+      return { rev: 1, changes: [], folders: [], conflicts: [] };
+    });
+    const sent = seen!.protocols[0]!;
+    expect(sent).not.toHaveProperty('content');
+    expect(sent.metaAt).toMatchObject({ title: 1000, datum: 500 });
+    expect(sent.metaAt.ort).toBe(a.updatedAt); // ohne eigene Zeit gilt die der Zeile
+    expect(JSON.stringify(seen)).not.toContain('"changes"');
   });
 
   it('übernimmt neue Protokolle und Löschungen vom Server', async () => {
@@ -57,36 +100,12 @@ describe('performSync', () => {
     await db.protokolle.add(gone);
     await performSync(async () => ({
       rev: 9,
-      changes: [serverDoc('neu-123456'), serverDoc(gone.id, { deleted: true, rev: 9 })],
+      changes: [serverDoc('neu-123456', { metaAt: { title: 77 } }), serverDoc(gone.id, { deleted: true, rev: 9 })],
       folders: [],
       conflicts: [],
     }));
-    expect(await db.protokolle.get('neu-123456')).toMatchObject({ title: 'Server', dirty: 0 });
+    expect(await db.protokolle.get('neu-123456')).toMatchObject({ title: 'Server', dirty: 0, metaAt: { title: 77 }, content: { type: 'doc' } });
     expect(await db.protokolle.get(gone.id)).toBeUndefined();
-  });
-
-  it('behält lokale Bearbeitungen, die während der Übertragung entstanden sind', async () => {
-    const p = { ...newProtokoll(), title: 'v1' };
-    await db.protokolle.add(p);
-    await performSync(async (req) => {
-      // Nutzer tippt weiter, während die Anfrage unterwegs ist
-      await db.protokolle.update(p.id, { title: 'v2', updatedAt: p.updatedAt + 50, dirty: 1 });
-      return { rev: 4, changes: [serverDoc(p.id, { title: 'v1', updatedAt: req.changes[0]!.updatedAt, rev: 4 })], folders: [], conflicts: [] };
-    });
-    expect(await db.protokolle.get(p.id)).toMatchObject({ title: 'v2', dirty: 1, rev: 4 });
-  });
-
-  it('ersetzt bei Konflikt die lokale Fassung und legt die Kopie an', async () => {
-    const p = { ...newProtokoll(), title: 'Gerät B', rev: 1 };
-    await db.protokolle.add(p);
-    await performSync(async () => ({
-      rev: 10,
-      changes: [serverDoc(p.id, { title: 'Gerät A', rev: 8 }), serverDoc('kopie-123456', { title: 'Gerät B (Konflikt)', rev: 10 })],
-      folders: [],
-      conflicts: [{ id: p.id, copyId: 'kopie-123456' }],
-    }));
-    expect((await db.protokolle.get(p.id))?.title).toBe('Gerät A');
-    expect((await db.protokolle.get('kopie-123456'))?.title).toBe('Gerät B (Konflikt)');
   });
 
   it('lässt lokale Daten bei Fehlern des Servers unverändert', async () => {
@@ -95,52 +114,123 @@ describe('performSync', () => {
     await expect(performSync(async () => Promise.reject(new Error('offline')))).rejects.toThrow();
     expect(await db.protokolle.get(p.id)).toMatchObject({ dirty: 1 });
   });
+
+  it('der Text kommt nur über den Austausch: ein veränderter Schnappschuss des Servers ersetzt den lokalen Text nur, wenn hier nichts ungesendet ist', async () => {
+    const clean = { ...newProtokoll(), dirty: 0 as const, rev: 2, content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'alt' }] }] } };
+    const unsent = { ...newProtokoll(), dirty: 0 as const, rev: 2, content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'lokal getippt' }] }] } };
+    await db.protokolle.bulkAdd([clean, unsent]);
+    await db.ydocs.put({ id: unsent.id, update: new Uint8Array([0, 0]), dirty: 1, seq: 1 });
+    const fromServer = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'vom Server' }] }] };
+    await performSync(async () => ({ rev: 8, changes: [echo(clean, { content: fromServer, rev: 8 }), echo(unsent, { content: fromServer, rev: 8 })], folders: [], conflicts: [] }));
+    expect((await db.protokolle.get(clean.id))!.content).toEqual(fromServer);
+    expect((await db.protokolle.get(unsent.id))!.content).toEqual(unsent.content); // der ungesendete Text bleibt sichtbar
+  });
+
+  it('ein Protokoll, das der Server noch nicht umgestellt hat, ist nur lesbar; ab der Umstellung nicht mehr', async () => {
+    await performSync(async () => ({ rev: 2, changes: [serverDoc('alt-000001', { ymode: 0 })], folders: [], conflicts: [] }));
+    expect((await db.protokolle.get('alt-000001'))!.legacy).toBe(true);
+    await performSync(async () => ({ rev: 3, changes: [serverDoc('alt-000001', { ymode: 1, rev: 3 })], folders: [], conflicts: [] }));
+    expect((await db.protokolle.get('alt-000001'))!.legacy).toBeUndefined();
+  });
+
+  it('merkt sich, bis zu welcher Revision der Text bekannt ist, auch wenn die Zeile neu geschrieben wird', async () => {
+    const p = { ...newProtokoll(), dirty: 0 as const, rev: 2, textRev: 2 };
+    await db.protokolle.add(p);
+    await performSync(async () => ({ rev: 6, changes: [echo(p, { rev: 6, title: 'Neuer Titel', metaAt: { title: 99 } })], folders: [], conflicts: [] }));
+    expect(await db.protokolle.get(p.id)).toMatchObject({ rev: 6, textRev: 2, title: 'Neuer Titel' }); // der Text ist noch der von Revision 2
+  });
 });
 
-describe('performSync: übersprungene Server-Dokumente', () => {
-  const cursor = async () => (await db.kv.get('protokolle.rev'))?.value;
+describe('performSync: Kopfdaten Feld für Feld', () => {
+  const rowOf = (over: Partial<Protokoll> = {}): Protokoll => ({ ...newProtokoll(), title: 'Lokal', ort: 'Alt', dirty: 1, rev: 3, updatedAt: 500, metaAt: { title: 400, ort: 100, datum: 100, beginn: 100, ende: 100, leitung: 100, folderId: 100, shared: 100 }, ...over });
 
-  it('rückt den Stand nicht über ein Dokument hinaus, das wegen lokaler Bearbeitung übersprungen wurde', async () => {
-    const p = { ...newProtokoll(), title: 'v1', dirty: 0 as const, rev: 1 };
+  it('jüngere lokale Felder bleiben und gehen beim nächsten Abgleich hoch, ältere nimmt der Server', async () => {
+    const p = rowOf();
     await db.protokolle.add(p);
-    await performSync(async () => {
-      // Der Nutzer tippt los, während die Antwort mit der Fassung eines anderen Geräts unterwegs ist.
-      await db.protokolle.update(p.id, { title: 'v2', updatedAt: p.updatedAt + 50, dirty: 1 });
-      return { rev: 10, changes: [serverDoc(p.id, { title: 'fremd', rev: 8, updatedAt: 99 })], folders: [], conflicts: [] };
-    });
-    expect(await db.protokolle.get(p.id)).toMatchObject({ title: 'v2', dirty: 1, rev: 1 });
-    // Der Stand bleibt vor dem übersprungenen Dokument, damit der Server es beim nächsten Abgleich erneut liefert.
-    expect(await cursor()).toBe(7);
-  });
-
-  it('hält den Stand auch, wenn während der Übertragung weitergetippt wird und der Server eine fremde Fassung liefert', async () => {
-    const p = { ...newProtokoll(), title: 'v1', rev: 1 };
-    await db.protokolle.add(p);
-    await performSync(async () => {
-      await db.protokolle.update(p.id, { title: 'v2', updatedAt: p.updatedAt + 50, dirty: 1 });
-      return {
-        rev: 10,
-        changes: [serverDoc(p.id, { title: 'fremd', rev: 8, updatedAt: 99 }), serverDoc('kopie-123456', { title: 'v1 (Konflikt)', rev: 9 })],
-        folders: [],
-        conflicts: [{ id: p.id, copyId: 'kopie-123456' }],
-      };
-    });
-    expect(await db.protokolle.get(p.id)).toMatchObject({ title: 'v2', dirty: 1 });
-    expect(await cursor()).toBe(7);
-  });
-
-  it('übernimmt das erneut gelieferte Dokument, sobald nichts mehr in Arbeit ist, und rückt dann vor', async () => {
-    const p = { ...newProtokoll(), title: 'v2', rev: 1 };
-    await db.protokolle.add(p);
-    await db.kv.put({ key: 'protokolle.rev', value: 7 });
     await performSync(async () => ({
-      rev: 10,
-      changes: [serverDoc(p.id, { title: 'fremd', rev: 8, updatedAt: 99 }), serverDoc('kopie-123456', { title: 'v2 (Konflikt)', rev: 9 })],
+      rev: 8,
+      // Der Server hat den Ort neu (Zeit 300 > 100), den Titel aber nur alt (Zeit 200 < 400 lokal)
+      changes: [echo(p, { title: 'Server-Titel', ort: 'Neuer Ort', rev: 8, metaAt: { ...p.metaAt, title: 200, ort: 300 } })],
       folders: [],
-      conflicts: [{ id: p.id, copyId: 'kopie-123456' }],
+      conflicts: [],
     }));
-    expect(await db.protokolle.get(p.id)).toMatchObject({ title: 'fremd', dirty: 0, rev: 8 });
-    expect(await cursor()).toBe(10);
+    expect(await db.protokolle.get(p.id)).toMatchObject({ title: 'Lokal', ort: 'Neuer Ort', dirty: 1, rev: 8, metaAt: { title: 400, ort: 300 } });
+  });
+
+  it('sind die Werte gleich, ist nichts mehr offen', async () => {
+    const p = rowOf();
+    await db.protokolle.add(p);
+    await performSync(async () => ({ rev: 8, changes: [echo(p, { rev: 8, metaAt: { ...p.metaAt, title: 450 } })], folders: [], conflicts: [] }));
+    expect(await db.protokolle.get(p.id)).toMatchObject({ dirty: 0, metaAt: { title: 450 } });
+  });
+
+  it('gleiche Zeit: der größere Wert gewinnt, auf allen Geräten gleich', async () => {
+    const p = rowOf({ title: 'Anna', metaAt: { title: 400 } });
+    await db.protokolle.add(p);
+    await performSync(async () => ({ rev: 8, changes: [echo(p, { title: 'Ben', rev: 8, metaAt: { title: 400 } })], folders: [], conflicts: [] }));
+    expect((await db.protokolle.get(p.id))!.title).toBe('Ben'); // 'Ben' > 'Anna'
+    const q = rowOf({ id: 'q-00000001', title: 'Zora', metaAt: { title: 400 } });
+    await db.protokolle.add(q);
+    await performSync(async () => ({ rev: 9, changes: [echo(q, { title: 'Ben', rev: 9, metaAt: { title: 400 } })], folders: [], conflicts: [] }));
+    expect(await db.protokolle.get(q.id)).toMatchObject({ title: 'Zora', dirty: 1 });
+  });
+
+  it('behält Änderungen, die während der Übertragung entstanden sind, ohne die Antwort zu überschreiben', async () => {
+    const p = rowOf({ title: 'v1', metaAt: { title: 400 } });
+    await db.protokolle.add(p);
+    await performSync(async (req) => {
+      // Der Nutzer tippt weiter, während die Anfrage unterwegs ist
+      await db.protokolle.update(p.id, { title: 'v2', updatedAt: 600, dirty: 1, metaAt: { ...p.metaAt, title: 600 } });
+      return { rev: 4, changes: [echo(p, { title: 'v1', rev: 4, metaAt: { title: req.protocols[0]!.metaAt.title } })], folders: [], conflicts: [] };
+    });
+    expect(await db.protokolle.get(p.id)).toMatchObject({ title: 'v2', dirty: 1, rev: 4, metaAt: { title: 600 } });
+  });
+
+  it('ein Dokument, das hier nicht vorgemerkt war, wird sofort übernommen (kein Festhalten des Stands mehr)', async () => {
+    const p = { ...newProtokoll(), title: 'v1', dirty: 0 as const, rev: 1, metaAt: { title: 10 } };
+    await db.protokolle.add(p);
+    await performSync(async () => {
+      await db.protokolle.update(p.id, { title: 'v2', dirty: 1, metaAt: { title: 20 }, updatedAt: 99 });
+      return { rev: 10, changes: [echo(p, { title: 'fremd', rev: 8, updatedAt: 55, metaAt: { title: 15 } })], folders: [], conflicts: [] };
+    });
+    // die lokale Änderung (20) ist jünger als die fremde (15): sie bleibt; der Stand rückt trotzdem vor
+    expect(await db.protokolle.get(p.id)).toMatchObject({ title: 'v2', dirty: 1, rev: 8 });
+    expect((await db.kv.get('protokolle.rev'))?.value).toBe(10);
+  });
+
+  it('ein lokal gelöschtes Protokoll bleibt zum Löschen vorgemerkt; verweigert der Server das Löschen, kommt es zurück', async () => {
+    const mine = { ...newProtokoll(), dirty: 1 as const, rev: 3, deleted: 1 as const };
+    await db.protokolle.add(mine);
+    // das Löschen war Teil der Anfrage, der Server lässt es nicht zu und liefert das Protokoll lebendig zurück
+    await performSync(async () => ({ rev: 4, changes: [echo(mine, { rev: 4 })], folders: [], conflicts: [] }));
+    expect(await db.protokolle.get(mine.id)).toMatchObject({ deleted: 0, dirty: 0 });
+
+    // anders, wenn erst nach dem Senden gelöscht wurde
+    const later = { ...newProtokoll(), dirty: 0 as const, rev: 3 };
+    await db.protokolle.add(later);
+    await performSync(async () => {
+      await db.protokolle.update(later.id, { deleted: 1, dirty: 1 });
+      return { rev: 5, changes: [echo(later, { rev: 5 })], folders: [], conflicts: [] };
+    });
+    expect(await db.protokolle.get(later.id)).toMatchObject({ deleted: 1, dirty: 1 });
+  });
+
+  it('wird ein Protokoll gelöscht oder zurückgezogen, während hier ungesendeter Text liegt, bleibt der Text als Kopie erhalten', async () => {
+    const p = { ...newProtokoll('', true), dirty: 0 as const, rev: 3, title: 'Weg', content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'wichtig' }] }] } };
+    await db.protokolle.add(p);
+    const text = new Y.Doc();
+    const para = new Y.XmlElement('paragraph');
+    const t = new Y.XmlText();
+    t.insert(0, 'wichtig');
+    para.insert(0, [t]);
+    text.getXmlFragment('body').insert(0, [para]);
+    await db.ydocs.put({ id: p.id, update: Y.encodeStateAsUpdate(text), dirty: 1, seq: 1 });
+    await performSync(async () => ({ rev: 9, changes: [serverDoc(p.id, { deleted: true, rev: 9 })], folders: [], conflicts: [] }));
+    expect(await db.protokolle.get(p.id)).toBeUndefined();
+    expect(await db.ydocs.get(p.id)).toBeUndefined();
+    const copy = (await db.protokolle.toArray())[0]!;
+    expect(copy).toMatchObject({ title: 'Weg (lokale Fassung)', rev: 0, dirty: 1, shared: false });
+    expect(await db.ydocs.get(copy.id)).toMatchObject({ dirty: 1 });
   });
 });
 
@@ -152,7 +242,7 @@ describe('performSync: vom Server abgelehnte Protokolle', () => {
     await db.protokolle.add(p);
     const seen: string[][] = [];
     const send = async (req: SyncRequest) => {
-      seen.push(req.changes.map((c) => c.id));
+      seen.push(req.protocols.map((c) => c.id));
       return rejection(p.id);
     };
     const first = await performSync(send);
@@ -170,7 +260,7 @@ describe('performSync: vom Server abgelehnte Protokolle', () => {
     const p = { ...newProtokoll(), title: 'v1' };
     await db.protokolle.add(p);
     await performSync(async () => {
-      await db.protokolle.update(p.id, { title: 'v2', updatedAt: p.updatedAt + 50, dirty: 1 });
+      await db.protokolle.update(p.id, { title: 'v2', updatedAt: p.updatedAt + 50, dirty: 1, metaAt: { ...p.metaAt, title: p.updatedAt + 50 } });
       return rejection(p.id);
     });
     expect((await db.protokolle.get(p.id))?.rejected).toBeUndefined();
@@ -179,7 +269,7 @@ describe('performSync: vom Server abgelehnte Protokolle', () => {
   it('kommt ein älterer Server ohne `rejected` aus, ändert sich nichts', async () => {
     const p = newProtokoll();
     await db.protokolle.add(p);
-    const res = await performSync(async () => ({ rev: 2, changes: [serverDoc(p.id, { updatedAt: p.updatedAt, rev: 2 })], folders: [], conflicts: [] }));
+    const res = await performSync(async () => ({ rev: 2, changes: [echo(p, { rev: 2 })], folders: [], conflicts: [] }));
     expect(res.rejected).toBe(0);
   });
 });
@@ -405,7 +495,7 @@ describe('performSync: Besitzer und Sichtbarkeit', () => {
       sent = req;
       return { rev: 3, changes: [], folders: [], records: [], conflicts: [] };
     });
-    const byId = new Map(sent!.changes.map((c) => [c.id, c.shared]));
+    const byId = new Map(sent!.protocols.map((c) => [c.id, c.shared]));
     expect(byId.get(open.id)).toBe(true);
     expect(byId.get(closed.id)).toBe(false);
     expect(sent!.records[0]).toMatchObject({ id: 'task-offen', shared: true });
@@ -499,8 +589,8 @@ describe('Anhänge im Abgleich', () => {
     const transport: BlobTransport = { upload: async (meta) => void order.push(`upload ${meta.id}`), download: noDownload };
     const res = await performSync(
       async (req) => {
-        order.push(`sync ${req.changes.map((c) => c.id).join(',')}`);
-        return { rev: 3, changes: [serverDoc(p.id, { title: 'Mit Foto', content: withPhoto('foto-0001'), updatedAt: p.updatedAt, rev: 3 })], folders: [], conflicts: [] };
+        order.push(`sync ${req.protocols.map((c) => c.id).join(',')}`);
+        return { rev: 3, changes: [echo(p, { rev: 3 })], folders: [], conflicts: [] };
       },
       {},
       db,
@@ -520,7 +610,7 @@ describe('Anhänge im Abgleich', () => {
     const res = await performSync(
       async () => {
         called = true;
-        return { rev: 2, changes: [serverDoc(p.id, { title: 'Mit Foto', updatedAt: p.updatedAt, rev: 2 })], folders: [], conflicts: [] };
+        return { rev: 2, changes: [echo(p, { rev: 2 })], folders: [], conflicts: [] };
       },
       {},
       db,
@@ -573,7 +663,7 @@ describe('Anhänge im Abgleich', () => {
     const p = { ...newProtokoll(), title: 'Mit Foto', content: withPhoto('foto-gross1') };
     await db.protokolle.add(p);
     const transport: BlobTransport = { upload: async () => Promise.reject(new ProtoError('Das Foto ist größer als 6 MB', 413)), download: noDownload };
-    const res = await performSync(async () => ({ rev: 2, changes: [serverDoc(p.id, { title: 'Mit Foto', updatedAt: p.updatedAt, rev: 2 })], folders: [], conflicts: [] }), {}, db, transport);
+    const res = await performSync(async () => ({ rev: 2, changes: [echo(p, { rev: 2 })], folders: [], conflicts: [] }), {}, db, transport);
     expect(res.blobs).toEqual({ uploaded: 0, rejected: 1, failed: 0 });
     expect(await db.blobs.get('foto-gross1')).toMatchObject({ state: 'local', rejected: 'Das Foto ist größer als 6 MB' });
     expect(await db.protokolle.get(p.id)).toMatchObject({ dirty: 0 });
@@ -584,35 +674,49 @@ describe('Anhänge im Abgleich', () => {
     const p = { ...newProtokoll(), title: 'Mit Foto', content: withPhoto('foto-0001') };
     await db.protokolle.add(p);
     const transport: BlobTransport = { upload: async () => Promise.reject(new ProtoError('Serverfehler 500.', 500)), download: noDownload };
-    const res = await performSync(async () => ({ rev: 2, changes: [serverDoc(p.id, { title: 'Mit Foto', updatedAt: p.updatedAt, rev: 2 })], folders: [], conflicts: [] }), {}, db, transport);
+    const res = await performSync(async () => ({ rev: 2, changes: [echo(p, { rev: 2 })], folders: [], conflicts: [] }), {}, db, transport);
     expect(res.blobs).toEqual({ uploaded: 0, rejected: 0, failed: 1 });
     expect(await db.protokolle.get(p.id)).toMatchObject({ dirty: 0 });
     expect(await db.blobs.get('foto-0001')).toMatchObject({ state: 'local' });
   });
 
-  it('meldet der Server einen Anhang als fehlend, geht er im nächsten Lauf erneut hoch', async () => {
+  /** Ein Text mit ungesendeten Änderungen, damit der Austausch an der Reihe ist. */
+  async function unsentText(id: string): Promise<void> {
+    const text = new Y.Doc();
+    const para = new Y.XmlElement('paragraph');
+    const t = new Y.XmlText();
+    t.insert(0, 'Text');
+    para.insert(0, [t]);
+    text.getXmlFragment('body').insert(0, [para]);
+    await db.ydocs.put({ id, update: Y.encodeStateAsUpdate(text), dirty: 1, seq: 1 });
+  }
+  const textAnswer = (missing: string[]): ExchangeTransport => async (req) => ({ docs: req.docs.map((d) => ({ id: d.id, status: 'ok' as const, rev: 2, missingBlobs: missing })) });
+  const headers = (p: Protokoll) => async () => ({ rev: 2, changes: [echo(p, { rev: 2 })], folders: [], conflicts: [] });
+
+  it('meldet der Server beim Austausch des Textes einen Anhang als fehlend, geht er im nächsten Lauf erneut hoch', async () => {
     await photoBlob('foto-0001');
     await db.blobs.update('foto-0001', { state: 'synced' }); // einmal hochgeladen, inzwischen beim Server weg (Datenbank ersetzt)
-    const p = { ...newProtokoll(), title: 'Mit Foto', content: withPhoto('foto-0001') };
+    const p = { ...newProtokoll(), title: 'Mit Foto', dirty: 0 as const, rev: 2, content: withPhoto('foto-0001') };
     await db.protokolle.add(p);
+    await unsentText(p.id);
     const uploaded: string[] = [];
     const transport: BlobTransport = { upload: async (meta) => void uploaded.push(meta.id), download: noDownload };
-    const answer = (missing: string[]) => async () => ({ rev: 2, changes: [serverDoc(p.id, { title: 'Mit Foto', updatedAt: p.updatedAt, rev: 2 })], folders: [], conflicts: [], missingBlobs: missing });
 
-    const first = await performSync(answer(['foto-0001']), {}, db, transport);
+    const first = await performSync(headers(p), {}, db, transport, textAnswer(['foto-0001']));
     expect(first.reuploaded).toBe(1);
     expect(uploaded).toEqual([]);
     expect(await db.blobs.get('foto-0001')).toMatchObject({ state: 'local' });
 
-    await performSync(answer([]), {}, db, transport);
+    await performSync(headers(p), {}, db, transport, textAnswer([]));
     expect(uploaded).toEqual(['foto-0001']);
     expect(await db.blobs.get('foto-0001')).toMatchObject({ state: 'synced' });
   });
 
   it('ein Anhang, den dieses Gerät nicht hat, wird nicht angefordert', async () => {
-    const p = { ...newProtokoll(), title: 'Mit Foto', content: withPhoto('foto-fremd1') };
+    const p = { ...newProtokoll(), title: 'Mit Foto', dirty: 0 as const, rev: 2, content: withPhoto('foto-fremd1') };
     await db.protokolle.add(p);
-    const res = await performSync(async () => ({ rev: 2, changes: [serverDoc(p.id, { title: 'Mit Foto', updatedAt: p.updatedAt, rev: 2 })], folders: [], conflicts: [], missingBlobs: ['foto-fremd1'] }));
+    await unsentText(p.id);
+    const res = await performSync(headers(p), {}, db, undefined, textAnswer(['foto-fremd1']));
     expect(res.reuploaded).toBe(0);
   });
 
@@ -627,5 +731,108 @@ describe('Anhänge im Abgleich', () => {
     };
     await performSync(async () => ({ rev: 1, changes: [], folders: [], conflicts: [] }), {}, db, transport);
     expect(touched).toBe(false);
+  });
+});
+
+describe('performSync: der Text', () => {
+  const textOf = (text: string): Uint8Array => {
+    const d = new Y.Doc();
+    const para = new Y.XmlElement('paragraph');
+    const t = new Y.XmlText();
+    t.insert(0, text);
+    para.insert(0, [t]);
+    d.getXmlFragment('body').insert(0, [para]);
+    return Y.encodeStateAsUpdate(d);
+  };
+  const ok: ExchangeTransport = async (req) => ({ docs: req.docs.map((d) => ({ id: d.id, status: 'ok' as const, rev: 9 })) });
+
+  it('Protokolle aus der Zeit vor 3.0.0, die der Server nie bekommen hat, bekommen ihre Basis vor dem ersten Senden', async () => {
+    const p = { ...newProtokoll(), title: 'Alt', content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Aus 2.3.0' }] }] } };
+    await db.protokolle.add(p);
+    let basisBeimSenden: unknown;
+    await performSync(async (req) => {
+      basisBeimSenden = await db.ydocs.get(req.protocols[0]!.id);
+      return { rev: 3, changes: [echo(p, { rev: 3 })], folders: [], conflicts: [] };
+    });
+    expect(basisBeimSenden).toMatchObject({ dirty: 1, created: true });
+  });
+
+  it('nach den Kopfdaten läuft der Austausch des Textes; sein Ergebnis steht im Ergebnis des Abgleichs', async () => {
+    const p = { ...newProtokoll(), dirty: 0 as const, rev: 2, textRev: 2 };
+    await db.protokolle.add(p);
+    await db.ydocs.put({ id: p.id, update: textOf('lokal'), dirty: 1, seq: 1 });
+    const res = await performSync(async () => ({ rev: 3, changes: [echo(p, { rev: 3 })], folders: [], conflicts: [] }), {}, db, undefined, ok);
+    expect(res.text).toMatchObject({ exchanged: 1, sent: 1 });
+    expect(res.pushed).toBe(1);
+    expect(await db.ydocs.get(p.id)).toMatchObject({ dirty: 0 });
+    expect((await db.protokolle.get(p.id))!.textRev).toBe(9);
+  });
+
+  it('ist der Server für den Text nicht erreichbar, bleibt der Abgleich der Kopfdaten gültig; andere Fehler brechen ab', async () => {
+    const p = { ...newProtokoll(), title: 'A' };
+    await db.protokolle.add(p);
+    const res = await performSync(async () => ({ rev: 3, changes: [echo(p, { rev: 3 })], folders: [], conflicts: [] }));
+    expect(res.text).toBeNull();
+    expect(await db.protokolle.get(p.id)).toMatchObject({ dirty: 0, rev: 3 });
+
+    const q = { ...newProtokoll(), dirty: 0 as const, rev: 2 };
+    await db.protokolle.add(q);
+    await db.ydocs.put({ id: q.id, update: textOf('x'), dirty: 1, seq: 1 });
+    await db.kv.put({ key: 'protokolle.serverRecords', value: true });
+    await expect(
+      performSync(async () => ({ rev: 4, changes: [], folders: [], records: [], conflicts: [] }), {}, db, undefined, async () => Promise.reject(new ProtoError('Der Server ist zu alt für diese App-Version. Bitte den Server aktualisieren.', 426))),
+    ).rejects.toMatchObject({ status: 426 });
+  });
+
+  describe('neue Datenbank beim Server (wiederhergestellt oder ersetzt)', () => {
+    async function setup() {
+      await db.kv.bulkPut([
+        { key: 'protokolle.rev', value: 50 },
+        { key: 'protokolle.epoch', value: 'alt' },
+        { key: 'protokolle.serverRecords', value: true },
+      ]);
+      const unsent = { ...newProtokoll('', true), title: 'Mit Ungesendetem', dirty: 0 as const, rev: 40, textRev: 40 };
+      const clean = { ...newProtokoll('', true), title: 'Sauber', dirty: 0 as const, rev: 41, textRev: 41 };
+      const unknown = { ...newProtokoll(), title: 'Dem Server unbekannt', dirty: 0 as const, rev: 42, textRev: 42 };
+      await db.protokolle.bulkAdd([unsent, clean, unknown]);
+      await db.ydocs.bulkPut([
+        { id: unsent.id, update: textOf('Anna schrieb das'), dirty: 1, seq: 3, serverSv: new Uint8Array([0]) },
+        { id: clean.id, update: textOf('alter Stand'), dirty: 0, seq: 0, serverSv: new Uint8Array([0]) },
+        { id: unknown.id, update: textOf('nur hier'), dirty: 0, seq: 0, serverSv: new Uint8Array([0]) },
+      ]);
+      return { unsent, clean, unknown };
+    }
+    const reset = (docs: ServerDoc[]) => async () => ({ rev: 3, epoch: 'neu', reset: true, changes: docs, folders: [], records: [], conflicts: [] });
+
+    it('verwirft den gemerkten Text der Protokolle, die der Server kennt, damit die Wiederherstellung nicht rückgängig gemacht wird', async () => {
+      const { unsent, clean } = await setup();
+      await performSync(reset([echo(unsent, { rev: 2 }), echo(clean, { rev: 2 })]));
+      expect(await db.ydocs.get(clean.id)).toBeUndefined();
+      expect(await db.ydocs.get(unsent.id)).toBeUndefined();
+      expect((await db.protokolle.get(clean.id))!.textRev).toBeUndefined();
+    });
+
+    it('was dort ungesendet war, bleibt als private Kopie erhalten', async () => {
+      const { unsent } = await setup();
+      await performSync(reset([echo(unsent, { rev: 2 })]));
+      const copies = await db.protokolle.filter((p) => p.title.endsWith('(lokale Fassung)')).toArray();
+      expect(copies).toHaveLength(1);
+      expect(copies[0]).toMatchObject({ title: 'Mit Ungesendetem (lokale Fassung)', rev: 0, dirty: 1, shared: false });
+      expect(await db.ydocs.get(copies[0]!.id)).toMatchObject({ dirty: 1 });
+    });
+
+    it('Protokolle, die der Server nicht kennt, gehen mit ihrem ganzen Text als neu hoch', async () => {
+      const { unsent, unknown } = await setup();
+      await performSync(reset([echo(unsent, { rev: 2 })]));
+      expect(await db.protokolle.get(unknown.id)).toMatchObject({ rev: 0, dirty: 1 });
+      expect(await db.protokolle.get(unknown.id).then((p) => p?.textRev)).toBeUndefined();
+      expect(await db.ydocs.get(unknown.id)).toMatchObject({ dirty: 1, serverSv: undefined });
+    });
+
+    it('„Alles neu abgleichen“ ohne neue Datenbank behält die Texte', async () => {
+      const { clean } = await setup();
+      await performSync(async () => ({ rev: 50, changes: [echo(clean, { rev: 41 })], folders: [], records: [], conflicts: [] }), { full: true });
+      expect(await db.ydocs.get(clean.id)).toBeDefined();
+    });
   });
 });

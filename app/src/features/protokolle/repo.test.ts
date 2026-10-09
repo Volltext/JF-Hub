@@ -12,7 +12,7 @@ const doc = (text: string) => ({ type: 'doc', content: [{ type: 'paragraph', con
 
 beforeEach(async () => {
   vi.clearAllMocks();
-  await Promise.all([db.protokolle.clear(), db.kv.clear()]);
+  await Promise.all([db.protokolle.clear(), db.ydocs.clear(), db.kv.clear()]);
 });
 
 describe('protokolleRepo.save', () => {
@@ -24,7 +24,7 @@ describe('protokolleRepo.save', () => {
 
   it('schreibt nichts und plant keinen Abgleich, wenn sich nichts ändert', async () => {
     const p = await stored();
-    const at = await protokolleRepo.save(p.id, { title: 'Sitzung', datum: p.datum, content: doc('Hallo') });
+    const at = await protokolleRepo.save(p.id, { title: 'Sitzung', datum: p.datum });
     expect(at).toBe(111);
     expect(await db.protokolle.get(p.id)).toMatchObject({ dirty: 0, updatedAt: 111, rev: 3 });
     expect(scheduleSync).not.toHaveBeenCalled();
@@ -39,16 +39,41 @@ describe('protokolleRepo.save', () => {
 
   it('markiert echte Änderungen als ungesendet, setzt die Änderungszeit und plant den Abgleich', async () => {
     const p = await stored();
-    const at = await protokolleRepo.save(p.id, { title: 'Sitzung', content: doc('Hallo Welt') });
+    const at = await protokolleRepo.save(p.id, { title: 'Neuer Titel' });
     expect(at).toBeGreaterThan(111);
-    expect(await db.protokolle.get(p.id)).toMatchObject({ dirty: 1, updatedAt: at, content: doc('Hallo Welt') });
+    expect(await db.protokolle.get(p.id)).toMatchObject({ dirty: 1, updatedAt: at, title: 'Neuer Titel' });
     expect(scheduleSync).toHaveBeenCalledTimes(1);
   });
 
-  it('eine einzige geänderte Angabe genügt', async () => {
+  it('der Text gehört nicht in den Patch: Er wird zusammen bearbeitet und nie über die Kopfdaten gespeichert', async () => {
     const p = await stored();
-    await protokolleRepo.save(p.id, { title: 'Sitzung', ort: 'Gerätehaus', content: doc('Hallo') });
-    expect(await db.protokolle.get(p.id)).toMatchObject({ dirty: 1, ort: 'Gerätehaus' });
+    await protokolleRepo.save(p.id, { title: 'Sitzung', content: doc('Fremd') } as never);
+    expect(await db.protokolle.get(p.id)).toMatchObject({ dirty: 0, content: doc('Hallo'), updatedAt: 111 });
+    expect(scheduleSync).not.toHaveBeenCalled();
+  });
+
+  it('eine einzige geänderte Angabe genügt, und nur sie bekommt eine neue Änderungszeit', async () => {
+    const p = await stored({ metaAt: { title: 50, datum: 60, ort: 70, beginn: 80, ende: 90, leitung: 95, folderId: 96, shared: 97 } });
+    const at = await protokolleRepo.save(p.id, { title: 'Sitzung', ort: 'Gerätehaus' });
+    const row = (await db.protokolle.get(p.id))!;
+    expect(row).toMatchObject({ dirty: 1, ort: 'Gerätehaus' });
+    expect(row.metaAt).toEqual({ title: 50, datum: 60, ort: at, beginn: 80, ende: 90, leitung: 95, folderId: 96, shared: 97 });
+  });
+
+  it('zwei Änderungen desselben Feldes in derselben Millisekunde bekommen verschiedene Zeiten (sonst ginge die zweite unter)', async () => {
+    const p = await stored({ metaAt: { title: 5_000_000_000_000 } }); // eine Zeit in der Zukunft: jetzt ist nicht größer
+    await protokolleRepo.save(p.id, { title: 'A' });
+    await protokolleRepo.save(p.id, { title: 'B' });
+    expect((await db.protokolle.get(p.id))!.metaAt!.title).toBe(5_000_000_000_002);
+  });
+
+  it('Felder ohne eigene Zeit (Zeile aus der Zeit vor 3.0.0) gelten als zur Änderungszeit der Zeile geändert, nicht als eben jetzt', async () => {
+    const p = await stored({ metaAt: undefined });
+    const at = await protokolleRepo.save(p.id, { ort: 'Neu' });
+    const times = (await db.protokolle.get(p.id))!.metaAt!;
+    expect(times.ort).toBe(at);
+    expect(times.title).toBe(111);
+    expect(times.datum).toBe(111);
   });
 
   it('Sichtbarkeit und Ordner wechseln zählen als Änderung', async () => {
@@ -96,5 +121,12 @@ describe('protokolleRepo.create und remove', () => {
     await protokolleRepo.remove(sent.id);
     expect(await db.protokolle.get(sent.id)).toMatchObject({ deleted: 1, dirty: 1 });
     expect(scheduleSync).toHaveBeenCalledWith(300);
+  });
+
+  it('ein nie gesendetes Protokoll nimmt seinen Text mit', async () => {
+    const fresh = await protokolleRepo.create('');
+    await db.ydocs.put({ id: fresh.id, update: new Uint8Array([0, 0]), dirty: 1, seq: 1 });
+    await protokolleRepo.remove(fresh.id);
+    expect(await db.ydocs.get(fresh.id)).toBeUndefined();
   });
 });
