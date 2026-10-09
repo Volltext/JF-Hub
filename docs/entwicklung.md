@@ -52,12 +52,12 @@ cd ../e2e && npm ci && npx playwright install chromium && npm test
 
 Die CI (`.github/workflows/ci.yml`) führt alles aus, baut die PWA und startet das Docker-Image als Rauchtest.
 
-Was getestet wird: Wertungslogik und Regeln (reine Funktionen), Datenbank-Schema, Abgleich (Konflikte, Sichtbarkeit, Löschhinweise), Dienst-Rhythmus, Web-Push-Client, Service Worker (in einer nachgebauten Umgebung), Server-API (Anmeldung, Benutzer, Sichtbarkeit, Push, PDF, Migration einer Alt-Datenbank).
+Was getestet wird: Wertungslogik und Regeln (reine Funktionen), Datenbank-Schema, Abgleich (Konflikte, Sichtbarkeit, Löschhinweise), Dienst-Rhythmus, Web-Push-Client, Service Worker (in einer nachgebauten Umgebung), Server-API (Anmeldung, Benutzer, Sichtbarkeit, Push, PDF, Migration einer Alt-Datenbank), Anhänge (Hochladen und Zugriff, Auslagern aus dem Inhalt, Migration, Müllsammlung, PDF und ZIP mit Fotos).
 
 Zwei Tests haben eine besondere Rolle:
 
 - **`server/src/security.test.ts`** sammelt über einen `onRoute`-Hook alle Routen des Servers und prüft für jede nicht öffentliche, dass sie ohne Anmeldung 401 liefert (`/api/admin/*` für Betreuer 403), auch bei abweichender Schreibweise des Pfads. Eine neue Route ist damit automatisch abgedeckt; sie muss nur ein Muster haben, das zur Zugriffsregel passt.
-- **`app/src/features/protokolle/twoClients.test.ts`** lässt zwei Geräte (zwei Dexie-Datenbanken) gegen das **echte** `applySync` des Servers laufen. Die App-Tests importieren dafür Code aus `server/src`; das Docker-Image ist davon nicht betroffen (die Web-App baut Vite, `*.test.ts` liegt in `.dockerignore`).
+- **`app/src/features/protokolle/twoClients.test.ts`** lässt zwei Geräte (zwei Dexie-Datenbanken) gegen das **echte** `applySync` des Servers laufen, Anhänge eingeschlossen (`checkUpload`, `findBlob`: dieselben Regeln für Prüfung und Zugriff wie im Server). Die App-Tests importieren dafür Code aus `server/src`; das Docker-Image ist davon nicht betroffen (die Web-App baut Vite, `*.test.ts` liegt in `.dockerignore`).
 
 ## Aufbau
 
@@ -66,7 +66,7 @@ app/
   src/
     app/          Gerüst: Navigation (NavShell), Registrierung der Module (features.tsx), Web-Anmeldung, Android-PIN
     core/
-      db/         Dexie (IndexedDB): Schema, Repos, Outbox, Sicherung, Wipe beim Abmelden
+      db/         Dexie (IndexedDB): Schema, Repos, Outbox, Anhang-Speicher (`blobs`), Sicherung, Wipe beim Abmelden
       domain/     Typen und reine Logik (Aufgaben, Dienst-Rhythmus, Zeit, Statistik)
       account/    angemeldetes Konto, Benutzerverzeichnis, Besitz/Sichtbarkeit
       push/       Web-Push-Client (Abo, Erinnerungen an den Server schicken, Service-Worker-Registrierung)
@@ -80,6 +80,8 @@ server/
     app.ts        Routen (Fastify), Anmeldung, Admin-API
     auth.ts       Benutzer, Einladungen, Passwörter, Sitzungen, Login-Bremse, Migration von Version 1
     sync.ts       Abgleich mit Besitz und Sichtbarkeit
+    blobs.ts      Fotos und Dateien: Speicher, Zugriff, Prüfung beim Hochladen, Auslagern aus dem Inhalt, Aufräumen
+    migrate.ts    Einmaliger Umbau: Anhänge aus alten Protokollen in Blobs (beim Start und beim Einspielen alter Backups)
     push.ts       Web-Push: Abos, Erinnerungen, Versand
     backup.ts     Backups (VACUUM INTO, täglich, Aufräumen) und Wiederherstellung
     pdf.ts, clothingPdf.ts, inkSvg.ts   PDF-Erzeugung
@@ -108,6 +110,7 @@ e2e/              Playwright-Rauchtest (Server + gebaute Web-App)
 - **Fehlerisolation:** Jede Änderung läuft in einem `SAVEPOINT`. Was der Server nicht annehmen kann (zu groß, zu tief verschachtelt, kein gültiges Dokument), steht in `rejected` der Antwort; alles andere gilt. Der Client markiert das Protokoll (`rejected`, Chip „abgelehnt“) und schickt es erst wieder, wenn es geändert wurde.
 - **Übernehmen:** Der Client überspringt Dokumente mit lokal noch nicht gesendeten Änderungen und hält den Cursor davor an (`min(res.rev, kleinste übersprungene Revision − 1)`). Beim nächsten Lauf kommt die Server-Fassung erneut; das ist idempotent.
 - **Handshake:** Jede Anfrage trägt `X-JFH-Client` (App-Version) und `X-JFH-Schema` (Stand des Dokumentformats, `features/protokolle/schemaVersion.ts`). Der Server nennt in `/api/status` und in der Abgleich-Antwort `api` und `minSchema` und weist Apps unterhalb von `MIN_SCHEMA` mit 426 („Bitte die App aktualisieren“) ab; die App prüft umgekehrt `api >= MIN_SERVER_API`. Kommen im Editor neue Knoten oder Markierungen dazu, steigt `SCHEMA_VERSION`. `editorSchema.ts` (`schemaAccepts`) erkennt Inhalte, die diese App-Version nicht kennt (etwa aus einer neueren): Solche Protokolle öffnen nur lesend, denn ein Editor würde die unbekannten Teile verwerfen und der Autosave damit die Server-Fassung überschreiben.
+- **Anhänge (Blobs):** Fotos und Dateien stehen nicht im Inhalt eines Protokolls, sondern als Verweis (`blobId`). Sie liegen binär in `blobs` (Server) und `blobs`/`blobData` (App). Die App legt einen neuen Anhang lokal ab (`state: local`), lädt ihn beim Abgleich **vor** den Protokollen hoch (`PUT /api/blobs/:id`, JSON mit Base64) und holt fremde erst beim Anschauen (`GET`, danach als Kopie gemerkt, verdrängt ab 300 MB, nie solche, die nur hier liegen). Der Server gibt einen Anhang dem, der ihn hochgeladen hat, und jedem, der ein sichtbares, nicht gelöschtes Protokoll sieht, das auf ihn verweist (`blob_refs`). Fotos nur als JPEG (Magic-Bytes, 6 MB), Dateien bis 10 MB, nie inline ausgeliefert. Steckt ein Anhang noch im Inhalt (Apps bis 2.1.x, alte Backups), lagert der Server ihn beim Speichern aus (`normalizeContent`, Kennung aus dem Inhalt, gleiche Bytes ergeben einen Blob); `migrate.ts` erledigt das für den Bestand, mit Backup „vor Update“ und ohne die Änderungszeit anzufassen. `migratedFrom` sorgt dafür, dass eine Bearbeitung auf dem Stand vor der Migration kein Konflikt wird. Verweist ein soeben gespeichertes Protokoll auf Anhänge, die dem Server fehlen, nennt ihn die Antwort (`missingBlobs`), und das Gerät lädt sie erneut hoch, wenn es sie noch hat (Datenbank ersetzt, aufgeräumt). Anhänge ohne Verweis räumt der Server nach sieben Tagen auf.
 - **Speichern nur bei Änderung:** `autosave.ts` schreibt nur, wenn sich etwas geändert hat, und `repo.save` ist ohne Änderung ein No-Op. Öffnen und Zurückgehen erzeugt deshalb weder Revision noch Abgleich.
 - **Mitglieder, Dienste, Aufgaben, Kleidung** laufen als allgemeine „Records“ (`records`-Tabelle, JSON je Eintrag): letzte Änderung gewinnt. Lokale Änderungen merkt die **Outbox** vor.
 - Jede Änderung bekommt eine globale, steigende Revision. Der Client fragt „alles seit Revision X“.
@@ -128,7 +131,7 @@ Dass die Termin-Logik im Client bleibt (Ferien, Saison-Zeiten), hält den Server
 ## API in Kürze
 
 Öffentlich: `GET /api/health`, `GET /api/status` (mit `api`, `minSchema`, `features`; im Demo-Modus zusätzlich `demo: { resetAt, accounts }`), `POST /api/setup`, `/api/login`, `/api/invite/accept`.
-Angemeldet (Bearer-Token oder Cookie mit `X-JFH: 1`): `/api/me`, `/api/logout`, `/api/account/{password,sessions…}`, `POST /api/sync`, `GET /api/protocols/trash`, `POST /api/protocols/:id/restore`, `GET /api/protocols/:id/pdf`, `POST /api/clothing/pdf`, `GET /api/export.zip`, `GET /api/holidays`, `/api/push/{key,subscribe,unsubscribe,reminders,test}`.
+Angemeldet (Bearer-Token oder Cookie mit `X-JFH: 1`): `/api/me`, `/api/logout`, `/api/account/{password,sessions…}`, `POST /api/sync`, `GET /api/protocols/trash`, `POST /api/protocols/:id/restore`, `PUT|GET|HEAD /api/blobs/:id`, `GET /api/protocols/:id/pdf`, `POST /api/clothing/pdf`, `GET /api/export.zip`, `GET /api/holidays`, `/api/push/{key,subscribe,unsubscribe,reminders,test}`.
 Nur Admins: `/api/admin/{info,settings,users…,sessions…,protocols…,backup,backups…,restore,preview.pdf}`.
 
 Die Zugriffsregel entscheidet der Server am **Routenmuster** (`req.routeOptions.url`), nie am rohen Pfad, denn Fastify dekodiert Pfade erst beim Routing. Pfade mit unnötig kodierten Zeichen weist ein Hook mit 400 ab, und `security.test.ts` prüft jede neue Route.

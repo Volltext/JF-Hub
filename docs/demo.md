@@ -123,5 +123,5 @@ Alles andere geht wie im echten Betrieb, auch Benutzer einladen, PDF-Layout änd
 - **Anmelde-Begrenzung:** Fehlversuche sperren die Demo-Zugänge nicht. Je Internetadresse sind 60 Anmeldungen in 15 Minuten erlaubt (sonst 8), damit eine ganze Gruppe im selben WLAN gleichzeitig ausprobieren kann.
 - **Keine automatischen Backups:** Sie wären am nächsten Morgen ohnehin überholt.
 - **`ADMIN_USER` / `ADMIN_PASSWORD`** werden im Demo-Modus ignoriert, einen Setup-Code gibt es nicht.
-- **Inhalte von Besuchern:** Bis zum nächsten Zurücksetzen sieht jeder, was andere veröffentlichen, auch Fotos und Anhänge. Wenn dir das zu lang ist, stell `DEMO_RESET_AT` auf eine Uhrzeit, zu der die Demo wenig genutzt wird, und starte den Container bei Bedarf einfach neu.
+- **Inhalte von Besuchern:** Bis zum nächsten Zurücksetzen sieht jeder, was andere veröffentlichen, auch Fotos (in der Demo nur bis 2 MB; Dateianhänge sind ausgeschaltet). Wenn dir das zu lang ist, stell `DEMO_RESET_AT` auf eine Uhrzeit, zu der die Demo wenig genutzt wird, und starte den Container bei Bedarf einfach neu.
 - **Rechtliches:** Eine öffentlich erreichbare Seite verarbeitet zumindest IP-Adressen. Prüfe, ob du für die Demo-Adresse ein Impressum und einen Datenschutzhinweis brauchst.

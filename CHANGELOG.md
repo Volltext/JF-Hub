@@ -4,6 +4,33 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/). Versionen 
 
 ## [Unreleased]
 
+## [2.2.0] – 2026-10-09
+
+Fotos und Dateien liegen nicht mehr im Text der Protokolle, sondern als eigene Anhänge auf dem Server. Protokolle bleiben dadurch klein: Abgleich, Liste, Suche und Konfliktkopien tragen keine Bilder mehr mit.
+
+### Wichtig beim Update
+
+- **Erst den Server aktualisieren, dann die Apps.** Beim ersten Start lagert der Server alle vorhandenen Fotos und Dateien aus den Protokollen aus (bei vielen Fotos dauert das einen Moment). Vorher legt er ein Backup der Art **„vor Update“** an; wenn alles läuft, kannst du es löschen (der Server behält die letzten zwei).
+- **Apps der Version 2.0.x werden ausgesperrt** und melden „Bitte die App aktualisieren“, bis sie neu installiert sind (die Web-App lädt sich selbst, die Android-App braucht die neue APK). Version 2.1.0 arbeitet weiter, zeigt Fotos aber nur als Hinweis „Bitte die App aktualisieren“. Eine neue App an einem alten Server meldet „Bitte den Server aktualisieren“.
+
+### Neu
+
+- **Anhänge als eigene Einträge:** Die App legt ein Foto oder eine Datei zuerst auf dem Gerät ab und lädt es beim Abgleich **vor** dem Protokoll hoch. Eingefügt ist es sofort zu sehen, auch ohne Netz. Die anderen Betreuer bekommen ein Foto erst, wenn sie es anschauen (und dann bleibt es auf dem Gerät; der Zwischenspeicher fasst 300 MB, die ältesten Kopien weichen zuerst, nie ein Anhang, der nur auf dem Gerät liegt).
+- **Dateien bis 10 MB** (vorher 3 MB, und 8 MB je Protokoll insgesamt). Fotos werden wie bisher auf 1600 Pixel verkleinert.
+- **Wer ein Foto sieht, bestimmt das Protokoll:** Es ist für den sichtbar, der es hochgeladen hat, und für jeden, der ein sichtbares Protokoll sieht, das darauf verweist. Nimmt der Besitzer ein Protokoll zurück oder löscht es, sehen die anderen auch das Foto nicht mehr.
+- **PDF und ZIP-Export** holen die Fotos aus den Anhängen. Fehlt eines, steht an seiner Stelle „Foto nicht verfügbar“, und das PDF entsteht trotzdem. Das ZIP enthält die Fotos und Dateien zusätzlich unter `attachments/`; das JSON verweist mit derselben Kennung darauf.
+- **Verwaltung:** Die Übersicht zeigt, wie viele Fotos und Anhänge der Server hält und wie viel Platz sie belegen; die Größe eines Protokolls zählt sie mit.
+- **Hinweise bei Problemen:** Lehnt der Server einen Anhang ab (zu groß, kein gültiges JPEG), steht das im Abgleich-Symbol, und der Anhang wird nicht erneut versucht. Ein Serverfehler bei einem einzelnen Anhang hält die Protokolle nicht auf.
+- **Sicherung (Version 7) und Abmelden** berücksichtigen Anhänge: Die Sicherung enthält die, die nur auf dem Gerät liegen; die Warnung vor dem Abmelden zählt sie als nicht abgeglichen.
+
+### Geändert
+
+- **Schnittstelle 3, Dokumentformat 3.** Der Server nimmt Apps erst ab dem Dokumentformat 2 an (2.1.0 und neuer).
+- Fotos und Dateien aus Apps bis 2.1.x, die noch im Text stecken, lagert der Server beim Speichern selbst aus. Dasselbe Foto in mehreren Protokollen (auch die vielen Konfliktkopien, die frühere Versionen angelegt haben) ergibt einen einzigen Anhang, die Datenbank kann dadurch kleiner werden.
+- **Demo:** nur Fotos bis 2 MB, keine Dateianhänge. Das tägliche Zurücksetzen räumt jetzt alle Tabellen ab, auch die hochgeladenen Anhänge der Besucher.
+- Anhänge, auf die kein Protokoll mehr verweist, räumt der Server nach sieben Tagen auf; nach dem endgültigen Löschen eines Protokolls sind seine Anhänge also spätestens nach etwa einer Woche weg.
+- Wird ein Backup aus einer älteren Version wiederhergestellt, lagert der Server die Anhänge dabei ebenfalls aus.
+
 ## [2.1.0] – 2026-10-09
 
 Fundament für die Protokolle: Es geht nichts mehr still verloren, und die App sagt, was passiert ist. Ein Protokoll zu öffnen verändert es nicht mehr, gleichzeitiges Bearbeiten erzeugt eine Kopie statt einer Flut, Gelöschtes lässt sich zurückholen.

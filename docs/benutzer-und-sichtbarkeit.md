@@ -45,6 +45,7 @@ Benutzernamen unterscheiden nicht zwischen Groß- und Kleinschreibung (3–32 Ze
 | Mitglieder, Dienste (Anwesenheit), Kleidergrößen, Wettkampf-Läufe, Aufstellungs-Vorlagen | immer für **alle** Betreuer |
 | Ordner für Protokolle | für alle (nur die Struktur, nicht der Inhalt privater Protokolle) |
 | **Protokolle** | **privat** (nur du) oder **veröffentlicht** (alle Betreuer) |
+| Fotos und Dateien in Protokollen | wie das Protokoll, in dem sie stehen (nimmst du es zurück, sehen die anderen auch die Fotos nicht mehr) |
 | **Aufgaben** | **privat** oder **veröffentlicht** |
 | Laufende Stoppuhr, aktuelle Aufstellung und Wertung | nur auf dem jeweiligen Gerät (Arbeitsstand, wird nicht abgeglichen) |
 

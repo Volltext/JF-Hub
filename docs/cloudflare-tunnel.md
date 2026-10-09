@@ -83,7 +83,7 @@ Dann trägst du als URL die Adresse des JF-Hub-Rechners ein, z. B. `192.168.1.20
 - **Verschlüsselung:** Zwischen Browser/App und Cloudflare sowie im Tunnel ist alles verschlüsselt. Cloudflare beendet die Verschlüsselung aber (keine Ende-zu-Ende-Verschlüsselung) und kann den Datenverkehr technisch einsehen. Wer das nicht möchte, nimmt ein VPN wie Tailscale oder einen eigenen Reverse-Proxy: [HTTPS-Alternativen](https-alternativen.md). Beides ist im [Datenschutz](datenschutz.md) beschrieben.
 - **Client-Adresse:** Hinter dem Tunnel sieht der Server die echte Adresse der Besucher über `X-Forwarded-For`. Der Standard von `TRUST_PROXY` vertraut diesem Header nur, wenn die Anfrage aus einem privaten Netz (hier: dem Docker-Netz) kommt. So lässt sich die Begrenzung der Anmeldeversuche nicht durch gefälschte Header umgehen.
 - **Cloudflare Access (optional):** Du kannst eine zusätzliche Anmeldung vor die **Admin-Oberfläche** setzen (Access-Anwendung für `/admin*` und `/api/admin*`). Setze Access **nicht vor die ganze Adresse**: Die Android-App und die Installation als PWA können keine Access-Anmeldeseite bedienen.
-- **Upload-Größe:** Cloudflare erlaubt im Free-Tarif Anfragen bis 100 MB. Fotos werden in der App auf 1600 Pixel verkleinert, ein Protokoll mit Anhängen bleibt weit darunter.
+- **Upload-Größe:** Cloudflare erlaubt im Free-Tarif Anfragen bis 100 MB. Fotos und Dateien laden einzeln hoch: Ein Foto ist nach dem Verkleinern auf 1600 Pixel meist unter 1 MB, eine Datei darf 10 MB haben (als Anfrage gut 13 MB). Das liegt weit darunter.
 - **Mehrere Tunnel/Hostnamen:** möglich, z. B. ein Hostname für die Betreuer und ein zweiter nur zum Testen.
 
 ---

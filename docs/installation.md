@@ -136,6 +136,11 @@ docker compose up -d --build                      # aus dem Quellcode gebaut (na
 
 Die Datenbank wird beim Start automatisch auf den neuen Stand gebracht. Mach vor größeren Versionssprüngen ein [Backup](#backup-und-wiederherstellung). Was sich ändert, steht im [CHANGELOG](../CHANGELOG.md).
 
+> [!IMPORTANT]
+> **Update auf 2.2.0:** Beim ersten Start lagert der Server alle Fotos und Dateien aus den Protokollen in eigene Einträge aus. Bei vielen Fotos dauert das einen Moment. Vorher legt er ein Backup der Art **„vor Update“** an (im Docker-Image ist der Backup-Ordner eingerichtet); wenn alles läuft, kannst du es löschen, der Server behält die letzten zwei.
+>
+> **Erst den Server aktualisieren, dann die Apps.** Apps der Version 2.0.x melden danach „Bitte die App aktualisieren“, bis sie neu installiert sind (die Web-App lädt sich selbst). Eine neue App an einem alten Server meldet „Bitte den Server aktualisieren“.
+
 Die App im Browser aktualisiert sich selbst: Beim nächsten Öffnen mit Netz wird die neue Version geladen. Die Android-App bekommt Updates über eine neue APK.
 
 ## Backup und Wiederherstellung

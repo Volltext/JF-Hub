@@ -95,7 +95,7 @@ Unter **Dienste** siehst du alle bisherigen Abende. Bei **Mitglieder** steht pro
 1. Unter **Protokolle** auf **+** tippen
 2. **Titel** vergeben, optional einen **Ordner** wählen
 3. Losschreiben. Die Leiste unten bietet Überschriften, **fett**, *kursiv*, Listen und Checklisten
-4. Fotos und Dateien hängst du als Anhang an. Auf Android gibt es zusätzlich **Handschrift** mit Stift
+4. Fotos (werden automatisch verkleinert) und Dateien bis 10 MB hängst du als Anhang an. Sie laden beim nächsten Abgleich hoch, auch wenn du sie ohne Netz einfügst. Auf Android gibt es zusätzlich **Handschrift** mit Stift
 5. Gespeichert wird **automatisch**. Oben steht „Gespeichert“
 
 Das Symbol mit den zwei Personen macht das Protokoll **für alle Betreuer sichtbar**. Das Download-Symbol erzeugt ein **PDF** im Layout deiner Gruppe. Die Suche oben in der Liste durchsucht alle Protokolle im Volltext. Versehentlich gelöscht? Im **Papierkorb** (Symbol oben in der Liste) holst du es 30 Tage lang zurück.
