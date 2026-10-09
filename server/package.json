@@ -16,7 +16,8 @@
         "fastify": "^5.12.5",
         "fflate": "^0.8.3",
         "pdfmake": "^0.2.23",
-        "web-push": "^3.6.7"
+        "web-push": "^3.6.7",
+        "yjs": "^13.6.33"
     },
     "devDependencies": {
         "@types/node": "^22.19.0",

@@ -34,5 +34,7 @@ export function sampleProtocol() {
     conflictRev: null,
     purgedAt: null,
     migratedFrom: null,
+    ymode: 1,
+    metaAt: '{}',
   });
 }

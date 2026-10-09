@@ -45,14 +45,12 @@ import { HolidayCache, type FetchLike } from './holidays.js';
 import { sampleProtocol } from './sample.js';
 import { autoKeep, backupPath, createBackup, deleteBackup, isBackupName, listBackups, pruneBackups, restoreFromFile, RestoreError, runAutoBackup, writeUpload } from './backup.js';
 import { DEMO_ACCOUNTS, demoBlock, formatResetAt, isDemoAccount, msUntilReset, parseResetAt, resetDemo } from './demo.js';
+import { API_VERSION, MIN_SCHEMA } from './versions.js';
+import { exchange, type ExchangeRequest } from './collab/exchange.js';
+import { createPeers } from './collab/peers.js';
 
 export const VERSION = '2.3.0';
-/**
- * Schnittstelle dieses Servers (steigt bei Änderungen, die ältere Apps nicht verstehen) und das kleinste Dokumentformat
- * (`X-JFH-Schema` der App), das er noch annimmt. Apps ohne Angabe (2.0.x) gelten als Schema 1.
- */
-export const API_VERSION = 3;
-export const MIN_SCHEMA = 2;
+export { API_VERSION, MIN_SCHEMA };
 const COOKIE = 'jfh_session';
 
 declare module 'fastify' {
@@ -341,18 +339,35 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
     return { ok: true };
   });
 
+  /** Eine App, die das aktuelle Dokumentformat nicht kennt, würde Inhalte, die sie nicht versteht, beim Speichern verwerfen (bei Yjs: im geteilten Dokument löschen). */
+  const clientTooOld = (req: FastifyRequest): boolean => !(Number(req.headers['x-jfh-schema'] ?? 1) >= minSchema);
+  const tooOld = (reply: FastifyReply) =>
+    reply.code(426).send({ error: 'Diese App-Version ist zu alt für den Server. Bitte die App aktualisieren.', code: 'client_too_old', minSchema });
+
   app.post<{ Body: SyncRequest }>('/api/sync', async (req, reply) => {
-    // Eine App, die das aktuelle Dokumentformat nicht kennt, würde Inhalte, die sie nicht versteht, beim Speichern verwerfen.
-    const schema = Number(req.headers['x-jfh-schema'] ?? 1);
-    if (!(schema >= minSchema)) {
-      return reply.code(426).send({ error: 'Diese App-Version ist zu alt für den Server. Bitte die App aktualisieren.', code: 'client_too_old', minSchema });
-    }
+    if (clientTooOld(req)) return tooOld(reply);
     try {
       return { ...applySync(db, req.body, me(req)), api: API_VERSION, minSchema };
     } catch (e) {
       return reply.code(400).send({ error: (e as Error).message });
     }
   });
+
+  // ---------- Text der Protokolle (Yjs) ----------
+  // Wer ein Protokoll geöffnet hat, merkt sich der Server nur kurz im Speicher.
+  const peers = createPeers();
+  app.post<{ Body: ExchangeRequest }>(
+    '/api/collab/exchange',
+    { bodyLimit: 24 * 1024 * 1024, config: { rateLimit: { max: opts.demo ? 3000 : 900, timeWindow: '1 minute' } } },
+    async (req, reply) => {
+      if (clientTooOld(req)) return tooOld(reply);
+      const body = req.body;
+      if (!body || typeof body !== 'object' || !Array.isArray(body.docs)) return reply.code(400).send({ error: 'Ungültige Anfrage' });
+      const res = exchange(db, body, me(req), peers);
+      if (res.reset) return reply.code(409).send({ error: 'Die Datenbank des Servers wurde ersetzt. Bitte neu abgleichen.', reset: true, epoch: res.epoch });
+      return { ...res, api: API_VERSION };
+    },
+  );
 
   const style = (): PdfStyle => {
     const s = getSettings(db);

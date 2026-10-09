@@ -33,6 +33,10 @@ export interface ProtocolRow {
    * (der Inhalt ist derselbe, nur anders abgelegt). Jede Änderung des Protokolls setzt den Wert zurück.
    */
   migratedFrom: number | null;
+  /** 1 = der Text liegt als Yjs-Dokument in `ydocs` (ab 3.0.0), `content` ist daraus abgeleitet. 0 = noch nicht umgestellt. */
+  ymode: number;
+  /** JSON: Zeitpunkt der letzten Änderung je Kopffeld (ms), für „letzte Änderung gewinnt“ Feld für Feld. */
+  metaAt: string;
 }
 
 /** Einstellungen, die in der Admin-GUI änderbar sind (key/value in `config`). */
@@ -198,6 +202,13 @@ export function openDb(path: string): DatabaseSync {
       PRIMARY KEY (blobId, protocolId)
     );
     CREATE INDEX IF NOT EXISTS blob_refs_protocol ON blob_refs(protocolId);
+    -- Der Text eines Protokolls als Yjs-Dokument (ab 3.0.0): vollständiger Zustand und dessen Zustandsvektor. Der Inhalt in protocols.content wird daraus abgeleitet.
+    CREATE TABLE IF NOT EXISTS ydocs (
+      id TEXT PRIMARY KEY REFERENCES protocols(id) ON DELETE CASCADE,
+      state BLOB NOT NULL,
+      sv BLOB NOT NULL,
+      updatedAt INTEGER NOT NULL
+    );
   `);
   // Migration: Ordner-Zuordnung (ab 1.1.0 des Servers).
   addColumn(db, 'protocols', 'folderId', "TEXT NOT NULL DEFAULT ''");
@@ -211,6 +222,9 @@ export function openDb(path: string): DatabaseSync {
   addColumn(db, 'protocols', 'purgedAt', 'INTEGER');
   // Migration: Anhänge ausgelagert; Bearbeitungen auf dem Stand davor bleiben gültig (ab 2.2.0).
   addColumn(db, 'protocols', 'migratedFrom', 'INTEGER');
+  // Migration: Der Text liegt als Yjs-Dokument vor, die Kopfdaten tragen Änderungszeiten je Feld (ab 3.0.0).
+  addColumn(db, 'protocols', 'ymode', 'INTEGER NOT NULL DEFAULT 0');
+  addColumn(db, 'protocols', 'metaAt', "TEXT NOT NULL DEFAULT '{}'");
   addColumn(db, 'blobs', 'orphanedAt', 'INTEGER');
   addColumn(db, 'records', 'ownerId', "TEXT NOT NULL DEFAULT ''");
   addColumn(db, 'records', 'shared', 'INTEGER NOT NULL DEFAULT 1');

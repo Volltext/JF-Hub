@@ -118,7 +118,7 @@ export interface SyncResponse {
 }
 
 const str = (v: unknown, max: number) => (typeof v === 'string' ? v.slice(0, max) : '');
-const MAX_CONTENT = 12_000_000;
+export const MAX_CONTENT = 12_000_000;
 
 /** Ein Eintrag ist sichtbar, wenn er veröffentlicht ist oder dem Nutzer gehört. */
 export const canSee = (row: { shared: number; ownerId: string }, user: SyncUser): boolean => row.shared === 1 || row.ownerId === user.id;
