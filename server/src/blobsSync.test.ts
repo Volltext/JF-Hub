@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { DatabaseSync } from 'node:sqlite';
-import { MAX_PHOTO_BYTES, storeBlob, sweepBlobs } from './blobs.js';
+import { MAX_PHOTO_BYTES, reindexBlobRefs, storeBlob, sweepBlobs } from './blobs.js';
 import { openDb } from './db.js';
 import { applySync, purgeProtocol, type ClientChange, type SyncResponse } from './sync.js';
 
@@ -194,5 +194,38 @@ describe('Müllsammlung für Blobs', () => {
     purgeProtocol(db, 'doc-0001');
     expect(sweepBlobs(db, t0 + 30 * DAY)).toBe(1);
     expect(count('blobs')).toBe(0);
+  });
+});
+
+describe('Verweise prüfen und bei Bedarf neu aufbauen', () => {
+  it('ergänzt fehlende und entfernt überzählige Verweise nach dem Inhalt', () => {
+    const res = send([change('doc-0001', doc(photoInline(jpeg()))), change('doc-0002', doc(p('ohne Anhang')))]);
+    const id = String(nodesOf(res, 'doc-0001')[0]!.attrs!.blobId);
+    db.prepare('DELETE FROM blob_refs').run(); // verloren gegangen
+    db.prepare("INSERT INTO blob_refs(blobId, protocolId) VALUES('fremd-0001', 'doc-0002')").run(); // überzählig
+
+    expect(reindexBlobRefs(db)).toBe(2);
+    expect(refs()).toEqual([{ blobId: id, protocolId: 'doc-0001' }]);
+    expect(reindexBlobRefs(db)).toBe(0); // jetzt stimmt alles, nichts ist zu tun
+  });
+
+  it('schützt dadurch Anhänge vor der Müllsammlung, auf die der Inhalt noch verweist', () => {
+    const t0 = Date.now();
+    const res = send([change('doc-0001', doc(photoInline(jpeg())))]);
+    db.prepare('DELETE FROM blob_refs').run();
+    reindexBlobRefs(db);
+    expect(sweepBlobs(db, t0 + 30 * DAY)).toBe(0);
+    expect(count('blobs')).toBe(1);
+    expect(res.rejected).toEqual([]);
+  });
+
+  it('geleerte Protokolle verweisen auf nichts; unlesbarer Inhalt lässt vorhandene Verweise stehen', () => {
+    const first = send([change('doc-0001', doc(photoInline(jpeg()))), change('doc-0002', doc(photoInline(jpeg())))]);
+    send([change('doc-0001', doc(), { baseRev: first.changes.find((c) => c.id === 'doc-0001')!.rev, deleted: true })], first.rev);
+    purgeProtocol(db, 'doc-0001');
+    db.prepare("INSERT INTO blob_refs(blobId, protocolId) VALUES('spuk-000001', 'doc-0001')").run();
+    db.prepare("UPDATE protocols SET content = '{kaputt' WHERE id = 'doc-0002'").run();
+    expect(reindexBlobRefs(db)).toBe(1);
+    expect(refs().map((r) => (r as { protocolId: string }).protocolId)).toEqual(['doc-0002']);
   });
 });

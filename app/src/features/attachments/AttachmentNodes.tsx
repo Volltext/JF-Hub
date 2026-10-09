@@ -45,14 +45,14 @@ function PhotoGap({ children, onRetry }: { children: string; onRetry?: () => voi
 const WHY: Record<string, string> = {
   offline: 'Dieses Foto liegt auf dem Server. Es erscheint, sobald du wieder verbunden bist.',
   'no-server': 'Dieses Foto liegt auf dem Server. Richte die Verbindung zum Server ein, um es zu laden.',
-  missing: 'Dieses Foto ist auf dem Server nicht (mehr) vorhanden.',
+  missing: 'Dieses Foto ist auf dem Server (noch) nicht vorhanden. Vielleicht lädt das Gerät, das es eingefügt hat, es gerade erst hoch.',
 };
 
 /** Foto, das auf einen Anhang verweist: aus dem Gerätespeicher, sonst vom Server nachgeladen. */
 function StoredPhoto({ blobId, caption, w, h, onOpen }: { blobId: string; caption: string; w: number; h: number; onOpen: (url: string) => void }) {
   const { state, retry } = usePhoto(blobId);
   if (state.status === 'loading') return <PhotoGap>Foto wird geladen …</PhotoGap>;
-  if (state.status === 'unavailable') return <PhotoGap onRetry={state.reason === 'missing' ? undefined : retry}>{WHY[state.reason] ?? `Das Foto konnte nicht geladen werden (${state.message}).`}</PhotoGap>;
+  if (state.status === 'unavailable') return <PhotoGap onRetry={retry}>{WHY[state.reason] ?? `Das Foto konnte nicht geladen werden (${state.message}).`}</PhotoGap>;
   return (
     <button type="button" className="photo-node__img" onClick={() => onOpen(state.url)} aria-label="Foto vergrößern">
       <img src={state.url} alt={caption || 'Foto'} width={w || undefined} height={h || undefined} />

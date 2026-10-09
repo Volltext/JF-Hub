@@ -207,15 +207,58 @@ export function blobNodesOf(content: unknown): BlobNode[] {
 
 export const blobIdsOf = (content: unknown): string[] => [...new Set(blobNodesOf(content).map((n) => n.blobId))];
 
-/** Schreibt die Verweise eines Protokolls neu, passend zu seinem Inhalt. */
-export function refreshRefs(db: DatabaseSync, protocolId: string, content: unknown): void {
+/** Setzt die Verweise eines Protokolls auf genau diese Anhänge. */
+function setRefs(db: DatabaseSync, protocolId: string, blobIds: string[]): void {
   db.prepare('DELETE FROM blob_refs WHERE protocolId = ?').run(protocolId);
   const insert = db.prepare('INSERT OR IGNORE INTO blob_refs(blobId, protocolId) VALUES(?, ?)');
-  for (const id of blobIdsOf(content)) insert.run(id, protocolId);
+  for (const id of blobIds) insert.run(id, protocolId);
+}
+
+/** Schreibt die Verweise eines Protokolls neu, passend zu seinem Inhalt. */
+export function refreshRefs(db: DatabaseSync, protocolId: string, content: unknown): void {
+  setRefs(db, protocolId, blobIdsOf(content));
 }
 
 export function clearRefs(db: DatabaseSync, protocolId: string): void {
   db.prepare('DELETE FROM blob_refs WHERE protocolId = ?').run(protocolId);
+}
+
+/**
+ * Baut die Verweise aller Protokolle aus ihrem Inhalt neu auf. Die Verweise sind abgeleitete Daten; stimmen sie einmal nicht (Fehler,
+ * Eingriff von Hand), würde die Müllsammlung Anhänge entfernen, die noch gebraucht werden. Der Start prüft deshalb jedes Mal nach.
+ * Geleerte Protokolle (Grabsteine) verweisen auf nichts. Liefert die Zahl der Protokolle, deren Verweise sich geändert haben.
+ */
+export function reindexBlobRefs(db: DatabaseSync): number {
+  const have = new Map<string, Set<string>>();
+  for (const r of db.prepare('SELECT protocolId, blobId FROM blob_refs').all() as { protocolId: string; blobId: string }[]) {
+    if (!have.has(r.protocolId)) have.set(r.protocolId, new Set());
+    have.get(r.protocolId)!.add(r.blobId);
+  }
+  let changed = 0;
+  const seen = new Set<string>();
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    for (const row of db.prepare('SELECT id, content, purgedAt FROM protocols').all() as { id: string; content: string; purgedAt: number | null }[]) {
+      seen.add(row.id);
+      let want: string[] = [];
+      if (row.purgedAt === null) {
+        try {
+          want = blobIdsOf(JSON.parse(row.content));
+        } catch {
+          continue; // unlesbarer Inhalt: die vorhandenen Verweise bleiben, besser zu viele als zu wenige
+        }
+      }
+      const had = have.get(row.id) ?? new Set<string>();
+      if (want.length === had.size && want.every((id) => had.has(id))) continue;
+      setRefs(db, row.id, want);
+      changed++;
+    }
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+  return changed;
 }
 
 /** Blobs, auf die eines der Protokolle verweist, die der Server aber nicht hat. */

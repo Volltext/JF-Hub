@@ -34,7 +34,7 @@ import {
   verifyPassword,
   type SessionUser,
 } from './auth.js';
-import { BLOB_ID_RE, BlobError, blobNodesOf, blobStats, checkUpload, findBlob, readBlobData, storeBlob, sweepBlobs, type BlobNode, type UploadRequest } from './blobs.js';
+import { BLOB_ID_RE, BlobError, blobNodesOf, blobStats, checkUpload, findBlob, readBlobData, reindexBlobRefs, storeBlob, sweepBlobs, type BlobNode, type UploadRequest } from './blobs.js';
 import { CONFIG_DEFAULTS, getSettings, nextRev, setConfig, type ConfigKey, type FolderRow, type ProtocolRow, type UserRow } from './db.js';
 import { migrateBlobs } from './migrate.js';
 import { pdfFileName, renderPdf, safeFileName, type PdfStyle } from './pdf.js';
@@ -131,7 +131,18 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
 
   migrateLegacy(db);
   // Fotos und Dateien lagen bis 2.1.x im Inhalt der Protokolle. Hier ziehen sie in Blobs um (mit Backup davor, wiederholbar).
-  if (!opts.demo) migrateBlobs(db, { backupDir: opts.backupDir, log: (message) => app.log.info(message) });
+  if (!opts.demo) {
+    try {
+      migrateBlobs(db, { backupDir: opts.backupDir, log: (message) => app.log.info(message) });
+    } catch (e) {
+      // Nichts ist verloren (die Änderung läuft in einer Transaktion, vorher gab es ein Backup), und alte Protokolle bleiben les- und ausgebbar.
+      // Der Server soll deshalb laufen; der nächste Start versucht es noch einmal.
+      app.log.error({ err: e }, 'Fotos und Dateien konnten nicht aus den Protokollen ausgelagert werden');
+    }
+    // Die Verweise (wer braucht welchen Anhang) sind abgeleitet; hier werden sie gegen den Inhalt geprüft, bevor aufgeräumt wird.
+    const fixed = reindexBlobRefs(db);
+    if (fixed) app.log.warn(`Anhang-Verweise von ${fixed} Protokoll(en) neu aufgebaut`);
+  }
   const demoAt = opts.demo ? parseResetAt(opts.demo.resetAt) : undefined;
   if (opts.demo) {
     await resetDemo(db);

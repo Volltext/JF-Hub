@@ -6,6 +6,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { buildApp } from './app.js';
 import { listBackups, restoreFromFile } from './backup.js';
+import { storeBlob } from './blobs.js';
 import { nextRev, openDb } from './db.js';
 import { migrateBlobs } from './migrate.js';
 import { applySync, type ClientChange } from './sync.js';
@@ -177,6 +178,36 @@ describe('Migration beim Start und bei der Wiederherstellung', () => {
       expect(row(live, 'doc-0001').content).not.toContain('data:image');
       expect(count(live, 'blobs')).toBe(1);
       expect(listBackups(backups).map((b) => b.kind)).toEqual(['update']);
+    } finally {
+      await app.close();
+      live.close();
+    }
+  });
+
+  it('scheitert der Umbau beim Start, läuft der Server trotzdem und alles bleibt unverändert', async () => {
+    const live = openDb(join(dir, 'jf-hub.sqlite'));
+    legacy(live, 'doc-0001', doc(photoInline(jpeg(500))));
+    live.exec("CREATE TRIGGER voll BEFORE INSERT ON blobs BEGIN SELECT RAISE(ABORT, 'Platte voll'); END;");
+    const app = await buildApp({ db: live, adminPassword: 'ein-sicheres-passwort', pushTimer: false, backupTimer: false, backupDir: join(dir, 'backups') });
+    try {
+      expect(row(live, 'doc-0001').content).toContain('data:image/jpeg;base64,'); // nichts halb umgebaut
+      expect(count(live, 'blobs')).toBe(0);
+      expect((await app.inject({ method: 'GET', url: '/api/health' })).statusCode).toBe(200);
+      expect(listBackups(join(dir, 'backups')).map((b) => b.kind)).toEqual(['update']); // die Sicherung gab es vorher
+    } finally {
+      await app.close();
+      live.close();
+    }
+  });
+
+  it('der Start prüft die Verweise gegen den Inhalt', async () => {
+    const live = openDb(join(dir, 'jf-hub.sqlite'));
+    storeBlob(live, { id: 'foto-0001', kind: 'photo', name: '', mime: 'image/jpeg', data: jpeg(100), uploaderId: 'u1' });
+    legacy(live, 'doc-0001', doc({ type: 'photo', attrs: { blobId: 'foto-0001', mime: 'image/jpeg', w: 1, h: 1, caption: '' } }));
+    expect(count(live, 'blob_refs')).toBe(0); // so kann eine Datenbank nach einem Eingriff von Hand aussehen
+    const app = await buildApp({ db: live, adminPassword: 'ein-sicheres-passwort', pushTimer: false, backupTimer: false });
+    try {
+      expect(live.prepare('SELECT blobId, protocolId FROM blob_refs').all()).toEqual([{ blobId: 'foto-0001', protocolId: 'doc-0001' }]);
     } finally {
       await app.close();
       live.close();

@@ -11,6 +11,7 @@ Fotos und Dateien liegen nicht mehr im Text der Protokolle, sondern als eigene A
 ### Wichtig beim Update
 
 - **Erst den Server aktualisieren, dann die Apps.** Beim ersten Start lagert der Server alle vorhandenen Fotos und Dateien aus den Protokollen aus (bei vielen Fotos dauert das einen Moment). Vorher legt er ein Backup der Art **„vor Update“** an; wenn alles läuft, kannst du es löschen (der Server behält die letzten zwei).
+- **Zurück auf 2.1.x geht danach nur mit dem Backup „vor Update“** (Fotos, die seitdem dazugekommen sind, gehen dabei verloren): Ein älterer Server kennt die Anhänge nicht.
 - **Apps der Version 2.0.x werden ausgesperrt** und melden „Bitte die App aktualisieren“, bis sie neu installiert sind (die Web-App lädt sich selbst, die Android-App braucht die neue APK). Version 2.1.0 arbeitet weiter, zeigt Fotos aber nur als Hinweis „Bitte die App aktualisieren“. Eine neue App an einem alten Server meldet „Bitte den Server aktualisieren“.
 
 ### Neu
