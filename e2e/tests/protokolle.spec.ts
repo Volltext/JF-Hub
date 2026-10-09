@@ -1,87 +1,17 @@
-import { execFileSync } from 'node:child_process';
-import { expect, test, type APIRequestContext, type Browser, type Page } from '@playwright/test';
-
-/** Der Text eines PDFs, oder null, wenn `pdftotext` (poppler) auf diesem Rechner fehlt. */
-function pdfText(pdf: Buffer): string | null {
-  try {
-    return execFileSync('pdftotext', ['-', '-'], { input: pdf, maxBuffer: 10_000_000 }).toString('utf8');
-  } catch {
-    return null;
-  }
-}
+import { expect, test } from '@playwright/test';
+import { ADMIN, adminTokens, BEN, createBen, PNG_1X1, SCHEMA, serverDoc, sessions, syncNow, writeProtocol } from './helpers';
 
 // Eigener Server (siehe playwright.config.ts), damit die Anmeldungen dieser Tests das Anmelde-Limit des Rauchtests nicht aufbrauchen.
 test.use({ baseURL: 'http://127.0.0.1:8096' });
 
-const ADMIN = { username: 'admin', password: 'e2e-admin-passwort' };
-/** Direkte Anfragen an den Abgleich melden das Dokumentformat wie die App (ohne Angabe gilt eine Anfrage als Version 2.0.x und wird abgewiesen). */
-const SCHEMA = { 'X-JFH-Schema': '4' };
-const BEN = { username: 'ben', password: 'ben-hat-ein-passwort' };
-
-/** Ein Anmelde-Token für alle Tests (die Anmeldung ist je Adresse begrenzt). */
-let cachedToken: string | undefined;
-async function adminToken(request: APIRequestContext): Promise<string> {
-  if (!cachedToken) {
-    const login = await request.post('/api/login', { data: ADMIN });
-    expect(login.ok()).toBeTruthy();
-    cachedToken = (await login.json()).token as string;
-  }
-  return cachedToken;
-}
-
-/** Admin legt Ben per API an (falls es ihn noch nicht gibt); Ben löst die Einladung ein. */
-async function createBen(request: APIRequestContext) {
-  const auth = { Authorization: `Bearer ${await adminToken(request)}` };
-  const users = (await (await request.get('/api/admin/users', { headers: auth })).json()) as { username: string }[];
-  if (users.some((u) => u.username === BEN.username)) return;
-  const created = await request.post('/api/admin/users', { headers: auth, data: { username: BEN.username, displayName: 'Ben', role: 'betreuer' } });
-  expect(created.ok()).toBeTruthy();
-  const { invite } = await created.json();
-  const accepted = await request.post('/api/invite/accept', { data: { username: BEN.username, code: invite.code, password: BEN.password } });
-  expect(accepted.ok()).toBeTruthy();
-}
-
-async function signIn(page: Page, who: { username: string; password: string }) {
-  await page.goto('/');
-  await page.getByLabel('Benutzername').fill(who.username);
-  await page.getByLabel('Passwort', { exact: true }).fill(who.password);
-  await page.locator('button[type=submit]').click();
-  await expect(page.getByRole('navigation', { name: /Hauptnavigation|Bereiche/ }).first()).toBeVisible();
-}
-
-async function newSession(browser: Browser) {
-  const context = await browser.newContext();
-  return { context, page: await context.newPage() };
-}
-
-/** Stößt den Abgleich über das Sync-Symbol an und wartet auf die Antwort des Servers. */
-async function syncNow(page: Page) {
-  const badge = page.getByRole('button', { name: /^Server-Abgleich/ }).first();
-  await Promise.all([page.waitForResponse((r) => r.url().endsWith('/api/sync') && r.request().method() === 'POST'), badge.click()]);
-}
-
-async function writeProtocol(page: Page, title: string, text: string) {
-  await page.goto('/#/protokolle');
-  await page.getByRole('button', { name: 'Neues Protokoll' }).click();
-  await page.getByLabel('Titel', { exact: true }).fill(title);
-  await page.getByLabel('Protokolltext').click();
-  await page.keyboard.type(text);
-  await expect(page.getByText('Gespeichert')).toBeVisible();
-}
-
-/** Das Protokoll mit diesem Titel, wie der Server es gerade hat. */
-async function serverDoc(request: APIRequestContext, token: string, title: string) {
-  const r = await request.post('/api/sync', { headers: { Authorization: `Bearer ${token}`, ...SCHEMA }, data: { since: 0, changes: [] } });
-  const res = (await r.json()) as { changes: { title: string; rev: number; updatedAt: number; deleted: boolean; content: unknown }[] };
-  return res.changes.find((c) => c.title === title);
-}
+const adminToken = adminTokens();
+const open = sessions();
 
 test.describe.serial('Protokolle: Fundament', () => {
   test('Öffnen und Zurück verändert ein Protokoll nicht', async ({ browser, request }) => {
     const title = 'Nur zum Lesen';
     const token = await adminToken(request);
-    const { context, page } = await newSession(browser);
-    await signIn(page, ADMIN);
+    const { context, page } = await open(browser, ADMIN);
     await writeProtocol(page, title, 'Dieser Text bleibt unberührt.');
     await syncNow(page);
     const before = await serverDoc(request, token, title);
@@ -102,8 +32,7 @@ test.describe.serial('Protokolle: Fundament', () => {
 
   test('Gelöschtes Protokoll liegt im Papierkorb und lässt sich zurückholen', async ({ browser }) => {
     const title = 'Aus Versehen gelöscht';
-    const { context, page } = await newSession(browser);
-    await signIn(page, ADMIN);
+    const { context, page } = await open(browser, ADMIN);
     await writeProtocol(page, title, 'Wichtiger Inhalt.');
     await syncNow(page); // erst was der Server kennt, landet im Papierkorb
 
@@ -128,18 +57,16 @@ test.describe.serial('Protokolle: Fundament', () => {
 
   test('Gleichzeitiges Bearbeiten: Hinweis und Kopie statt stillem Verlust', async ({ browser, request }) => {
     const title = 'Betreuerbesprechung live';
-    await createBen(request);
+    await createBen(request, await adminToken(request));
 
-    const admin = await newSession(browser);
-    await signIn(admin.page, ADMIN);
+    const admin = await open(browser, ADMIN);
     await writeProtocol(admin.page, title, 'Ausgangstext.');
     await admin.page.getByRole('button', { name: 'Sichtbarkeit: privat' }).click();
     await admin.page.getByRole('button', { name: 'Für alle Betreuer veröffentlichen' }).click();
     await expect(admin.page.getByRole('button', { name: 'Sichtbarkeit: für alle Betreuer' })).toBeVisible();
     await syncNow(admin.page);
 
-    const ben = await newSession(browser);
-    await signIn(ben.page, BEN);
+    const ben = await open(browser, BEN);
     await ben.page.goto('/#/protokolle');
     await ben.page.getByText(title).click({ timeout: 30_000 });
     await expect(ben.page.getByLabel('Protokolltext')).toContainText('Ausgangstext.');
@@ -190,8 +117,7 @@ test.describe.serial('Protokolle: Schutz vor unbekannten Inhalten', () => {
     const before = await serverDoc(request, token, title);
     expect(before).toBeTruthy();
 
-    const { context, page } = await newSession(browser);
-    await signIn(page, ADMIN);
+    const { context, page } = await open(browser, ADMIN);
     await page.goto('/#/protokolle');
     await page.getByText(title).click();
     await expect(page.getByRole('alert')).toContainText('Elemente, die diese App-Version nicht kennt');
@@ -208,300 +134,6 @@ test.describe.serial('Protokolle: Schutz vor unbekannten Inhalten', () => {
   });
 });
 
-test.describe.serial('Protokolle: Tabellen, Links und Hervorhebung', () => {
-  test('Tabelle, Link und Hervorhebung einfügen, speichern und im PDF finden', async ({ browser, request }) => {
-    const title = 'Aufgaben mit Tabelle';
-    const token = await adminToken(request);
-    const { context, page } = await newSession(browser);
-    await signIn(page, ADMIN);
-    await writeProtocol(page, title, 'Aufgaben für den Herbst.');
-    const editor = page.getByLabel('Protokolltext', { exact: true });
-    // Links öffnen den Browser; hier wird nur aufgezeichnet, was geöffnet würde.
-    await page.evaluate(() => {
-      (window as unknown as { __opened: string[] }).__opened = [];
-      window.open = (url) => {
-        (window as unknown as { __opened: string[] }).__opened.push(String(url));
-        return null;
-      };
-    });
-
-    // Tabelle über Einfügen → Tabelle: 2 × 2 mit Kopfzeile, danach mit Tab durch die Zellen
-    await page.getByRole('button', { name: 'Einfügen', exact: true }).click();
-    await page.getByRole('dialog', { name: 'Einfügen' }).getByRole('button', { name: /^Tabelle/ }).click();
-    await page.getByLabel(/^Zeilen/).fill('2');
-    await page.getByLabel(/^Spalten/).fill('2');
-    await page.getByRole('button', { name: 'Tabelle einfügen', exact: true }).click();
-    await expect(editor.locator('table')).toHaveCount(1);
-    await expect(editor.locator('th')).toHaveCount(2);
-    for (const cell of ['Wer', 'Aufgabe', 'Anna', 'Schläuche']) {
-      await page.keyboard.type(cell);
-      await page.keyboard.press('Tab');
-    }
-    // Tab in der letzten Zelle legt eine neue Zeile an und springt hinein
-    await page.keyboard.type('Ben');
-    await page.keyboard.press('Tab');
-    await page.keyboard.type('Material');
-    await expect(editor.locator('tr')).toHaveCount(3);
-
-    // Tabellen-Leiste: Zeile unten einfügen, wieder löschen, Kopfzeile aus- und einschalten
-    const tableBar = page.getByRole('toolbar', { name: 'Tabelle' });
-    await expect(tableBar).toBeVisible();
-    await tableBar.getByRole('button', { name: 'Zeile unten einfügen' }).click();
-    await expect(editor.locator('tr')).toHaveCount(4);
-    await page.keyboard.press('Tab'); // in die neue Zeile
-    await tableBar.getByRole('button', { name: 'Zeile löschen' }).click();
-    await expect(editor.locator('tr')).toHaveCount(3);
-    await expect(editor).toContainText('Material');
-    await tableBar.getByRole('button', { name: 'Kopfzeile ein oder aus' }).click();
-    await expect(editor.locator('th')).toHaveCount(0);
-    await tableBar.getByRole('button', { name: 'Kopfzeile ein oder aus' }).click();
-    await expect(editor.locator('th')).toHaveCount(2);
-
-    // Hervorheben: das Wort in der letzten Zelle markieren
-    await editor.getByText('Material', { exact: true }).click(); // der Absatz ist breiter als das Wort: Der Cursor landet am Zeilenende
-    await page.keyboard.press('Shift+Home');
-    await expect.poll(() => page.evaluate(() => String(getSelection()))).toBe('Material'); // erst weiter, wenn der Editor die Auswahl kennt
-    await page.getByRole('button', { name: 'Hervorheben', exact: true }).click();
-    await expect(editor.locator('mark')).toHaveText('Material');
-
-    // Link: im ersten Absatz, danach weitertippen verlängert den Link nicht
-    await editor.locator('p').first().click(); // rechts vom Text geklickt: Der Cursor steht am Zeilenende
-    await page.keyboard.type(' Mehr unter ');
-    await page.getByRole('button', { name: 'Link', exact: true }).click();
-    await page.getByLabel('Adresse').fill('beispiel.de');
-    await page.getByLabel(/^Text/).fill('Webseite');
-    await page.getByRole('button', { name: 'Link einfügen', exact: true }).click();
-    await page.keyboard.type(' und mehr');
-    const link = editor.locator('a');
-    await expect(link).toHaveCount(1);
-    await expect(link).toHaveText('Webseite');
-    await expect(link).toHaveAttribute('href', 'https://beispiel.de');
-    await expect(editor.locator('p').first()).toContainText('Mehr unter Webseite und mehr');
-
-    // Ein Klick in den Link zeigt die Link-Leiste: Link öffnen, ändern, entfernen
-    await link.click();
-    const linkBar = page.getByRole('toolbar', { name: 'Link' });
-    await expect(linkBar).toContainText('beispiel.de');
-    await linkBar.getByRole('button', { name: 'Link öffnen' }).click();
-    expect(await page.evaluate(() => (window as unknown as { __opened: string[] }).__opened)).toEqual(['https://beispiel.de']);
-    await linkBar.getByRole('button', { name: 'Link ändern' }).click();
-    await expect(page.getByLabel('Adresse')).toHaveValue('https://beispiel.de');
-    await page.getByLabel('Adresse').fill('javascript:alert(1)');
-    await page.getByRole('button', { name: 'Übernehmen' }).click();
-    await expect(page.getByRole('alert')).toContainText('keine gültige Adresse'); // unzulässige Ziele werden abgelehnt
-    await page.getByLabel('Adresse').fill('www.example.de/seite');
-    await page.getByRole('button', { name: 'Übernehmen' }).click();
-    await expect(link).toHaveAttribute('href', 'https://www.example.de/seite');
-
-    await expect(page.getByText('Gespeichert')).toBeVisible();
-    await page.screenshot({ path: 'test-results/tabelle-link-marker.png', fullPage: true });
-    await syncNow(page);
-
-    // Auf dem Server liegen Tabelle, Link und Hervorhebung im Inhalt
-    const doc = await serverDoc(request, token, title);
-    const json = JSON.stringify(doc!.content);
-    for (const part of ['"type":"table"', '"type":"tableHeader"', '"type":"tableCell"', '"type":"link"', '"type":"highlight"', 'https://www.example.de/seite']) expect(json, part).toContain(part);
-
-    // Nach dem Neuladen ist alles noch da
-    await page.reload();
-    await expect(editor.locator('table')).toHaveCount(1);
-    await expect(editor.locator('mark')).toHaveText('Material');
-    await expect(editor.locator('a')).toHaveAttribute('href', 'https://www.example.de/seite');
-
-    // Das PDF enthält die Tabelle (Text) und den anklickbaren Link
-    const pdf = await request.get(`/api/protocols/${(doc as unknown as { id: string }).id}/pdf`, { headers: { Authorization: `Bearer ${token}` } });
-    expect(pdf.status()).toBe(200);
-    const bytes = (await pdf.body()).toString('latin1');
-    expect(bytes.startsWith('%PDF-')).toBe(true);
-    expect(bytes).toContain('https://www.example.de/seite');
-    const text = pdfText(await pdf.body());
-    if (text !== null) for (const part of ['Wer', 'Aufgabe', 'Anna', 'Schläuche', 'Ben', 'Material', 'Webseite']) expect(text, part).toContain(part);
-    await context.close();
-  });
-
-  test('Foto und Trennlinie aus einer Tabellenzelle heraus landen hinter der Tabelle und zerteilen sie nicht', async ({ browser, request }) => {
-    await adminToken(request);
-    const { context, page } = await newSession(browser);
-    await signIn(page, ADMIN);
-    await writeProtocol(page, 'Foto neben Tabelle', 'Text.');
-    const editor = page.getByLabel('Protokolltext', { exact: true });
-    await page.getByRole('button', { name: 'Einfügen', exact: true }).click();
-    await page.getByRole('dialog', { name: 'Einfügen' }).getByRole('button', { name: /^Tabelle/ }).click();
-    await page.getByLabel(/^Zeilen/).fill('2');
-    await page.getByLabel(/^Spalten/).fill('2');
-    await page.getByRole('button', { name: 'Tabelle einfügen', exact: true }).click();
-    await page.keyboard.type('Zelle'); // der Cursor steht in der ersten Zelle der ersten Zeile
-
-    // Zellen nehmen nur Text und Listen auf. Ein Foto soll nicht verschwinden und die Tabelle nicht zerreißen, sondern dahinter stehen.
-    await page.getByRole('button', { name: 'Foto oder Datei anhängen' }).click();
-    const chooser = page.waitForEvent('filechooser');
-    await page.getByRole('button', { name: /Foto aus Galerie/ }).click();
-    await (await chooser).setFiles({ name: 'teich.png', mimeType: 'image/png', buffer: PNG_1X1 });
-    await expect(editor.locator('.photo-node img')).toBeVisible();
-    await expect(editor.locator('table')).toHaveCount(1);
-    await expect(editor.locator('table .photo-node')).toHaveCount(0);
-    await expect(editor.locator('tr')).toHaveCount(2);
-
-    // Dasselbe für die Trennlinie; Tabelle und Zitat gibt es in einer Tabelle nicht
-    await editor.locator('td').first().click();
-    await page.getByRole('button', { name: 'Einfügen', exact: true }).click();
-    const sheet = page.getByRole('dialog', { name: 'Einfügen' });
-    await expect(sheet.getByRole('button', { name: /^Tabelle/ })).toHaveCount(0);
-    await expect(sheet.getByRole('button', { name: /^Zitat/ })).toHaveCount(0);
-    await sheet.getByRole('button', { name: /^Trennlinie/ }).click();
-    await expect(editor.locator('hr')).toHaveCount(1);
-    await expect(editor.locator('table')).toHaveCount(1);
-    await expect(editor.locator('tr')).toHaveCount(2);
-    await expect(editor.locator('table hr')).toHaveCount(0);
-    await expect(editor.locator('table')).toContainText('Zelle');
-    await context.close();
-  });
-
-  test('die Wahl „Ohne Kopfzeile“ schickt das Formular nicht ab; eine Tabelle mit Inhalt wird erst nach Rückfrage gelöscht', async ({ browser, request }) => {
-    await adminToken(request);
-    const { context, page } = await newSession(browser);
-    await signIn(page, ADMIN);
-    await writeProtocol(page, 'Tabelle ohne Kopf', 'Text.');
-    const editor = page.getByLabel('Protokolltext', { exact: true });
-    await page.getByRole('button', { name: 'Einfügen', exact: true }).click();
-    await page.getByRole('dialog', { name: 'Einfügen' }).getByRole('button', { name: /^Tabelle/ }).click();
-    await page.getByRole('button', { name: 'Ohne Kopfzeile' }).click();
-    await expect(page.getByRole('dialog', { name: 'Tabelle einfügen' })).toBeVisible(); // nicht abgeschickt
-    await expect(editor.locator('table')).toHaveCount(0);
-    await page.getByLabel(/^Zeilen/).fill('2');
-    await page.getByLabel(/^Spalten/).fill('2');
-    await page.getByRole('button', { name: 'Tabelle einfügen', exact: true }).click();
-    await expect(editor.locator('tr')).toHaveCount(2);
-    await expect(editor.locator('th')).toHaveCount(0);
-
-    // Löschen: Bei Inhalt fragt der Editor nach; „Abbrechen“ lässt die Tabelle stehen
-    await page.keyboard.type('Wichtiger Eintrag');
-    const bar = page.getByRole('toolbar', { name: 'Tabelle' });
-    await bar.getByRole('button', { name: 'Tabelle löschen' }).click();
-    const ask = page.getByRole('alertdialog', { name: 'Tabelle löschen' });
-    await expect(ask).toBeVisible();
-    await ask.getByRole('button', { name: 'Abbrechen' }).click();
-    await expect(editor.locator('table')).toHaveCount(1);
-    await bar.getByRole('button', { name: 'Tabelle löschen' }).click();
-    await page.getByRole('alertdialog', { name: 'Tabelle löschen' }).getByRole('button', { name: 'Löschen' }).click();
-    await expect(editor.locator('table')).toHaveCount(0);
-    await context.close();
-  });
-
-  test('Einfügen aus anderen Programmen: Tabellen bleiben ganz, Spannen sind begrenzt, unzulässige Adressen werden kein Link', async ({ browser, request }) => {
-    await adminToken(request);
-    const { context, page } = await newSession(browser);
-    await signIn(page, ADMIN);
-    await writeProtocol(page, 'Einfügen von außen', 'Wort');
-    const editor = page.getByLabel('Protokolltext', { exact: true });
-    const paste = (text: string, html?: string) =>
-      page.evaluate(
-        ({ text, html }) => {
-          const data = new DataTransfer();
-          data.setData('text/plain', text);
-          if (html) data.setData('text/html', html);
-          document.querySelector('.ed-content')!.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
-        },
-        { text, html },
-      );
-    const clear = async () => {
-      await editor.click();
-      await page.keyboard.press('Control+A');
-      await page.keyboard.press('Delete');
-    };
-
-    // Überschrift, Zitat, Trennlinie, Codeblock und eine Tabelle in der Zelle zerreißen die Tabelle nicht: Der Text bleibt.
-    await clear();
-    await paste(
-      'x',
-      '<table><tr><td><h2>Titel</h2><p>x</p></td><td><blockquote>zitat</blockquote><hr><pre>code\nzwei</pre></td></tr>' +
-        '<tr><td>außen<table><tr><td>innen1</td><td>innen2</td></tr></table></td><td>b</td></tr></table>',
-    );
-    await expect(editor.locator('table')).toHaveCount(1);
-    await expect(editor.locator('tr')).toHaveCount(2);
-    await expect(editor.locator('td h1, td h2, td h3, td blockquote, td pre, td hr, td table')).toHaveCount(0);
-    for (const part of ['Titel', 'zitat', 'code', 'zwei', 'außen', 'innen1', 'innen2']) await expect(editor.locator('table')).toContainText(part);
-
-    // Riesige Spannen werden gekürzt, statt dem Editor Tausende Spalten aufzuzwingen
-    await clear();
-    await paste('x', '<table><tr><td colspan="5000" rowspan="9999">breit</td></tr></table>');
-    await expect(editor.locator('table')).toHaveCount(1);
-    expect(await editor.locator('col').count()).toBeLessThanOrEqual(24);
-
-    // Eine Adresse über markiertem Text: nur erlaubte Ziele werden zum Link
-    for (const bad of ['ftp://example.com/x', 'ftps://example.com/y', 'file:///etc/passwd']) {
-      await clear();
-      await page.keyboard.type('Wort');
-      await page.keyboard.press('Control+A');
-      await paste(bad);
-      await expect(editor.locator('a'), bad).toHaveCount(0);
-    }
-    await clear();
-    await page.keyboard.type('Wort');
-    await page.keyboard.press('Control+A');
-    await paste('www.example.de');
-    await expect(editor.locator('a')).toHaveAttribute('href', 'https://www.example.de');
-    await expect(editor.locator('a')).toHaveText('Wort');
-    await context.close();
-  });
-
-  test('am Handy: Leiste, Tabelle und Link passen auf den Bildschirm', async ({ browser, request }) => {
-    const title = 'Handy mit Tabelle';
-    await adminToken(request);
-    const context = await browser.newContext({ viewport: { width: 390, height: 780 }, hasTouch: true, isMobile: true });
-    const page = await context.newPage();
-    await signIn(page, ADMIN);
-    await writeProtocol(page, title, 'Kurz.');
-    const editor = page.getByLabel('Protokolltext', { exact: true });
-    // Was beim Notieren gebraucht wird, steht ohne Wischen in der Leiste (sonst bliebe „Einfügen“, der einzige Weg zu Tabellen, verborgen)
-    for (const name of ['Fett', 'Kursiv', 'Aufzählung', 'Nummerierung', 'Checkliste', 'Foto oder Datei anhängen', 'Einfügen']) {
-      const box = await page.getByRole('toolbar', { name: 'Formatierung' }).getByRole('button', { name, exact: true }).boundingBox();
-      expect(box, name).not.toBeNull();
-      expect(box!.x + box!.width, `${name} ragt über den Bildschirmrand`).toBeLessThanOrEqual(390);
-    }
-    await page.getByRole('button', { name: 'Einfügen', exact: true }).tap();
-    await page.getByRole('dialog', { name: 'Einfügen' }).getByRole('button', { name: /^Tabelle/ }).tap();
-    await page.getByLabel(/^Spalten/).fill('6');
-    await page.getByRole('button', { name: 'Tabelle einfügen', exact: true }).tap();
-    await expect(editor.locator('th')).toHaveCount(6);
-    await expect(page.getByRole('toolbar', { name: 'Tabelle' })).toBeVisible();
-    // Sechs Spalten à mindestens 96 px sind breiter als der Bildschirm: Die Tabelle scrollt im Rahmen, die Seite nicht.
-    const sizes = await page.evaluate(() => {
-      const wrapper = document.querySelector('.tableWrapper') as HTMLElement;
-      return { wrapperScrolls: wrapper.scrollWidth > wrapper.clientWidth, pageWidth: document.documentElement.scrollWidth, viewport: window.innerWidth };
-    });
-    expect(sizes.wrapperScrolls).toBe(true);
-    expect(sizes.pageWidth).toBeLessThanOrEqual(sizes.viewport);
-    await page.screenshot({ path: 'test-results/tabelle-am-handy.png' });
-    await context.close();
-  });
-});
-
-test.describe.serial('Protokolle: feindliche Tabellen', () => {
-  test('ein Protokoll mit absurder Zellspanne wird nur gelesen, statt den Editor lahmzulegen', async ({ browser, request }) => {
-    const title = 'Tabelle mit Riesenspanne';
-    const token = await adminToken(request);
-    const p = (text: string) => ({ type: 'paragraph', content: [{ type: 'text', text }] });
-    const cell = (colspan: number) => ({ type: 'tableCell', attrs: { colspan, rowspan: 1, colwidth: null, align: null }, content: [p('Zelle')] });
-    const content = { type: 'doc', content: [p('Davor'), { type: 'table', content: [{ type: 'tableRow', content: [cell(1_000_000)] }] }] };
-    const sent = await request.post('/api/sync', {
-      headers: { Authorization: `Bearer ${token}`, ...SCHEMA },
-      data: { since: 0, changes: [{ id: 'spanne-0001', baseRev: 0, title, datum: '2026-10-01', beginn: '', ende: '', ort: '', leitung: '', content, updatedAt: Date.now(), deleted: false }] },
-    });
-    expect(sent.ok()).toBeTruthy();
-
-    const { context, page } = await newSession(browser);
-    await signIn(page, ADMIN);
-    await page.goto('/#/protokolle');
-    await page.getByText(title).click();
-    // Mit einer Million Spalten bräuchte der Editor Minuten: Das Protokoll öffnet nur lesend, und zwar sofort.
-    await expect(page.getByRole('alert')).toContainText('Elemente, die diese App-Version nicht kennt', { timeout: 5000 });
-    await expect(page.getByLabel('Protokolltext', { exact: true })).toHaveCount(0);
-    await expect(page.getByText('Zelle')).toBeVisible();
-    await context.close();
-  });
-});
-
 /** Dieselbe Adresse, aber mit kodiertem ersten Zeichen im `segment`-ten Teil des Pfads (Zählung ab 1, wie `split('/')`). */
 function respelled(path: string, segment: number): string {
   return path
@@ -510,17 +142,13 @@ function respelled(path: string, segment: number): string {
     .join('/');
 }
 
-/** Ein 1×1-Pixel-PNG: Die App macht daraus ein verkleinertes JPEG. */
-const PNG_1X1 = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
-
 test.describe.serial('Protokolle: Fotos als Anhänge', () => {
   test('Foto einfügen, hochladen, bei einem anderen Betreuer sehen und im PDF finden', async ({ browser, request }) => {
     const title = 'Teich mit Foto';
     const token = await adminToken(request);
-    await createBen(request);
+    await createBen(request, token);
 
-    const admin = await newSession(browser);
-    await signIn(admin.page, ADMIN);
+    const admin = await open(browser, ADMIN);
     await writeProtocol(admin.page, title, 'Text vor dem Foto.');
     await admin.page.getByRole('button', { name: 'Sichtbarkeit: privat' }).click();
     await admin.page.getByRole('button', { name: 'Für alle Betreuer veröffentlichen' }).click();
@@ -551,13 +179,12 @@ test.describe.serial('Protokolle: Fotos als Anhänge', () => {
     expect([...(await blob.body()).subarray(0, 3)]).toEqual([0xff, 0xd8, 0xff]);
 
     // Das PDF enthält das Foto.
-    const pdf = await request.get(`/api/protocols/${(doc as unknown as { id: string }).id}/pdf`, { headers: { Authorization: `Bearer ${token}` } });
+    const pdf = await request.get(`/api/protocols/${doc!.id}/pdf`, { headers: { Authorization: `Bearer ${token}` } });
     expect(pdf.status()).toBe(200);
     expect((await pdf.body()).toString('latin1')).toContain('/DCTDecode');
 
     // Ben sieht das Foto: Es wird beim Anschauen vom Server geholt.
-    const ben = await newSession(browser);
-    await signIn(ben.page, BEN);
+    const ben = await open(browser, BEN);
     await ben.page.goto('/#/protokolle');
     await ben.page.getByText(title).click({ timeout: 30_000 });
     const benPhoto = ben.page.locator('.photo-node img');
