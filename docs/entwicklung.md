@@ -141,3 +141,5 @@ Die Zugriffsregel entscheidet der Server am **Routenmuster** (`req.routeOptions.
 1. Versionen erhöhen: `app/package.json`, `app/android/app/build.gradle` (`versionCode` + `versionName`), `server/package.json`, beide `package-lock.json` (Zeile 3 und 9) und `VERSION` in `server/src/app.ts`; `CHANGELOG.md` ergänzen.
 2. Auf `main` mergen, dann den Tag auf dem Merge-Commit setzen: `git tag vX.Y.Z && git push --tags`.
 3. GitHub Actions baut das Docker-Image (`ghcr.io/volltext/jf-hub:X.Y.Z`, `:X.Y`, `:latest`) und die APK und legt sie ans Release.
+
+**Releases mit Datenumbau** (zum Beispiel 2.2.0, das Anhänge in eigene Einträge verschiebt): Jeder Push auf `main` baut `:latest`. Teste deshalb zuerst einen **Release-Kandidaten**: Tag `vX.Y.Z-rc.1` auf dem Branch. Er erzeugt das Image `X.Y.Z-rc.1` ohne `:latest` und ohne `:X.Y` und ein Release, das als Vorabversion markiert ist. Starte es mit einer Kopie der echten Datenbank (zweiter Start ändert nichts, Backup „vor Update“ ist da, die Geräte kommen klar), und merge erst dann nach `main`.
