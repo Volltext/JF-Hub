@@ -88,7 +88,6 @@ export function EditorToolbar({ editor }: { editor: Editor }) {
   return (
     <>
       <div className="ed-dock">
-        <EditorContext editor={editor} onEditLink={ui.openLink} />
         <div className="ed-toolbar" role="toolbar" aria-label="Formatierung">
           {TOOLS.map((t, i) => {
             if (t === 'sep') return <span key={`s${i}`} className="ed-toolbar__sep" aria-hidden />;
@@ -113,6 +112,7 @@ export function EditorToolbar({ editor }: { editor: Editor }) {
             );
           })}
         </div>
+        <EditorContext editor={editor} onEditLink={ui.openLink} />
       </div>
       {sheet === 'attach' && <AttachSheet editor={editor} onClose={() => setSheet(null)} />}
       {sheet === 'insert' && <InsertSheet editor={editor} onClose={() => setSheet(null)} />}

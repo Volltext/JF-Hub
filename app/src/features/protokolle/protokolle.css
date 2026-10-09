@@ -44,7 +44,7 @@ body.web .icon-btn { cursor: pointer; }
 .ed-toolbar__sep { flex: 0 0 1px; align-self: stretch; margin: 8px 4px; background: var(--border); }
 
 /* Kontextzeile: Link-Leiste oder Tabellen-Leiste, je nachdem, wo der Cursor steht */
-.ed-context { display: flex; align-items: center; gap: var(--s-2); padding: var(--s-1) var(--s-2); overflow-x: auto; scrollbar-width: none; background: var(--surface-2); border-radius: var(--r-md) var(--r-md) 0 0; border-bottom: 1px solid var(--border); }
+.ed-context { display: flex; align-items: center; gap: var(--s-2); padding: var(--s-1) var(--s-2); overflow-x: auto; scrollbar-width: none; background: var(--surface-2); border-radius: 0 0 var(--r-md) var(--r-md); border-top: 1px solid var(--border); }
 .ed-context__label { flex: 1 1 6rem; min-width: 0; display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 0.9rem; }
 .ed-context__label > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ed-chip { flex: 0 0 auto; min-height: 44px; padding: 0 var(--s-3); border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--text); font-size: 0.9rem; font-weight: 600; white-space: nowrap; cursor: pointer; }
@@ -54,13 +54,12 @@ body.web .icon-btn { cursor: pointer; }
 .ed-chip--danger { color: var(--danger); }
 .ed-chip:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
 
-/* Maus/Tastatur: Dock haftet oben, die Kontextzeile steht unter der Leiste. Touch: Dock haftet unten, direkt über der Bildschirmtastatur, die Kontextzeile steht über der Leiste. */
-@media (pointer: fine) {
-  .ed-dock { position: sticky; top: var(--s-2); flex-direction: column-reverse; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18); }
-  .ed-context { border-radius: 0 0 var(--r-md) var(--r-md); border-bottom: 0; border-top: 1px solid var(--border); }
-}
+/* Maus/Tastatur: Dock haftet oben, die Kontextzeile steht unter der Leiste (auch in der Tab-Reihenfolge: Leiste zuerst).
+   Touch: Dock haftet unten, direkt über der Bildschirmtastatur, die Kontextzeile steht optisch über der Leiste. */
+@media (pointer: fine) { .ed-dock { position: sticky; top: var(--s-2); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18); } }
 @media (pointer: coarse) {
-  .ed-dock { order: 5; position: sticky; bottom: 0; border-radius: var(--r-md) var(--r-md) 0 0; box-shadow: 0 -4px 14px rgba(0, 0, 0, 0.25); }
+  .ed-dock { order: 5; position: sticky; bottom: 0; flex-direction: column-reverse; border-radius: var(--r-md) var(--r-md) 0 0; box-shadow: 0 -4px 14px rgba(0, 0, 0, 0.25); }
+  .ed-context { border-radius: var(--r-md) var(--r-md) 0 0; border-top: 0; border-bottom: 1px solid var(--border); }
   .proto-sheet--body { order: 4; }
   body.editing .nav { display: none; }
 }
