@@ -234,6 +234,7 @@
       stats.appendChild(h('h2', null, 'Status'));
       stats.appendChild(h('div', { class: 'grid' },
         stat(i.users, 'Benutzer'), stat(i.protocols, 'Protokolle'), stat(i.trashed, 'im Papierkorb'), stat(r[1].length, 'angemeldete Geräte'),
+        stat(i.blobs === undefined ? '–' : i.blobs + ' · ' + fmtSize(i.blobBytes), 'Fotos und Anhänge'),
         stat(i.version, 'Serverversion'), stat(up, 'Laufzeit')));
     }).catch(function (e) { stats.appendChild(h('div', { class: 'msg err' }, e.message)); });
     wrap.appendChild(pageHead('Übersicht', 'Die Web-App (PWA) für alle Betreuer erreichst du unter dem Hauptpfad dieser Adresse.'));
@@ -501,7 +502,7 @@
     return wrap;
   };
 
-  var KIND = { auto: 'automatisch', manuell: 'manuell', vorher: 'vor Wiederherstellung' };
+  var KIND = { auto: 'automatisch', manuell: 'manuell', vorher: 'vor Wiederherstellung', update: 'vor Update' };
   var RESTORE_WARN = 'Alle aktuellen Daten werden durch den Stand der Sicherung ersetzt, auch Benutzer und Anmeldungen. ' +
     'Vorher legt der Server automatisch eine Sicherung des jetzigen Stands an. ' +
     'Die Geräte gleichen sich danach neu ab und senden hoch, was in der Sicherung fehlt. Wer in der Sicherung nicht existierte, muss sich neu anmelden.';

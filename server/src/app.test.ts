@@ -21,7 +21,7 @@ async function login(): Promise<string> {
   return r.json().token as string;
 }
 
-const auth = (token: string) => ({ authorization: `Bearer ${token}` });
+const auth = (token: string) => ({ authorization: `Bearer ${token}`, 'x-jfh-schema': '2' });
 
 const change = (id: string, over: Partial<ClientChange> = {}): ClientChange => ({
   id,
@@ -80,7 +80,7 @@ describe('Auth', () => {
     const c = cookie.split(';')[0]!;
     const bad = await app.inject({ method: 'POST', url: '/api/sync', headers: { cookie: c }, payload: { since: 0, changes: [] } });
     expect(bad.statusCode).toBe(403);
-    const ok = await app.inject({ method: 'POST', url: '/api/sync', headers: { cookie: c, 'x-jfh': '1' }, payload: { since: 0, changes: [] } });
+    const ok = await app.inject({ method: 'POST', url: '/api/sync', headers: { cookie: c, 'x-jfh': '1', 'x-jfh-schema': '2' }, payload: { since: 0, changes: [] } });
     expect(ok.statusCode).toBe(200);
   });
 

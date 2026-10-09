@@ -28,6 +28,11 @@ export interface ProtocolRow {
   conflictRev: number | null;
   /** Gesetzt, wenn der Papierkorb geleert wurde: die Zeile bleibt als leerer Grabstein, damit auch lange offline gewesene Geräte die Löschung erfahren. */
   purgedAt: number | null;
+  /**
+   * Nur nach der Migration der Anhänge in Blobs: die Revision davor. Eine Bearbeitung, die darauf aufbaut, ist kein Konflikt
+   * (der Inhalt ist derselbe, nur anders abgelegt). Jede Änderung des Protokolls setzt den Wert zurück.
+   */
+  migratedFrom: number | null;
 }
 
 /** Einstellungen, die in der Admin-GUI änderbar sind (key/value in `config`). */
@@ -171,6 +176,26 @@ export function openDb(path: string): DatabaseSync {
       PRIMARY KEY (endpoint, kind, key)
     );
     CREATE INDEX IF NOT EXISTS push_reminders_at ON push_reminders(at);
+    -- Anhänge (Fotos, Dateien) liegen binär hier und nicht im Inhalt der Protokolle. Die Kennung vergibt der Client (bzw. der Server
+    -- aus dem Inhalt, wenn er Anhänge aus älteren Protokollen auslagert), uploadedAt ist der Zeitpunkt des letzten Hochladens.
+    CREATE TABLE IF NOT EXISTS blobs (
+      id TEXT PRIMARY KEY,
+      sha256 TEXT NOT NULL,
+      size INTEGER NOT NULL,
+      mime TEXT NOT NULL,
+      name TEXT NOT NULL DEFAULT '',
+      kind TEXT NOT NULL,
+      uploaderId TEXT NOT NULL DEFAULT '',
+      uploadedAt INTEGER NOT NULL,
+      data BLOB NOT NULL
+    );
+    -- Welches Protokoll auf welchen Blob verweist. Der Blob darf fehlen (noch nicht hochgeladen), deshalb kein Fremdschlüssel darauf.
+    CREATE TABLE IF NOT EXISTS blob_refs (
+      blobId TEXT NOT NULL,
+      protocolId TEXT NOT NULL REFERENCES protocols(id) ON DELETE CASCADE,
+      PRIMARY KEY (blobId, protocolId)
+    );
+    CREATE INDEX IF NOT EXISTS blob_refs_protocol ON blob_refs(protocolId);
   `);
   // Migration: Ordner-Zuordnung (ab 1.1.0 des Servers).
   addColumn(db, 'protocols', 'folderId', "TEXT NOT NULL DEFAULT ''");
@@ -182,6 +207,8 @@ export function openDb(path: string): DatabaseSync {
   addColumn(db, 'protocols', 'conflictRev', 'INTEGER');
   // Migration: Papierkorb leeren hinterlässt einen Grabstein statt die Zeile zu löschen (ab 2.1.0).
   addColumn(db, 'protocols', 'purgedAt', 'INTEGER');
+  // Migration: Anhänge ausgelagert; Bearbeitungen auf dem Stand davor bleiben gültig (ab 2.2.0).
+  addColumn(db, 'protocols', 'migratedFrom', 'INTEGER');
   addColumn(db, 'records', 'ownerId', "TEXT NOT NULL DEFAULT ''");
   addColumn(db, 'records', 'shared', 'INTEGER NOT NULL DEFAULT 1');
   addColumn(db, 'records', 'hiddenRev', 'INTEGER');

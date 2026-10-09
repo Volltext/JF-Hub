@@ -33,5 +33,6 @@ export function sampleProtocol() {
     deletedAt: null,
     conflictRev: null,
     purgedAt: null,
+    migratedFrom: null,
   });
 }

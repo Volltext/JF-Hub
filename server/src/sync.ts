@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
+import { clearRefs, missingBlobIds, normalizeContent, refreshRefs, saveBlobs } from './blobs.js';
 import { currentRev, getEpoch, getSettings, nextRev, type FolderRow, type ProtocolRow, type RecordRow, type Role } from './db.js';
 
 /** Wer synchronisiert (aus der Sitzung). */
@@ -112,6 +113,8 @@ export interface SyncResponse {
   conflicts: { id: string; copyId: string }[];
   /** Änderungen, die der Server nicht annimmt (ungültig, zu groß …). Die übrigen sind trotzdem angewendet. */
   rejected: { kind: 'protocol' | 'folder' | 'record'; id: string; collection?: string; reason: string }[];
+  /** Anhänge, auf die ein soeben gespeichertes Protokoll verweist und die der Server nicht hat: Das Gerät lädt sie nach, wenn es sie noch besitzt. */
+  missingBlobs: string[];
 }
 
 const str = (v: unknown, max: number) => (typeof v === 'string' ? v.slice(0, max) : '');
@@ -205,17 +208,24 @@ function validate(c: ClientChange): string | null {
 interface Meta {
   ownerId: string;
   shared: 0 | 1;
+  /** Wer die Änderung schickt: Ihm gehören die Anhänge, die dabei aus dem Inhalt herausgelöst werden. */
+  by: string;
   /** Zustand vor der Änderung (für `hiddenRev`). */
   prev?: { shared: number; hiddenRev: number | null };
 }
 
 const EMPTY_DOC = { type: 'doc', content: [] };
 
-/** Schreibt (oder überschreibt) ein Protokoll und liefert die vergebene Revision. */
+/**
+ * Schreibt (oder überschreibt) ein Protokoll und liefert die vergebene Revision. Fotos und Dateien, die noch im Inhalt stecken
+ * (Apps bis 2.1.x, Altbestand), werden dabei in Blobs ausgelagert; ist das nicht möglich, wirft es und die Änderung wird abgelehnt.
+ */
 function write(db: DatabaseSync, id: string, c: ClientChange, deleted: boolean, meta: Meta): number {
-  const content = JSON.stringify(c.content ?? EMPTY_DOC);
+  const normalized = normalizeContent(c.content ?? EMPTY_DOC, true);
+  const content = JSON.stringify(normalized.content);
   if (content.length > MAX_CONTENT) throw new Error('Protokoll zu groß');
   const now = Date.now();
+  saveBlobs(db, normalized.blobs, meta.by, now);
   const rev = nextRev(db);
   const hiddenRev = meta.prev && meta.prev.shared === 1 && meta.shared === 0 ? rev : (meta.prev?.hiddenRev ?? null);
   db.prepare(
@@ -224,7 +234,7 @@ function write(db: DatabaseSync, id: string, c: ClientChange, deleted: boolean, 
      ON CONFLICT(id) DO UPDATE SET title=excluded.title, folderId=excluded.folderId, datum=excluded.datum, beginn=excluded.beginn,
        ende=excluded.ende, ort=excluded.ort, leitung=excluded.leitung, content=excluded.content,
        ownerId=excluded.ownerId, shared=excluded.shared, hiddenRev=excluded.hiddenRev,
-       rev=excluded.rev, updatedAt=excluded.updatedAt, deletedAt=excluded.deletedAt, purgedAt=NULL`,
+       rev=excluded.rev, updatedAt=excluded.updatedAt, deletedAt=excluded.deletedAt, purgedAt=NULL, migratedFrom=NULL`,
   ).run(
     id,
     str(c.title, 200),
@@ -242,6 +252,7 @@ function write(db: DatabaseSync, id: string, c: ClientChange, deleted: boolean, 
     Number.isFinite(c.updatedAt) ? c.updatedAt : now,
     deleted ? now : null,
   );
+  refreshRefs(db, id, normalized.content);
   return rev;
 }
 
@@ -257,6 +268,7 @@ export function purgeProtocol(db: DatabaseSync, id: string, now = Date.now()): b
        WHERE id = ? AND deletedAt IS NOT NULL AND purgedAt IS NULL`,
     )
     .run(now, nextRev(db), id);
+  if (r.changes > 0) clearRefs(db, id); // Die Anhänge sind frei und werden nach der Schonfrist aufgeräumt.
   return r.changes > 0;
 }
 
@@ -277,8 +289,11 @@ export function sweepTrash(db: DatabaseSync, now = Date.now()): { purged: number
   return { purged: due.length, removed: Number(gone.changes) };
 }
 
-/** Steht genau diese Fassung (Kopfdaten und Inhalt) schon beim Server? Dann ist eine veraltete Basis kein Konflikt. */
-function sameDoc(r: ProtocolRow, c: ClientChange): boolean {
+/**
+ * Steht genau diese Fassung (Kopfdaten und Inhalt) schon beim Server? Dann ist eine veraltete Basis kein Konflikt.
+ * `content` ist der Inhalt, wie er gespeichert würde (Anhänge schon ausgelagert).
+ */
+function sameDoc(r: ProtocolRow, c: ClientChange, content: unknown): boolean {
   return (
     r.title === str(c.title, 200) &&
     r.folderId === str(c.folderId, 64) &&
@@ -287,7 +302,7 @@ function sameDoc(r: ProtocolRow, c: ClientChange): boolean {
     r.ende === str(c.ende, 10) &&
     r.ort === str(c.ort, 200) &&
     r.leitung === str(c.leitung, 200) &&
-    r.content === JSON.stringify(c.content ?? EMPTY_DOC)
+    r.content === JSON.stringify(content)
   );
 }
 
@@ -311,6 +326,13 @@ export function applySync(db: DatabaseSync, req: SyncRequest, user: SyncUser): S
   /** Dokumente, die in die Antwort gehören, auch wenn ihre Revision nicht über dem Stand des Clients liegt. */
   const resend = new Set<string>();
   const rejected: SyncResponse['rejected'] = [];
+  /** Protokolle, die in dieser Anfrage neu geschrieben wurden (für die Meldung fehlender Anhänge). */
+  const written = new Set<string>();
+  const put = (id: string, change: ClientChange, deleted: boolean, meta: Meta): number => {
+    const rev = write(db, id, change, deleted, meta);
+    if (!deleted) written.add(id);
+    return rev;
+  };
   /**
    * Führt eine einzelne Änderung isoliert aus: Scheitert sie, wird nur sie zurückgenommen und gemeldet, die übrigen laufen weiter.
    * Sonst sperrt ein einziges unbrauchbares Protokoll (zu groß, ungültig) den Abgleich des ganzen Geräts, und zwar dauerhaft.
@@ -345,7 +367,7 @@ export function applySync(db: DatabaseSync, req: SyncRequest, user: SyncUser): S
         if (err) throw new Error(err);
         const existing = db.prepare('SELECT * FROM protocols WHERE id = ?').get(c.id) as ProtocolRow | undefined;
         if (!existing) {
-          write(db, c.id, c, c.deleted, { ownerId: user.id, shared: c.shared === true ? 1 : 0 });
+          put(c.id, c, c.deleted, { ownerId: user.id, shared: c.shared === true ? 1 : 0, by: user.id });
           return;
         }
         if (!canSee(existing, user)) return; // fremdes privates Protokoll: ignorieren
@@ -353,6 +375,7 @@ export function applySync(db: DatabaseSync, req: SyncRequest, user: SyncUser): S
         const meta: Meta = {
           ownerId: existing.ownerId,
           shared: isOwner && typeof c.shared === 'boolean' ? (c.shared ? 1 : 0) : (existing.shared as 0 | 1),
+          by: user.id,
           prev: existing,
         };
         const serverDeleted = existing.deletedAt !== null;
@@ -361,18 +384,20 @@ export function applySync(db: DatabaseSync, req: SyncRequest, user: SyncUser): S
           // Löschen gewinnt, auch gegen eine Bearbeitung auf veraltetem Stand: Der Papierkorb macht es umkehrbar, und sonst bliebe ein
           // bewusst gelöschtes Protokoll durch ein Gerät am Leben, das nur noch nicht abgeglichen hatte.
           if (serverDeleted) resend.add(c.id);
-          else write(db, c.id, { ...c, ...rowFields(existing) }, true, { ...meta, shared: existing.shared as 0 | 1 });
+          else put(c.id, { ...c, ...rowFields(existing) }, true, { ...meta, shared: existing.shared as 0 | 1 });
           return;
         }
-        if (existing.rev === c.baseRev || serverDeleted) {
-          write(db, c.id, c, false, meta);
+        // Eine Bearbeitung auf dem Stand vor der Migration der Anhänge baut auf demselben Inhalt auf: kein Konflikt.
+        if (existing.rev === c.baseRev || serverDeleted || (existing.migratedFrom !== null && existing.migratedFrom === c.baseRev)) {
+          put(c.id, c, false, meta);
           return;
         }
         // Das Gerät baut auf einem veralteten Stand auf. Das Original geht in jedem Fall mit zurück, damit es aufholen kann,
         // auch wenn sein Stand schon darüber hinausgerückt ist.
         resend.add(c.id);
         // Steht genau diese Fassung schon beim Server (Wiederholung nach verlorener Antwort, gleiche Änderung auf zwei Geräten), ist nichts zu tun.
-        if (sameDoc(existing, c)) return;
+        // Verglichen wird, wie der Inhalt gespeichert würde: Steckt ein Anhang noch darin, ist er ausgelagert dieselbe Fassung.
+        if (sameDoc(existing, c, normalizeContent(c.content ?? EMPTY_DOC, false).content)) return;
         // Sonst bleibt die Server-Fassung, und die Fassung des Geräts wird als Kopie gesichert. Dieselbe Kopie wird fortgeschrieben,
         // solange das Gerät auf derselben veralteten Basis weitertippt und niemand die Kopie geändert hat.
         let copyId = conflictCopyId(user.id, c);
@@ -380,7 +405,7 @@ export function applySync(db: DatabaseSync, req: SyncRequest, user: SyncUser): S
           | { rev: number; conflictRev: number | null; deletedAt: number | null }
           | undefined;
         if (prev && (prev.deletedAt !== null || prev.conflictRev !== prev.rev)) copyId = randomUUID().replace(/-/g, '');
-        const copyRev = write(db, copyId, { ...c, title: `${str(c.title, 180) || 'Protokoll'} (Konflikt)` }, false, { ownerId: user.id, shared: existing.shared as 0 | 1 });
+        const copyRev = put(copyId, { ...c, title: `${str(c.title, 180) || 'Protokoll'} (Konflikt)` }, false, { ownerId: user.id, shared: existing.shared as 0 | 1, by: user.id });
         db.prepare('UPDATE protocols SET conflictRev = ? WHERE id = ?').run(copyRev, copyId);
         conflicts.push({ id: c.id, copyId });
       });
@@ -475,6 +500,7 @@ export function applySync(db: DatabaseSync, req: SyncRequest, user: SyncUser): S
     counts,
     conflicts,
     rejected,
+    missingBlobs: missingBlobIds(db, [...written]),
   };
 }
 

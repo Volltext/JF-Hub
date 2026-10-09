@@ -22,7 +22,7 @@ afterEach(async () => {
   await app.close();
 });
 
-const auth = (token: string) => ({ authorization: `Bearer ${token}` });
+const auth = (token: string) => ({ authorization: `Bearer ${token}`, 'x-jfh-schema': '2' });
 
 async function adminToken(): Promise<string> {
   const r = await app.inject({ method: 'POST', url: '/api/login', payload: { username: 'admin', password: PW, device: 'Test' } });
@@ -172,7 +172,9 @@ describe('Export', () => {
 
   it('ein Protokoll mit kaputtem Inhalt bricht PDF und ZIP nicht für alle', async () => {
     const t = await adminToken();
-    await sync(t, [change('gut-0001', { title: 'Gut' }), change('kaputt-1', { title: 'Kaputt', content: { type: 'doc', content: [{ type: 'photo', attrs: { src: 'data:image/jpeg;base64,AAAA', w: 1, h: 1 } }] } })]);
+    // Beginnt wie ein JPEG (sonst nähme der Server es gar nicht an), hat aber keine Bilddaten: Die PDF-Erzeugung scheitert daran.
+    const hollow = Buffer.from([0xff, 0xd8, 0xff, 0xfe, 0x00, 0x04, 0x61, 0x62]).toString('base64');
+    await sync(t, [change('gut-0001', { title: 'Gut' }), change('kaputt-1', { title: 'Kaputt', content: { type: 'doc', content: [{ type: 'photo', attrs: { src: `data:image/jpeg;base64,${hollow}`, w: 1, h: 1 } }] } })]);
     const pdf = await app.inject({ method: 'GET', url: '/api/protocols/kaputt-1/pdf', headers: auth(t) });
     expect(pdf.statusCode).toBe(422);
     expect(pdf.json().error).toContain('PDF');

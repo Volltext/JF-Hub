@@ -18,7 +18,7 @@ afterEach(async () => {
   await app.close();
 });
 
-const auth = (token: string) => ({ authorization: `Bearer ${token}` });
+const auth = (token: string) => ({ authorization: `Bearer ${token}`, 'x-jfh-schema': '2' });
 
 async function adminToken(): Promise<string> {
   const r = await app.inject({ method: 'POST', url: '/api/login', payload: { username: 'admin', password: PW, device: 'Test' } });

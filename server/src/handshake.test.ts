@@ -23,7 +23,7 @@ describe('Handshake zwischen App und Server', () => {
   it('der Status nennt Schnittstelle und Mindest-Format (ohne Anmeldung, die App prüft es vor dem Abgleich)', async () => {
     await start();
     const r = await app.inject({ method: 'GET', url: '/api/status' });
-    expect(r.json()).toMatchObject({ api: API_VERSION, minSchema: MIN_SCHEMA, features: [] });
+    expect(r.json()).toMatchObject({ api: API_VERSION, minSchema: MIN_SCHEMA, features: ['blobs'] });
   });
 
   it('die Abgleich-Antwort nennt Schnittstelle und Mindest-Format', async () => {
@@ -33,22 +33,24 @@ describe('Handshake zwischen App und Server', () => {
     expect(r.json()).toMatchObject({ api: API_VERSION, minSchema: MIN_SCHEMA });
   });
 
-  it('Apps ohne Angabe (2.0.x) gelten als Format 1 und werden angenommen, solange der Server es erlaubt', async () => {
+  it('Apps ohne Angabe (2.0.x) gelten als Format 1 und werden seit der Auslagerung der Anhänge abgewiesen', async () => {
     const { token } = await start();
-    expect(MIN_SCHEMA).toBe(1);
-    expect((await sync(token)).statusCode).toBe(200);
-  });
-
-  it('verlangt der Server ein höheres Format, bekommen ältere Apps 426 mit verständlicher Meldung', async () => {
-    const { token } = await start(2);
-    const old = await sync(token); // ohne Header: Format 1
+    expect(MIN_SCHEMA).toBe(2);
+    const old = await sync(token);
     expect(old.statusCode).toBe(426);
     expect(old.json()).toMatchObject({ code: 'client_too_old', minSchema: 2 });
     expect(old.json().error).toContain('App aktualisieren');
+    expect((await sync(token, { 'x-jfh-schema': '2' })).statusCode).toBe(200); // 2.1.0 und neuer
+  });
+
+  it('verlangt der Server ein höheres Format, bekommen ältere Apps 426', async () => {
+    const { token } = await start(3);
+    expect((await sync(token)).statusCode).toBe(426); // ohne Header: Format 1
     expect((await sync(token, { 'x-jfh-schema': '1' })).statusCode).toBe(426);
     expect((await sync(token, { 'x-jfh-schema': 'kaputt' })).statusCode).toBe(426);
-    expect((await sync(token, { 'x-jfh-schema': '2' })).statusCode).toBe(200);
+    expect((await sync(token, { 'x-jfh-schema': '2' })).statusCode).toBe(426);
     expect((await sync(token, { 'x-jfh-schema': '3' })).statusCode).toBe(200);
+    expect((await sync(token, { 'x-jfh-schema': '4' })).statusCode).toBe(200);
   });
 
   it('die Sperre trifft nur den Abgleich: Anmeldung und Status gehen weiter, damit die App die Meldung zeigen kann', async () => {

@@ -79,7 +79,15 @@ function checkbox(checked: boolean, accent: string): Any {
   return { width: 14, canvas };
 }
 
-function blocks(nodes: Node[] | undefined, st: PdfStyle, depth = 0): Any[] {
+/** Liefert zu einem Anhang-Verweis das Foto als JPEG-Data-URL, oder null, wenn der Server es nicht hat. */
+export type ImageLoader = (blobId: string) => string | null;
+
+export interface PdfOptions {
+  /** Ohne Lader zeigt das PDF nur Fotos, die noch im Inhalt stecken (ältere Protokolle). */
+  image?: ImageLoader;
+}
+
+function blocks(nodes: Node[] | undefined, st: PdfStyle, depth = 0, image?: ImageLoader): Any[] {
   const out: Any[] = [];
   for (const n of nodes ?? []) {
     switch (n.type) {
@@ -103,7 +111,7 @@ function blocks(nodes: Node[] | undefined, st: PdfStyle, depth = 0): Any[] {
       }
       case 'bulletList':
       case 'orderedList': {
-        const items = (n.content ?? []).map((li) => ({ stack: blocks(li.content, st, depth + 1) }));
+        const items = (n.content ?? []).map((li) => ({ stack: blocks(li.content, st, depth + 1, image) }));
         out.push({
           [n.type === 'bulletList' ? 'ul' : 'ol']: items,
           margin: [depth ? 4 : 2, 0, 0, 5],
@@ -114,7 +122,7 @@ function blocks(nodes: Node[] | undefined, st: PdfStyle, depth = 0): Any[] {
       case 'taskList': {
         for (const item of n.content ?? []) {
           out.push({
-            columns: [checkbox(item.attrs?.checked === true, st.accent), { width: '*', stack: blocks(item.content, st, depth + 1) }],
+            columns: [checkbox(item.attrs?.checked === true, st.accent), { width: '*', stack: blocks(item.content, st, depth + 1, image) }],
             columnGap: 4,
             margin: [depth ? 4 : 2, 0, 0, 2],
           });
@@ -123,7 +131,7 @@ function blocks(nodes: Node[] | undefined, st: PdfStyle, depth = 0): Any[] {
       }
       case 'blockquote':
         out.push({
-          table: { widths: [3, '*'], body: [[{ text: '', fillColor: st.accent, border: [false, false, false, false] }, { stack: blocks(n.content, st, depth), italics: true, color: MUTED, border: [false, false, false, false] }]] },
+          table: { widths: [3, '*'], body: [[{ text: '', fillColor: st.accent, border: [false, false, false, false] }, { stack: blocks(n.content, st, depth, image), italics: true, color: MUTED, border: [false, false, false, false] }]] },
           layout: { hLineWidth: () => 0, vLineWidth: () => 0, paddingLeft: (i: number) => (i === 1 ? 10 : 0), paddingRight: () => 0, paddingTop: () => 2, paddingBottom: () => 2 },
           margin: [0, 2, 0, 6],
         });
@@ -141,10 +149,15 @@ function blocks(nodes: Node[] | undefined, st: PdfStyle, depth = 0): Any[] {
         break;
       }
       case 'photo': {
-        const src = typeof n.attrs?.src === 'string' ? n.attrs.src : '';
-        // Nur JPEG-Data-URLs (so legt die App Fotos ab); alles andere würde den PDF-Bau stören.
-        if (!/^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(src)) break;
+        const blobId = typeof n.attrs?.blobId === 'string' ? n.attrs.blobId : '';
+        // Seit 2.2.0 verweist das Foto auf einen Blob; ältere Protokolle tragen es noch als Data-URL im Inhalt.
+        const src = blobId ? (image?.(blobId) ?? '') : typeof n.attrs?.src === 'string' ? n.attrs.src : '';
         const caption = typeof n.attrs?.caption === 'string' ? n.attrs.caption.slice(0, 200) : '';
+        // Nur JPEG-Data-URLs (so legt die App Fotos ab); alles andere würde den PDF-Bau stören.
+        if (!/^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(src)) {
+          if (blobId) out.push({ text: [{ text: 'Foto nicht verfügbar', italics: true }, ...(caption ? [{ text: `  (${caption})` }] : [])], color: MUTED, fontSize: 9.5, alignment: 'center', margin: [0, 4, 0, 8] });
+          break;
+        }
         out.push({ image: src, fit: [495, 600], alignment: 'center', margin: [0, 4, 0, caption ? 2 : 8] });
         if (caption) out.push({ text: caption, color: MUTED, fontSize: 9, alignment: 'center', margin: [0, 0, 0, 8] });
         break;
@@ -160,7 +173,7 @@ function blocks(nodes: Node[] | undefined, st: PdfStyle, depth = 0): Any[] {
         out.push({ canvas: [{ type: 'line', x1: 0, y1: 0, x2: 495, y2: 0, lineWidth: 0.7, lineColor: RULE }], margin: [0, 6, 0, 8] });
         break;
       default:
-        if (n.content) out.push(...blocks(n.content, st, depth));
+        if (n.content) out.push(...blocks(n.content, st, depth, image));
     }
   }
   return out;
@@ -175,7 +188,7 @@ function formatDate(iso: string): string {
 }
 
 /** Baut die pdfmake-Dokumentdefinition (rein, ohne I/O – gut testbar). */
-export function buildDocDefinition(doc: ServerDoc, st: PdfStyle): Any {
+export function buildDocDefinition(doc: ServerDoc, st: PdfStyle, opts: PdfOptions = {}): Any {
   const meta: [string, string][] = [];
   if (doc.datum) meta.push(['Datum', formatDate(doc.datum)]);
   if (doc.beginn || doc.ende) meta.push(['Zeit', [doc.beginn, doc.ende].filter(Boolean).join(' – ') + ' Uhr']);
@@ -190,7 +203,7 @@ export function buildDocDefinition(doc: ServerDoc, st: PdfStyle): Any {
     });
   }
   content.push(accentRule(st));
-  content.push(...blocks((doc.content as Node)?.content, st));
+  content.push(...blocks((doc.content as Node)?.content, st, 0, opts.image));
 
   return { ...pageFrame(st, doc.title || 'Protokoll'), content };
 }
@@ -243,8 +256,8 @@ function getPrinter(): Any {
   return printer;
 }
 
-export function renderPdf(doc: ServerDoc, st: PdfStyle): Promise<Buffer> {
-  return renderDefinition(buildDocDefinition(doc, st));
+export function renderPdf(doc: ServerDoc, st: PdfStyle, opts: PdfOptions = {}): Promise<Buffer> {
+  return renderDefinition(buildDocDefinition(doc, st, opts));
 }
 
 /** Rendert eine pdfmake-Dokumentdefinition zu PDF-Bytes. */

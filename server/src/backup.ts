@@ -5,12 +5,13 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { migrateLegacy } from './auth.js';
 import { getConfig, openDb, setConfig } from './db.js';
+import { migrateBlobs } from './migrate.js';
 
 /**
- * Backups der SQLite-Datenbank: automatisch (täglich), manuell oder als Sicherheitskopie vor einer Wiederherstellung.
- * Dateien liegen im Datenordner (`/data/backups`) und tragen die Art und den Zeitpunkt im Namen.
+ * Backups der SQLite-Datenbank: automatisch (täglich), manuell, als Sicherheitskopie vor einer Wiederherstellung oder vor einem
+ * Update, das die Daten umbaut. Dateien liegen im Datenordner (`/data/backups`) und tragen die Art und den Zeitpunkt im Namen.
  */
-export type BackupKind = 'auto' | 'manuell' | 'vorher';
+export type BackupKind = 'auto' | 'manuell' | 'vorher' | 'update';
 
 export interface BackupInfo {
   name: string;
@@ -19,11 +20,13 @@ export interface BackupInfo {
   createdAt: number;
 }
 
-const NAME_RE = /^jf-hub-(auto|manuell|vorher)-(\d{8})-(\d{6})(?:-\d+)?\.sqlite$/;
+const NAME_RE = /^jf-hub-(auto|manuell|vorher|update)-(\d{8})-(\d{6})(?:-\d+)?\.sqlite$/;
 const DAY = 86_400_000;
 
 /** Sicherungen vor einer Wiederherstellung werden nur begrenzt aufgehoben. */
 const KEEP_BEFORE_RESTORE = 3;
+/** Sicherungen vor einem Update ebenso (jede ist eine vollständige Kopie der Datenbank). */
+const KEEP_BEFORE_UPDATE = 2;
 
 export function isBackupName(name: string): boolean {
   return NAME_RE.test(name);
@@ -92,6 +95,10 @@ export function pruneBackups(dir: string, keepAuto: number): void {
     .filter((b) => b.kind === 'vorher')
     .slice(KEEP_BEFORE_RESTORE)
     .forEach((b) => deleteBackup(dir, b.name));
+  all
+    .filter((b) => b.kind === 'update')
+    .slice(KEEP_BEFORE_UPDATE)
+    .forEach((b) => deleteBackup(dir, b.name));
 }
 
 /** Anzahl automatischer Backups, die aufgehoben werden (0 = automatische Backups aus). */
@@ -133,6 +140,7 @@ export function restoreFromFile(db: DatabaseSync, file: string): void {
     const prepared = openDb(copy);
     try {
       migrateLegacy(prepared);
+      migrateBlobs(prepared); // Sicherungen vor 2.2.0 tragen Fotos und Dateien noch im Inhalt der Protokolle.
       const admins = prepared.prepare("SELECT COUNT(*) AS n FROM users WHERE role = 'admin' AND disabled = 0 AND passwordHash IS NOT NULL").get() as { n: number };
       if (!admins.n) throw new RestoreError('Die Sicherung enthält kein nutzbares Admin-Konto, du könntest dich danach nicht mehr anmelden.');
     } finally {

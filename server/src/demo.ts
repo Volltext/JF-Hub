@@ -110,7 +110,9 @@ export async function resetDemo(db: DatabaseSync, now = new Date()): Promise<voi
 
   db.exec('BEGIN IMMEDIATE');
   try {
-    for (const t of ['push_reminders', 'push_subscriptions', 'sessions', 'protocols', 'folders', 'records', 'users', 'config']) db.exec(`DELETE FROM ${t}`);
+    // Alle Tabellen, auch spätere (zum Beispiel die Anhänge der Besucher): Nur die Beispieldaten sollen übrig bleiben.
+    const tables = (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'").all() as { name: string }[]).map((t) => t.name);
+    for (const t of tables) db.exec(`DELETE FROM "${t.replace(/"/g, '""')}"`);
     for (const [k, v] of Object.entries(keep)) if (v !== undefined) setConfig(db, k, v);
     // Revisionen nie zurückdrehen; neue Epoche, damit Geräte ihren Stand verwerfen.
     setConfig(db, 'revCounter', String(liveRev));

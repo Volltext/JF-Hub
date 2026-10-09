@@ -123,7 +123,7 @@ describe('Backup-API', () => {
   let app: FastifyInstance;
   let token: string;
   const PW = 'ein-sicheres-passwort';
-  const auth = () => ({ authorization: `Bearer ${token}` });
+  const auth = () => ({ authorization: `Bearer ${token}`, 'x-jfh-schema': '2' });
 
   beforeEach(async () => {
     app = await buildApp({ db: openDb(':memory:'), adminPassword: PW, pushTimer: false, backupTimer: false, backupDir: join(dir, 'backups') });

@@ -22,7 +22,7 @@ async function login(username: string): Promise<string> {
   expect(r.statusCode).toBe(200);
   return r.json().token as string;
 }
-const auth = (token: string) => ({ authorization: `Bearer ${token}` });
+const auth = (token: string) => ({ authorization: `Bearer ${token}`, 'x-jfh-schema': '2' });
 
 async function sync(token: string, body: Record<string, unknown> = {}): Promise<SyncResponse> {
   const r = await app.inject({ method: 'POST', url: '/api/sync', headers: auth(token), payload: { since: 0, changes: [], ...body } });
