@@ -49,6 +49,47 @@ export const cleanMime = (v: unknown): string => (typeof v === 'string' && MIME.
 // eslint-disable-next-line no-control-regex
 export const cleanName = (v: unknown): string => (typeof v === 'string' ? v.replace(/[\u0000-\u001f\u007f/\\]+/g, '').trim().slice(0, 120) : '');
 
+// ---------- Hochladen: Prüfung ----------
+
+export interface UploadRequest {
+  id: string;
+  kind: unknown;
+  name: unknown;
+  mime: unknown;
+  /** Base64 */
+  data: unknown;
+}
+
+export interface CheckedUpload {
+  kind: BlobKind;
+  name: string;
+  mime: string;
+  data: Buffer;
+}
+
+/**
+ * Prüft einen Upload so, wie es der Server tut, und liefert, was gespeichert wird: Kennung, Art, Base64, Größe, bei Fotos die
+ * JPEG-Kennung. Wirft `BlobError` mit dem passenden HTTP-Status. `demo`: Die öffentliche Demo nimmt nur kleine Fotos an.
+ */
+export function checkUpload(req: UploadRequest, opts: { demo?: boolean } = {}): CheckedUpload {
+  if (!BLOB_ID_RE.test(req.id)) throw new BlobError('Ungültige Kennung', 400);
+  const kind = req.kind;
+  if (kind !== 'photo' && kind !== 'file') throw new BlobError('Die Art muss „photo“ oder „file“ sein', 400);
+  if (opts.demo && kind === 'file') throw new BlobError('In der Demo können nur Fotos hochgeladen werden.', 403);
+  if (typeof req.data !== 'string' || req.data === '') throw new BlobError('Keine Daten übermittelt', 400);
+  const data = decodeBase64(req.data);
+  if (!data) throw new BlobError('Die Daten sind kein gültiges Base64', 400);
+  const limit = kind === 'photo' ? (opts.demo ? DEMO_MAX_PHOTO_BYTES : MAX_PHOTO_BYTES) : MAX_FILE_BYTES;
+  if (data.length > limit) throw new BlobError(`${kind === 'photo' ? 'Das Foto' : 'Die Datei'} ist größer als ${Math.round(limit / 1024 / 1024)} MB`, 413);
+  if (kind === 'photo' && !isJpeg(data)) throw new BlobError('Fotos müssen JPEG-Dateien sein', 400);
+  return {
+    kind,
+    name: kind === 'file' ? cleanName(req.name) || 'Datei' : '',
+    mime: kind === 'photo' ? 'image/jpeg' : cleanMime(req.mime),
+    data,
+  };
+}
+
 // ---------- Speichern und Lesen ----------
 
 export interface BlobInput {

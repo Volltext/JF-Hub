@@ -34,24 +34,7 @@ import {
   verifyPassword,
   type SessionUser,
 } from './auth.js';
-import {
-  BLOB_ID_RE,
-  BlobError,
-  DEMO_MAX_PHOTO_BYTES,
-  MAX_FILE_BYTES,
-  MAX_PHOTO_BYTES,
-  blobNodesOf,
-  blobStats,
-  cleanMime,
-  cleanName,
-  decodeBase64,
-  findBlob,
-  isJpeg,
-  readBlobData,
-  storeBlob,
-  sweepBlobs,
-  type BlobNode,
-} from './blobs.js';
+import { BLOB_ID_RE, BlobError, blobNodesOf, blobStats, checkUpload, findBlob, readBlobData, storeBlob, sweepBlobs, type BlobNode, type UploadRequest } from './blobs.js';
 import { CONFIG_DEFAULTS, getSettings, nextRev, setConfig, type ConfigKey, type FolderRow, type ProtocolRow, type UserRow } from './db.js';
 import { migrateBlobs } from './migrate.js';
 import { pdfFileName, renderPdf, safeFileName, type PdfStyle } from './pdf.js';
@@ -375,27 +358,11 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
     async (req, reply) => {
       const body = req.body;
       if (!body || typeof body !== 'object' || Array.isArray(body)) return reply.code(400).send({ error: 'Ungültige Anfrage' });
-      const { kind, name, mime, data } = body as { kind?: unknown; name?: unknown; mime?: unknown; data?: unknown };
       const id = req.params.id;
-      if (!BLOB_ID_RE.test(id)) return reply.code(400).send({ error: 'Ungültige Kennung' });
-      if (kind !== 'photo' && kind !== 'file') return reply.code(400).send({ error: 'Die Art muss „photo“ oder „file“ sein' });
-      if (opts.demo && kind === 'file') return reply.code(403).send({ error: 'In der Demo können nur Fotos hochgeladen werden.' });
-      if (typeof data !== 'string' || data === '') return reply.code(400).send({ error: 'Keine Daten übermittelt' });
-      const bytes = decodeBase64(data);
-      if (!bytes) return reply.code(400).send({ error: 'Die Daten sind kein gültiges Base64' });
-      const limit = kind === 'photo' ? (opts.demo ? DEMO_MAX_PHOTO_BYTES : MAX_PHOTO_BYTES) : MAX_FILE_BYTES;
-      if (bytes.length > limit) return reply.code(413).send({ error: `${kind === 'photo' ? 'Das Foto' : 'Die Datei'} ist größer als ${Math.round(limit / 1024 / 1024)} MB` });
-      if (kind === 'photo' && !isJpeg(bytes)) return reply.code(400).send({ error: 'Fotos müssen JPEG-Dateien sein' });
       try {
-        const stored = storeBlob(db, {
-          id,
-          kind,
-          name: kind === 'file' ? cleanName(name) || 'Datei' : '',
-          mime: kind === 'photo' ? 'image/jpeg' : cleanMime(mime),
-          data: bytes,
-          uploaderId: me(req).id,
-        });
-        return { ok: true, id, size: bytes.length, sha256: stored.sha256, created: stored.created };
+        const upload = checkUpload({ id, ...(body as Omit<UploadRequest, 'id'>) }, { demo: !!opts.demo });
+        const stored = storeBlob(db, { id, ...upload, uploaderId: me(req).id });
+        return { ok: true, id, size: upload.data.length, sha256: stored.sha256, created: stored.created };
       } catch (e) {
         if (e instanceof BlobError) return reply.code(e.status).send({ error: e.message });
         throw e;
