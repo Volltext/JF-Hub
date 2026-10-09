@@ -4,6 +4,35 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/). Versionen 
 
 ## [Unreleased]
 
+## [2.0.4] – 2026-10-09
+
+Sicherheits-Update. **Bitte sofort aktualisieren** (betroffen: 2.0.0 bis 2.0.3). Eine ausführliche Beschreibung folgt im GitHub-Security-Advisory.
+
+### Sicherheit
+
+- **Die Zugriffsprüfung des Servers wurde verschärft.** Sie richtet sich jetzt nach der Route, die der Server tatsächlich ausführt, und nicht mehr nach der Schreibweise der Adresse; ungewöhnlich kodierte Adressen werden abgewiesen. Ein Test geht alle Routen durch, auch in abweichender Schreibweise.
+- **Wer den Server aus dem Internet erreichbar betrieben hat**, sollte vorsorglich davon ausgehen, dass Daten eingesehen worden sein können, die Passwörter neu vergeben (der Admin erzeugt unter *Benutzer* neue Links; beim Ändern des Passworts werden die anderen Geräte abgemeldet) und, falls vorhanden, das Zugriffs-Log auf ungewöhnliche Anfragen an die Verwaltung durchsehen.
+- Anfragen ohne Anmeldung werden abgewiesen, **bevor** der Body gelesen wird.
+- API-Antworten (Export, PDF, Backup) tragen `Cache-Control: no-store` und landen nicht in Zwischenspeichern, auch nicht in denen eines CDN.
+
+### Behoben
+
+- **PDF und ZIP-Export:** Ein Protokoll mit unbrauchbarem Inhalt konnte das PDF oder den ganzen Export für alle verhindern. Jetzt entfällt nur das PDF dieses Protokolls: Das ZIP enthält eine Datei `export-fehler.txt`, der Rohinhalt liegt unter `json/`.
+- Das PDF eines gelöschten Protokolls (Papierkorb) ließ sich weiter abrufen.
+- ZIP-Export: Ordnernamen werden bereinigt.
+
+### Neu
+
+- **Demo im Browser** (`npm run build:demo`, auf der Website unter `/demo/`): die App ohne Server und ohne Anmeldung, mit denselben Beispieldaten wie der Demo-Modus des Servers. Alles bleibt im Browser des Besuchers, „Zurücksetzen“ legt die Daten neu an; PDF und Benachrichtigungen erklären, dass sie den Server brauchen. Die Beispieldaten liegen dafür in `server/src/demoData.ts` (eine Quelle für beide Demos).
+
+## [2.0.3] – 2026-10-06
+
+### Behoben
+
+- **APK-Build** (Workflow `android.yml`) brach ab, weil Dependabot den Gradle-Wrapper auf 9.8.0 gehoben hatte; das von Capacitor 8 vorgegebene Android Gradle Plugin 8.13 läuft nur bis Gradle 9.5. Der Wrapper steht wieder auf 8.14.3, und Dependabot schlägt keine Major-Sprünge für Gradle und das Android Gradle Plugin mehr vor.
+
+## [2.0.2] – 2026-10-06
+
 ### Geändert
 
 - **Dokumentation neu gestaltet:** README mit Titelbild, Screenshots, 3-Schritte-Start und Wegweiser. Alle Anleitungen in `docs/` einheitlich gegliedert, mit Inhaltsverzeichnis, Hinweisen und einklappbaren Details.
@@ -11,14 +40,9 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/). Versionen 
 ### Neu
 
 - **Demo-Modus** (`DEMO=1`, Anleitung in `docs/demo.md`): Der Server legt erfundene Beispieldaten der „Jugendfeuerwehr Musterstadt“ an (Mitglieder, Dienste, Aufgaben, Kleidung, Protokolle, Wettkampf-Läufe) und setzt sie täglich um `DEMO_RESET_AT` (Standard 03:00) zurück. App und Verwaltung bieten die Demo-Zugänge als Knopf an und zeigen einen Hinweis. Was alle Besucher aussperren würde (Passwörter, Backups, Demo-Konten ändern), ist gesperrt.
-- **Demo im Browser** (`npm run build:demo`, auf der Website unter `/demo/`): die App ohne Server und ohne Anmeldung, mit denselben Beispieldaten wie der Demo-Modus des Servers. Alles bleibt im Browser des Besuchers, „Zurücksetzen“ legt die Daten neu an; PDF und Benachrichtigungen erklären, dass sie den Server brauchen. Die Beispieldaten liegen dafür in `server/src/demoData.ts` (eine Quelle für beide Demos).
 - **Projekt-Website** in `website/`, veröffentlicht per GitHub Pages (Workflow `pages.yml`); die Demo-Knöpfe führen zur Demo im Browser oder, mit der Repository-Variable `DEMO_URL`, zu einem Demo-Server.
 - **Anleitung „Erste Schritte“** (`docs/erste-schritte.md`): vom Admin-Konto bis zum ersten Dienst, mit Screenshots.
 - **Übersichtsseite** `docs/README.md` mit Wegweiser nach Thema.
-
-### Behoben
-
-- **APK-Build** (Workflow `android.yml`) brach ab, weil Dependabot den Gradle-Wrapper auf 9.8.0 gehoben hatte; das von Capacitor 8 vorgegebene Android Gradle Plugin 8.13 läuft nur bis Gradle 9.5. Der Wrapper steht wieder auf 8.14.3, und Dependabot schlägt keine Major-Sprünge für Gradle und das Android Gradle Plugin mehr vor.
 
 ## [2.0.1] – 2026-10-06
 
