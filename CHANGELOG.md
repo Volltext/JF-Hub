@@ -16,19 +16,23 @@ Der Protokoll-Editor bekommt **Tabellen**, **Links** und **Hervorhebung**, alle 
 
 ### Neu
 
-- **Tabellen:** Unter **＋ Einfügen → Tabelle** legst du Zeilen und Spalten (bis 20 × 6) mit oder ohne Kopfzeile an. Steht der Cursor in einer Tabelle, erscheint die Leiste „Tabelle“: Zeile oben oder unten einfügen, Spalte links oder rechts einfügen, Zeile oder Spalte löschen, Kopfzeile ein oder aus, Tabelle löschen. Am Rechner springt Tab von Zelle zu Zelle (in der letzten Zelle legt es eine neue Zeile an). Zellen nehmen Text und Listen auf. Bei vielen Spalten scrollt die Tabelle waagerecht, statt die Spalten zu zerquetschen.
-- **Links:** Die Link-Taste macht Text zum Link oder fügt einen neuen ein. Erlaubt sind Webadressen, E-Mail-Adressen und Telefonnummern: „beispiel.de“ wird zu `https://beispiel.de`, „name@beispiel.de“ zu einem Mail-Link. Steht der Cursor in einem Link, zeigt eine Leiste **Öffnen**, **Ändern** und **Entfernen**; am Rechner öffnet auch Strg+Klick. Eingefügte Webadressen und eingetippte Adressen mit `https://` werden von selbst zum Link. Andere Ziele (zum Beispiel `javascript:`) setzt der Editor nie, zeigt sie nicht an und öffnet sie nicht.
+- **Tabellen:** Unter **＋ Einfügen → Tabelle** legst du Zeilen und Spalten (bis 20 × 6) mit oder ohne Kopfzeile an. Steht der Cursor in einer Tabelle, erscheint die Leiste „Tabelle“: Zeile oben oder unten einfügen, Spalte links oder rechts einfügen, Zeile oder Spalte löschen, Kopfzeile ein oder aus, Tabelle löschen (mit Rückfrage, wenn Text darin steht). Eine Tabelle darf bis zu 24 Spalten und 400 Zeilen haben. Am Rechner springt Tab von Zelle zu Zelle (in der letzten Zelle legt es eine neue Zeile an). Zellen nehmen Text und Listen auf. Bei vielen Spalten scrollt die Tabelle waagerecht, statt die Spalten zu zerquetschen.
+- **Tabellen aus anderen Programmen** (Word, Excel, Webseiten) bleiben beim Einfügen ganz: Was eine Zelle nicht aufnimmt (Überschriften, Zitate, Codeblöcke, Trennlinien, Tabellen in Tabellen), wird zu Absätzen. Fotos, Dateien, Handschrift und Trennlinien, die du aus einer Zelle heraus einfügst, landen hinter der Tabelle.
+- **Links:** Die Link-Taste macht Text zum Link oder fügt einen neuen ein. Erlaubt sind Webadressen, E-Mail-Adressen und Telefonnummern (auch kurze wie 112): „beispiel.de“ wird zu `https://beispiel.de`, „name@beispiel.de“ zu einem Mail-Link. Steht der Cursor in einem Link, zeigt eine Leiste, wohin er führt, und bietet **Öffnen**, **Ändern** und **Entfernen**; am Rechner öffnet auch Strg+Klick. Markierst du Text und fügst eine Adresse ein, wird der Text zum Link (auch bei „www.beispiel.de“); eine eingetippte oder eingefügte Adresse mit `https://` oder `mailto:` wird von selbst zum Link. Andere Ziele (zum Beispiel `javascript:` oder `ftp://`) setzt der Editor nie, zeigt sie nicht an und öffnet sie nicht.
 - **Hervorheben:** Die Marker-Taste (Strg+Umschalt+H) hinterlegt Text gelb.
-- **PDF:** Tabellen mit Kopfzeile (auf jeder Seite wiederholt) und verbundenen Zellen, anklickbare Links, hervorgehobener Text. Eine Tabelle über 400 Zeilen, 24 Spalten oder 4000 Zellen ersetzt ein Hinweis; eine Zeile, die höher ist als eine Seite, läuft über den Seitenumbruch.
+- **PDF:** Tabellen mit Kopfzeile (auf jeder Seite wiederholt), gleich breiten Spalten, die auf die Seite passen (lange Wörter brechen um), und verbundenen Zellen; anklickbare Links; hervorgehobener Text. Eine Tabelle über 400 Zeilen, 24 Spalten oder 4000 Zellen ersetzt ein Hinweis; eine Zeile, die höher ist als eine Seite, läuft über den Seitenumbruch.
 - **Suche** findet auch Text in Tabellen. Die Beispieldaten der Demo zeigen eine Tabelle, einen Link und eine Hervorhebung.
+- **Schutz:** Ein Protokoll mit unsinnigen Tabellenangaben (Zellen über mehr als 24 Spalten oder 400 Zeilen) öffnet die App nur zum Lesen, statt den Editor lahmzulegen. In Links wirken nur Ziel und Text, keine fremden Formatklassen.
 
 ### Geändert
 
-- **Die Werkzeugleiste ist aufgeräumt:** Zitat, Trennlinie und Handschrift (Zeichenfläche und Seite) stehen jetzt unter **＋ Einfügen**, Marker und Link sind neu in der Leiste. Foto und Datei bleiben einen Tipp entfernt. Link- und Tabellen-Leiste erscheinen nur, wenn der Cursor im Link oder in der Tabelle steht, am Handy über der Leiste, am Rechner darunter.
+- **Die Werkzeugleiste ist neu geordnet:** Fett, Kursiv, Listen, Anhang und Einfügen stehen vorn und sind am Handy ohne Wischen erreichbar, dahinter Unterstreichen, Marker, Link, die Überschriften (in Tabellenzellen gesperrt) und Rückgängig; Schatten am Rand zeigen, dass sich die Leiste weiterwischen lässt. Zitat, Trennlinie und Handschrift (Zeichenfläche und Seite) stehen unter **＋ Einfügen**. Link- und Tabellen-Leiste erscheinen nur, wenn der Cursor im Link oder in der Tabelle steht, am Handy über der Leiste, am Rechner darunter.
+- Links sind im dunklen Design besser lesbar, und der Cursor zwischen zwei Blöcken (etwa vor einer Tabelle am Textanfang) ist dort sichtbar.
 - Neue Abhängigkeiten: `@tiptap/extension-table`, `@tiptap/extension-highlight` und `@tiptap/extension-link` (alle MIT). Die Web-App wird dadurch um rund 18 kB (komprimiert) größer.
 
 ### Behoben
 
+- **Umschalter in Formularen:** Die Auswahlschalter („Mit/Ohne Kopfzeile“, in der Anmeldung „Anmelden / Einladung einlösen“) schickten das Formular beim Antippen ab; in der Anmeldung führte „Einladung einlösen“ so zu einer Fehlermeldung.
 - **PDF:** Ein Protokoll mit sehr vielen Absätzen oder Tabellenzellen konnte den PDF-Bau mit einem Fehler abbrechen.
 
 ## [2.2.0] – 2026-10-09
