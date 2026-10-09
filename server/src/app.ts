@@ -44,7 +44,7 @@ import { sampleProtocol } from './sample.js';
 import { autoKeep, backupPath, createBackup, deleteBackup, isBackupName, listBackups, pruneBackups, restoreFromFile, RestoreError, runAutoBackup, writeUpload } from './backup.js';
 import { DEMO_ACCOUNTS, demoBlock, formatResetAt, isDemoAccount, msUntilReset, parseResetAt, resetDemo } from './demo.js';
 
-export const VERSION = '2.0.4';
+export const VERSION = '2.1.0';
 /**
  * Schnittstelle dieses Servers (steigt bei Änderungen, die ältere Apps nicht verstehen) und das kleinste Dokumentformat
  * (`X-JFH-Schema` der App), das er noch annimmt. Apps ohne Angabe (2.0.x) gelten als Schema 1.
