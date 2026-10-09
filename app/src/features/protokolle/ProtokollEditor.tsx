@@ -3,10 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import type { Editor } from '@tiptap/core';
 import { EditorContent, useEditor } from '@tiptap/react';
-import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
-import { TaskList } from '@tiptap/extension-task-list';
-import { TaskItem } from '@tiptap/extension-task-item';
 import { ChevronDown, ChevronLeft, FileDown, Folder, Lock, Trash2, Users } from 'lucide-react';
 import { db } from '@/core/db/db';
 import { formatDate } from '@/core/domain/format';
@@ -14,16 +11,16 @@ import { confirmDialog } from '@/core/ui/dialog';
 import { Button, Sheet } from '@/core/ui/components';
 import { isMine, useAccount, useDirectory } from '@/core/account/account';
 import { DateField, TimeField } from '@/core/ui/pickers';
-import { InkNode } from '@/features/ink/InkNode';
-import { FileNode, PhotoNode } from '@/features/attachments/AttachmentNodes';
 import { createAutosave } from './autosave';
 import { dismissConflict, useConflicts } from './conflicts';
+import { EXTENSIONS, schemaAccepts } from './editorSchema';
 import { EditorToolbar } from './EditorToolbar';
 import { FolderPicker } from './FolderPicker';
 import { folderPathLabel, liveFolders, shownFolder } from './folders';
 import { SyncBadge } from './SyncBadge';
 import type { Protokoll } from './model';
 import { exportPdf, protokolleRepo } from './repo';
+import { UnreadableProtokoll } from './UnreadableProtokoll';
 
 type Meta = Pick<Protokoll, 'title' | 'datum' | 'beginn' | 'ende' | 'ort' | 'leitung'>;
 
@@ -64,6 +61,9 @@ function EditorInner({ initial }: { initial: Protokoll }) {
   const [picking, setPicking] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [error, setError] = useState('');
+  // Enthält das Protokoll Elemente, die diese App-Version nicht kennt, wird es nur gelesen: Ein Editor würde sie verwerfen, und der
+  // nächste Autosave überschriebe sie auf dem Server.
+  const [blocked, setBlocked] = useState(() => !schemaAccepts(initial.content));
   const account = useAccount();
   const users = useDirectory();
 
@@ -99,15 +99,7 @@ function EditorInner({ initial }: { initial: Protokoll }) {
   );
 
   const editor = useEditor({
-    extensions: [
-      StarterKit.configure({ heading: { levels: [1, 2, 3] }, link: false }),
-      TaskList,
-      TaskItem.configure({ nested: true }),
-      InkNode,
-      PhotoNode,
-      FileNode,
-      Placeholder.configure({ placeholder: 'Protokoll schreiben …' }),
-    ],
+    extensions: [...EXTENSIONS, Placeholder.configure({ placeholder: 'Protokoll schreiben …' })],
     content: initial.content,
     editorProps: { attributes: { class: 'ed-content', 'aria-label': 'Protokolltext', lang: 'de', spellcheck: 'true' } },
     onUpdate: () => autosave.markDirty(),
@@ -134,12 +126,22 @@ function EditorInner({ initial }: { initial: Protokoll }) {
   const live = useLiveQuery(() => db.protokolle.get(initial.id), [initial.id]);
   useEffect(() => {
     if (!live || !editor || autosave.dirty || live.updatedAt === lastWritten.current || live.deleted) return;
+    if (!schemaAccepts(live.content)) {
+      // Eine neuere App-Version hat Elemente eingefügt, die diese nicht kennt: nicht übernehmen und nichts mehr schreiben.
+      setBlocked(true);
+      return;
+    }
     lastWritten.current = live.updatedAt;
     editor.commands.setContent(live.content, { emitUpdate: false });
     const m = metaOf(live);
     metaRef.current = m;
     setMeta(m);
   }, [live, editor, autosave]);
+
+  useEffect(() => {
+    editor?.setEditable(!blocked);
+    if (blocked) autosave.cancel();
+  }, [editor, blocked, autosave]);
 
   const folders = useLiveQuery(liveFolders, []);
   // Ein dem Gerät unbekannter Ordner (von jemand anderem gelöscht) zählt als oberste Ebene, wie in der Liste.
@@ -179,6 +181,8 @@ function EditorInner({ initial }: { initial: Protokoll }) {
     await protokolleRepo.remove(initial.id);
     navigate(folderId ? `/protokolle/o/${folderId}` : '/protokolle', { replace: true });
   }
+
+  if (blocked) return <UnreadableProtokoll doc={current} backTo={folderId ? `/protokolle/o/${folderId}` : '/protokolle'} />;
 
   return (
     <div className="proto">

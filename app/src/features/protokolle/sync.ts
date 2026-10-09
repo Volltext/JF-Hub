@@ -4,6 +4,7 @@ import { saveDirectory, type DirectoryUser } from '@/core/account/account';
 import { BASE_COLLECTIONS, SYNC_COLLECTIONS, seedOutboxOnce } from '@/core/db/outbox';
 import { noteConflicts } from './conflicts';
 import { ProtoError, loadConn, request } from './http';
+import { MIN_SERVER_API } from './schemaVersion';
 import type { Protokoll } from './model';
 import { useSyncStatus } from './syncStatus';
 
@@ -94,6 +95,8 @@ export interface SyncResponse {
   conflicts: { id: string; copyId: string }[];
   /** Ab Server 2.1.0; ältere Server lehnen einen ungültigen Eintrag mit einem Fehler für den ganzen Abgleich ab. */
   rejected?: Rejected[];
+  /** Schnittstelle des Servers (ab 2.1.0; fehlt bei älteren: 1). */
+  api?: number;
 }
 
 export interface SyncResult {
@@ -174,6 +177,9 @@ export async function performSync(send: (req: SyncRequest) => Promise<SyncRespon
     folders: dirtyFolders.map((f) => ({ id: f.id, name: f.name, parentId: f.parentId, updatedAt: f.updatedAt, deleted: f.deleted === 1 })),
     records,
   });
+
+  // Ein Server mit älterer Schnittstelle versteht diese App-Version nicht (sie würde ihm Inhalte schicken, die er verwirft).
+  if ((res.api ?? 1) < MIN_SERVER_API) throw new ProtoError('Der Server ist zu alt für diese App-Version. Bitte den Server aktualisieren.', 426);
 
   // Ältere Server kennen Mitglieder/Dienste/Aufgaben nicht und lassen `records` weg: Vormerkungen behalten,
   // sonst gingen sie verloren. Sobald der Server aktualisiert ist, wird einmal alles abgeglichen.

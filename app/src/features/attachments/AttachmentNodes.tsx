@@ -28,9 +28,13 @@ function PhotoView({ node, editor, updateAttributes, deleteNode, selected }: Nod
   const caption = String(node.attrs.caption ?? '');
   return (
     <NodeViewWrapper className={`photo-node${selected ? ' is-selected' : ''}`} contentEditable={false} data-drag-handle>
-      <button type="button" className="photo-node__img" onClick={() => setOpen(true)} aria-label="Foto vergrößern">
-        <img src={src} alt={caption || 'Foto'} width={Number(node.attrs.w) || undefined} height={Number(node.attrs.h) || undefined} />
-      </button>
+      {src ? (
+        <button type="button" className="photo-node__img" onClick={() => setOpen(true)} aria-label="Foto vergrößern">
+          <img src={src} alt={caption || 'Foto'} width={Number(node.attrs.w) || undefined} height={Number(node.attrs.h) || undefined} />
+        </button>
+      ) : (
+        <p className="photo-node__missing muted">Dieses Foto kann diese App-Version nicht anzeigen. Bitte die App aktualisieren.</p>
+      )}
       {editor.isEditable ? (
         <div className="photo-node__bar">
           <input
@@ -60,9 +64,11 @@ function FileView({ node, editor, deleteNode, selected }: NodeViewProps) {
       <button
         type="button"
         className="file-node__main"
-        onClick={() =>
-          void shareBinaryFile(name, String(node.attrs.data ?? ''), mime).catch(() => alertDialog('Die Datei konnte nicht geöffnet werden.'))
-        }
+        onClick={() => {
+          const data = String(node.attrs.data ?? '');
+          if (!data) return void alertDialog('Diese Datei kann diese App-Version nicht öffnen. Bitte die App aktualisieren.');
+          void shareBinaryFile(name, data, mime).catch(() => alertDialog('Die Datei konnte nicht geöffnet werden.'));
+        }}
       >
         <FileText size={22} />
         <span className="file-node__name">{name}</span>
@@ -88,7 +94,16 @@ export const PhotoNode = Node.create({
   draggable: true,
   selectable: true,
   addAttributes() {
-    return { src: { default: '', ...noHtml }, w: { default: 0, ...noHtml }, h: { default: 0, ...noHtml }, caption: { default: '', ...noHtml } };
+    return {
+      src: { default: '', ...noHtml },
+      w: { default: 0, ...noHtml },
+      h: { default: 0, ...noHtml },
+      caption: { default: '', ...noHtml },
+      // Verweis auf ein Foto, das nicht im Dokument liegt (kommt mit einer späteren Version). Diese Version zeigt es nicht an,
+      // reicht den Verweis aber beim Speichern unverändert durch, damit er nicht verloren geht.
+      blobId: { default: null, ...noHtml },
+      mime: { default: null, ...noHtml },
+    };
   },
   parseHTML() {
     return [{ tag: 'div[data-photo]' }];
@@ -114,6 +129,8 @@ export const FileNode = Node.create({
       mime: { default: 'application/octet-stream', ...noHtml },
       size: { default: 0, ...noHtml },
       data: { default: '', ...noHtml },
+      /** Siehe PhotoNode: Verweis auf eine ausgelagerte Datei, wird durchgereicht. */
+      blobId: { default: null, ...noHtml },
     };
   },
   parseHTML() {

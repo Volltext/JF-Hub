@@ -45,6 +45,12 @@ import { autoKeep, backupPath, createBackup, deleteBackup, isBackupName, listBac
 import { DEMO_ACCOUNTS, demoBlock, formatResetAt, isDemoAccount, msUntilReset, parseResetAt, resetDemo } from './demo.js';
 
 export const VERSION = '2.0.4';
+/**
+ * Schnittstelle dieses Servers (steigt bei Änderungen, die ältere Apps nicht verstehen) und das kleinste Dokumentformat
+ * (`X-JFH-Schema` der App), das er noch annimmt. Apps ohne Angabe (2.0.x) gelten als Schema 1.
+ */
+export const API_VERSION = 2;
+export const MIN_SCHEMA = 1;
 const COOKIE = 'jfh_session';
 
 declare module 'fastify' {
@@ -82,6 +88,8 @@ export interface AppOptions {
   demo?: { resetAt?: string; timer?: boolean };
   fetchImpl?: FetchLike;
   logger?: boolean;
+  /** Kleinstes Dokumentformat (`X-JFH-Schema`), das der Server annimmt; ältere Apps bekommen 426 (Standard: `MIN_SCHEMA`). */
+  minSchema?: number;
   /** Tests: wird für jede registrierte Route aufgerufen (Grundlage des Sicherheitstests, der alle geschützten Routen durchgeht). */
   onRoute?: (route: { method: string; url: string }) => void;
 }
@@ -97,6 +105,7 @@ export function parseTrustProxy(v: string | undefined): boolean | string | strin
 
 export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { setupCode?: string }> {
   const { db } = opts;
+  const minSchema = opts.minSchema ?? MIN_SCHEMA;
   const app = Fastify({ logger: opts.logger ?? false, trustProxy: opts.trustProxy ?? parseTrustProxy(undefined), bodyLimit: 64 * 1024 * 1024 }) as FastifyInstance & {
     setupCode?: string;
   };
@@ -218,7 +227,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
     resetAt: formatResetAt(demoAt),
     accounts: DEMO_ACCOUNTS.map(({ username, password, displayName, role, hint }) => ({ username, password, displayName, role, hint })),
   };
-  app.get('/api/status', async () => ({ setupRequired: countUsers(db) === 0, version: VERSION, orgName: getSettings(db).orgName, ...(demoInfo ? { demo: demoInfo } : {}) }));
+  app.get('/api/status', async () => ({ setupRequired: countUsers(db) === 0, version: VERSION, api: API_VERSION, minSchema, features: [] as string[], orgName: getSettings(db).orgName, ...(demoInfo ? { demo: demoInfo } : {}) }));
 
   app.post<{ Body: { code?: string; username?: string; displayName?: string; password?: string; device?: string } }>(
     '/api/setup',
@@ -314,8 +323,13 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
   });
 
   app.post<{ Body: SyncRequest }>('/api/sync', async (req, reply) => {
+    // Eine App, die das aktuelle Dokumentformat nicht kennt, würde Inhalte, die sie nicht versteht, beim Speichern verwerfen.
+    const schema = Number(req.headers['x-jfh-schema'] ?? 1);
+    if (!(schema >= minSchema)) {
+      return reply.code(426).send({ error: 'Diese App-Version ist zu alt für den Server. Bitte die App aktualisieren.', code: 'client_too_old', minSchema });
+    }
     try {
-      return applySync(db, req.body, me(req));
+      return { ...applySync(db, req.body, me(req)), api: API_VERSION, minSchema };
     } catch (e) {
       return reply.code(400).send({ error: (e as Error).message });
     }

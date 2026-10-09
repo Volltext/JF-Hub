@@ -172,6 +172,20 @@ describe('performSync: vom Server abgelehnte Protokolle', () => {
   });
 });
 
+describe('performSync: Schnittstelle des Servers', () => {
+  it('meldet einen Server, dessen Schnittstelle zu alt ist, und lässt lokale Daten unberührt', async () => {
+    const p = newProtokoll();
+    await db.protokolle.add(p);
+    await expect(performSync(async () => ({ rev: 1, changes: [], folders: [], records: [], conflicts: [], api: 0 }))).rejects.toMatchObject({ status: 426, message: expect.stringContaining('Server aktualisieren') });
+    expect(await db.protokolle.get(p.id)).toMatchObject({ dirty: 1 });
+  });
+
+  it('ältere Server ohne Angabe gelten als Schnittstelle 1 und funktionieren weiter', async () => {
+    await performSync(async () => ({ rev: 1, changes: [], folders: [], records: [], conflicts: [] }));
+    expect((await db.kv.get('protokolle.rev'))?.value).toBe(1);
+  });
+});
+
 describe('performSync: Ordner', () => {
   it('sendet geänderte Ordner und übernimmt Ordner vom Server', async () => {
     await db.folders.add({ id: 'ordner-lokal', name: 'Lokal', parentId: '', rev: 0, updatedAt: 5, dirty: 1, deleted: 0 });

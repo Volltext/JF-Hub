@@ -12,3 +12,4 @@
 .photo-lightbox { position: fixed; inset: 0; z-index: 80; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--s-2); padding: var(--s-3); padding-top: calc(var(--s-3) + var(--safe-top)); background: rgba(0, 0, 0, 0.92); color: #fff; }
 .photo-lightbox img { max-width: 100%; max-height: 85vh; object-fit: contain; }
 .photo-lightbox__close { position: absolute; top: calc(var(--s-3) + var(--safe-top)); right: var(--s-3); }
+.photo-node__missing { margin: 0; padding: var(--s-3); border-radius: var(--r-md); background: var(--surface-2, rgba(127, 127, 127, 0.12)); }

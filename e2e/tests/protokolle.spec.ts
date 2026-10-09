@@ -6,10 +6,15 @@ test.use({ baseURL: 'http://127.0.0.1:8096' });
 const ADMIN = { username: 'admin', password: 'e2e-admin-passwort' };
 const BEN = { username: 'ben', password: 'ben-hat-ein-passwort' };
 
+/** Ein Anmelde-Token für alle Tests (die Anmeldung ist je Adresse begrenzt). */
+let cachedToken: string | undefined;
 async function adminToken(request: APIRequestContext): Promise<string> {
-  const login = await request.post('/api/login', { data: ADMIN });
-  expect(login.ok()).toBeTruthy();
-  return (await login.json()).token as string;
+  if (!cachedToken) {
+    const login = await request.post('/api/login', { data: ADMIN });
+    expect(login.ok()).toBeTruthy();
+    cachedToken = (await login.json()).token as string;
+  }
+  return cachedToken;
 }
 
 /** Admin legt Ben per API an; Ben löst die Einladung ein. */
@@ -53,7 +58,7 @@ async function writeProtocol(page: Page, title: string, text: string) {
 /** Das Protokoll mit diesem Titel, wie der Server es gerade hat. */
 async function serverDoc(request: APIRequestContext, token: string, title: string) {
   const r = await request.post('/api/sync', { headers: { Authorization: `Bearer ${token}` }, data: { since: 0, changes: [] } });
-  const res = (await r.json()) as { changes: { title: string; rev: number; updatedAt: number; deleted: boolean }[] };
+  const res = (await r.json()) as { changes: { title: string; rev: number; updatedAt: number; deleted: boolean; content: unknown }[] };
   return res.changes.find((c) => c.title === title);
 }
 
@@ -153,6 +158,38 @@ test.describe.serial('Protokolle: Fundament', () => {
 
     await admin.context.close();
     await ben.context.close();
+  });
+});
+
+test.describe.serial('Protokolle: Schutz vor unbekannten Inhalten', () => {
+  test('Ein Protokoll mit Elementen aus einer neueren Version wird nur gelesen und nie überschrieben', async ({ browser, request }) => {
+    const title = 'Mit Tabelle aus der Zukunft';
+    const token = await adminToken(request);
+    const p = (text: string) => ({ type: 'paragraph', content: [{ type: 'text', text }] });
+    const content = { type: 'doc', content: [p('Davor'), { type: 'table', content: [{ type: 'tableRow', content: [{ type: 'tableCell', content: [p('Zelle A1')] }] }] }, p('Danach')] };
+    const sent = await request.post('/api/sync', {
+      headers: { Authorization: `Bearer ${token}` },
+      data: { since: 0, changes: [{ id: 'zukunft-0001', baseRev: 0, title, datum: '2026-10-01', beginn: '', ende: '', ort: '', leitung: '', content, updatedAt: Date.now(), deleted: false }] },
+    });
+    expect(sent.ok()).toBeTruthy();
+    const before = await serverDoc(request, token, title);
+    expect(before).toBeTruthy();
+
+    const { context, page } = await newSession(browser);
+    await signIn(page, ADMIN);
+    await page.goto('/#/protokolle');
+    await page.getByText(title).click();
+    await expect(page.getByRole('alert')).toContainText('Elemente, die diese App-Version nicht kennt');
+    await expect(page.getByText('Zelle A1')).toBeVisible(); // als Text lesbar
+    await expect(page.getByLabel('Protokolltext', { exact: true })).toHaveCount(0); // aber kein Editor
+    await page.screenshot({ path: 'test-results/unbekannte-elemente.png', fullPage: true });
+
+    await page.getByRole('link', { name: /Protokolle/ }).first().click();
+    await syncNow(page);
+    const after = await serverDoc(request, token, title);
+    expect(after!.rev).toBe(before!.rev);
+    expect(after!.content).toEqual(content); // unverändert, die Tabelle ist noch da
+    await context.close();
   });
 });
 
