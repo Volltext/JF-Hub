@@ -165,7 +165,7 @@ Der Server legt **täglich** ein Backup in `/data/backups` an und behält die le
 - **Alle Protokolle als ZIP** liefert eine lesbare Kopie mit PDFs
 - **Wiederherstellen** bei einem Backup, oder eine heruntergeladene Datei unter *Aus Datei wiederherstellen* hochladen
 
-Vor jeder Wiederherstellung sichert der Server den aktuellen Stand (Art „vor Wiederherstellung“, die letzten 3 bleiben). Danach gleichen sich alle Geräte neu ab. Benutzer und Anmeldungen stammen aus dem Backup, wer dort fehlt, meldet sich neu an. Auch Backups älterer Versionen lassen sich einspielen.
+Vor jeder Wiederherstellung sichert der Server den aktuellen Stand (Art „vor Wiederherstellung“, die letzten 3 bleiben). Danach gleichen sich alle Geräte neu ab und übernehmen den Stand des Backups; was seitdem geschrieben wurde, ist weg, ungesendeter Text einer App bleibt als Protokoll „… (lokale Fassung)“ erhalten. Benutzer und Anmeldungen stammen aus dem Backup, wer dort fehlt, meldet sich neu an. Auch Backups älterer Versionen lassen sich einspielen.
 
 <details>
 <summary><b>Über das Volume oder von Hand</b></summary>

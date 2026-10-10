@@ -243,7 +243,7 @@ describe('zurückgezogen, gelöscht, ersetzt', () => {
     await a2.destroy();
     server.offline = false;
     const rows = server.db.prepare('SELECT * FROM protocols').all();
-    server.replaceDatabase();
+    server.replaceDatabase({ restored: true });
     server.put({ id, title: 'Sitzung', ownerId: ANNA.id, shared: true, content: doc(para('Stand der Sicherung')) });
     expect(rows.length).toBe(1);
 
@@ -257,13 +257,40 @@ describe('zurückgezogen, gelöscht, ersetzt', () => {
     expect(textOf((await loadDoc(copy.id, anna))!.doc)).toBe('Stand der Sicherung und später geschrieben (nur hier)');
   });
 
+  it('wird die Datenbank des Servers durch eine leere ersetzt und gleicht zuerst ein Gerät mit geänderten Kopfdaten ab, bleibt dessen Text erhalten und geht wieder hoch', async () => {
+    const id = await sharedDoc('Text vor dem Verlust');
+    await saveHeader(anna, id, { title: 'Neuer Titel' }); // Kopfdaten stehen zum Senden an
+    server.replaceDatabase(); // ganz leer: Der Server kennt nichts mehr
+    await server.syncOf(anna, ANNA); // die Kopfdaten legen das Protokoll neu an, mit leerem Text
+    expect(textOf((await loadDoc(id, anna))!.doc)).toBe('Text vor dem Verlust'); // der Text dieses Geräts wird nicht gegen den leeren des Servers getauscht
+    expect(serverText(id)).toBe('Text vor dem Verlust'); // sondern geht als Basis hoch
+    expect(await anna.ydocs.get(id)).toMatchObject({ dirty: 0 });
+    expect(JSON.stringify((await anna.protokolle.get(id))!.content)).toContain('Text vor dem Verlust'); // auch in der Liste
+    await server.syncOf(ben, BEN);
+    expect(textOf((await loadDoc(id, ben))!.doc)).toBe('Text vor dem Verlust');
+    expect(await ben.protokolle.filter((p) => p.title.endsWith('(lokale Fassung)')).count()).toBe(0);
+  });
+
+  it('dasselbe, wenn zwei Geräte mit geänderten Kopfdaten nacheinander zum leeren Server kommen: Der Text entsteht einmal, nicht doppelt', async () => {
+    const id = await sharedDoc('Text vor dem Verlust');
+    await saveHeader(anna, id, { title: 'Titel von Anna' });
+    await saveHeader(ben, id, { ort: 'Ort von Ben' });
+    server.replaceDatabase();
+    await server.syncOf(anna, ANNA);
+    await server.syncOf(ben, BEN);
+    await server.syncOf(anna, ANNA);
+    expect(serverText(id)).toBe('Text vor dem Verlust'); // gemeinsame Geschichte: kein doppelter Text
+    expect(textOf((await loadDoc(id, ben))!.doc)).toBe('Text vor dem Verlust');
+    expect(await ben.protokolle.filter((p) => p.title.endsWith('(lokale Fassung)')).count()).toBe(0);
+  });
+
   it('auch ein vollständiger Abgleich („Alles neu abgleichen“) als erster nach dem Einspielen einer Sicherung verwirft den lokalen Zustand', async () => {
     const id = await sharedDoc('Stand der Sicherung');
     const a = await open(anna, ANNA, id);
     typeInto(a.doc, ' NACH DER SICHERUNG');
     await exchange(a);
     await a.destroy();
-    server.replaceDatabase();
+    server.replaceDatabase({ restored: true });
     server.put({ id, title: 'Sitzung', ownerId: ANNA.id, shared: true, content: doc(para('Stand der Sicherung')) });
     await server.syncOf(anna, ANNA, { full: true }); // since = 0: Der Server meldet keinen Wechsel der Datenbank, die Kennung verrät ihn
     expect(textOf((await loadDoc(id, anna))!.doc)).toBe('Stand der Sicherung');
@@ -280,7 +307,7 @@ describe('zurückgezogen, gelöscht, ersetzt', () => {
     const a = await open(anna, ANNA, id, { onReplaced: () => replaced++ });
     a.start();
     typeInto(a.doc, ' (noch nicht gesichert)'); // steht nur im Speicher des Editors
-    server.replaceDatabase();
+    server.replaceDatabase({ restored: true });
     server.put({ id, title: 'Sitzung', ownerId: ANNA.id, shared: true, content: doc(para('Stand der Sicherung')) });
 
     await server.syncOf(anna, ANNA); // erkennt die neue Datenbank: Kopie, Zustand verworfen
@@ -298,6 +325,26 @@ describe('zurückgezogen, gelöscht, ersetzt', () => {
     expect(textOf(again.doc)).toBe('Stand der Sicherung');
     // und das Original hat den Text der neuen Datenbank als Schnappschuss
     expect(JSON.stringify((await anna.protokolle.get(id))!.content)).not.toContain('noch nicht gesichert');
+  });
+
+  it('ein neuer, leerer Server ist keine Wiederherstellung: Hat ein später kommendes Gerät mehr Text als das, das zuerst hochlädt, geht nichts verloren', async () => {
+    const id = await sharedDoc('Basis');
+    const b = await open(ben, BEN, id);
+    typeInto(b.doc, ' von Ben');
+    await exchange(b);
+    await b.destroy(); // Ben und der alte Server kennen „Basis von Ben“, Anna nur „Basis“
+    server.replaceDatabase(); // zum Beispiel das Volume nicht eingebunden: neue, leere Datenbank
+    await server.syncOf(anna, ANNA);
+    await server.syncOf(anna, ANNA); // Anna lädt zuerst hoch
+    expect(serverText(id)).toBe('Basis');
+    await server.syncOf(ben, BEN);
+    await server.syncOf(ben, BEN); // Bens Gerät hat mehr, es bringt das wieder hoch (kein Wiederherstellungsstand, der gelten müsste)
+    expect(serverText(id)).toBe('Basis von Ben');
+    await server.syncOf(anna, ANNA);
+    expect(textOf((await loadDoc(id, anna))!.doc)).toBe('Basis von Ben');
+    expect(await anna.protokolle.filter((p) => p.title.endsWith('(lokale Fassung)')).count()).toBe(0);
+    expect(await ben.protokolle.filter((p) => p.title.endsWith('(lokale Fassung)')).count()).toBe(0);
+    expect(server.db.prepare('SELECT COUNT(*) AS n FROM protocols').get()).toEqual({ n: 1 }); // keine Kopien auf dem Server
   });
 
   it('der Server verliert den Text eines Protokolls, das nur dieses Gerät kennt: er geht mit dem ganzen Zustand hoch', async () => {

@@ -8,9 +8,11 @@ import { BASE_COLLECTIONS, SYNC_COLLECTIONS, seedOutboxOnce } from '@/core/db/ou
 import { jsonEqual } from '@/core/domain/equal';
 import { httpTransport, uploadPendingBlobs, type BlobTransport } from './blobSync';
 import { ensureBases, exchangeInBackground, type BackgroundResult } from './collab/background';
+import { isEmptySnapshot } from './collab/base';
 import { saveLocalCopy } from './collab/localCopy';
 import { getOpenSession, isSessionOpen, openSessions } from './collab/session';
 import { EPOCH_KEY, httpExchange, type ExchangeTransport } from './collab/wire';
+import { yDocToJson } from './collab/yJson';
 import { noteConflicts } from './conflicts';
 import { ProtoError, loadConn, request } from './http';
 import { MIN_SERVER_API } from './schemaVersion';
@@ -103,6 +105,11 @@ export interface SyncResponse {
   rev: number;
   epoch?: string;
   reset?: boolean;
+  /**
+   * true (oder fehlt): Die Epoche entstand durch eine gewollte Wiederherstellung; der Stand des Servers gilt. false: Die Datenbank ist neu
+   * und leer (zum Beispiel ein Volume nicht eingebunden); die Geräte haben die einzigen Kopien und bringen sie wieder hoch.
+   */
+  restored?: boolean;
   changes: ServerDoc[];
   folders: ServerFolder[];
   records?: ServerRecord[];
@@ -186,6 +193,19 @@ async function withPendingOfEditor(id: string, text: YDocRow, store: HubDb): Pro
   const extra = getOpenSession(id)?.takePending();
   if (extra) await store.ydocs.put({ ...text, update: Y.mergeUpdates([text.update, extra]), dirty: 1, seq: text.seq + 1 });
   return extra || text.dirty === 1 ? 1 : 0;
+}
+
+/** Hat dieser Zustand Text? (Ein Zustand, der sich nicht lesen lässt, gilt als Text: Er wird nicht leichtfertig verworfen.) */
+function hasText(update: Uint8Array): boolean {
+  const state = new Y.Doc();
+  try {
+    Y.applyUpdate(state, update);
+    return !isEmptySnapshot(yDocToJson(state));
+  } catch {
+    return true;
+  } finally {
+    state.destroy();
+  }
 }
 
 /**
@@ -281,6 +301,8 @@ export async function performSync(
    * Bei einem vollständigen Abgleich (`since` 0) meldet der Server das nicht von sich aus; die Kennung verrät es.
    */
   const epochChanged = !!res.reset || (storedEpoch !== undefined && res.epoch !== undefined && res.epoch !== storedEpoch);
+  /** Bei einer gewollten Wiederherstellung gilt der Stand des Servers; bei einer neuen, leeren Datenbank bringen die Geräte ihre Texte wieder hoch. */
+  const serverWins = res.restored !== false;
   const reset = epochChanged || full;
   let reuploaded = 0;
   const nowAccepted = Array.isArray(res.collections) ? SYNC_COLLECTIONS.filter((c) => res.collections!.includes(c)) : [...accepted];
@@ -310,14 +332,27 @@ export async function performSync(
         continue;
       }
       if (local?.deleted === 1 && !sentDeleted.has(doc.id)) continue; // hier gerade gelöscht, der nächste Abgleich meldet es
-      if (epochChanged && text) {
+      // Der Text dieses Geräts bleibt und geht als Basis wieder hoch, wenn der Server keinen Text hat, der gelten müsste: Seine Datenbank ist
+      // neu und leer (keine gewollte Wiederherstellung; die Geräte haben die einzigen Kopien), oder er hat dieses Protokoll erst aus den
+      // Kopfdaten dieser Anfrage angelegt. Hat er inzwischen Text mit anderer Geschichte, antwortet er `exists`, und das Gerät sichert seine
+      // Fassung als Kopie.
+      let regrown = false;
+      if (epochChanged && text && local && local.deleted !== 1 && (!serverWins || (sentTimes.has(doc.id) && isEmptySnapshot(doc.content)))) {
+        await withPendingOfEditor(doc.id, text, store);
+        const now = (await store.ydocs.get(doc.id)) ?? text;
+        if (hasText(now.update)) {
+          await store.ydocs.put({ ...now, serverSv: undefined, dirty: 1, created: true, rejected: undefined, seq: now.seq + 1 });
+          regrown = true;
+        }
+      }
+      if (epochChanged && text && !regrown) {
         // Eine andere Datenbank: Der Text des Servers gilt, nicht der hier gemerkte Stand (sonst käme zurück, was die Wiederherstellung entfernt hat).
         if (local && local.deleted !== 1 && (await withPendingOfEditor(doc.id, text, store)) === 1) await saveLocalCopy(doc.id, {}, store);
         await store.ydocs.delete(doc.id);
       }
       const merged = mergeHeader(local?.deleted === 1 ? undefined : local, doc);
       // Der Schnappschuss des Servers ersetzt den lokalen nur, wenn hier nichts Ungesendetes oder in Arbeit ist (bei einer neuen Datenbank immer).
-      const keepsText = !epochChanged && (isSessionOpen(doc.id) || text?.dirty === 1);
+      const keepsText = regrown || (!epochChanged && (isSessionOpen(doc.id) || text?.dirty === 1));
       await store.protokolle.put({
         id: doc.id,
         ...merged.fields,

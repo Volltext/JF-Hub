@@ -1,6 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { clearRefs } from './blobs.js';
-import { currentRev, getEpoch, getSettings, nextRev, type FolderRow, type ProtocolRow, type RecordRow, type Role } from './db.js';
+import { currentRev, epochRestored, getEpoch, getSettings, nextRev, type FolderRow, type ProtocolRow, type RecordRow, type Role } from './db.js';
 
 /** Wer synchronisiert (aus der Sitzung). */
 export interface SyncUser {
@@ -117,6 +117,11 @@ export interface SyncResponse {
   epoch: string;
   /** true: Stand des Clients passte nicht – es wurde alles neu ausgeliefert. */
   reset: boolean;
+  /**
+   * true: Die Epoche entstand durch eine gewollte Wiederherstellung (oder das Zurücksetzen der Demo); die Geräte übernehmen den Stand
+   * dieses Servers. false: Die Datenbank ist neu und leer (zum Beispiel ein Volume nicht eingebunden); die Geräte haben die einzigen Kopien.
+   */
+  restored: boolean;
   changes: ServerDoc[];
   folders: ServerFolder[];
   records: ServerRecord[];
@@ -531,6 +536,7 @@ export function applySync(db: DatabaseSync, req: SyncRequest, user: SyncUser): S
     rev: currentRev(db),
     epoch,
     reset,
+    restored: epochRestored(db),
     changes: [...rows.map(toServerDoc), ...hiddenDocs],
     folders,
     records: [...records, ...hiddenRecords],

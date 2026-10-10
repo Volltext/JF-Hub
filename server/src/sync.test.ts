@@ -1,6 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { openDb, type ProtocolRow } from './db.js';
+import { markEpochRestored, openDb, setConfig, type ProtocolRow } from './db.js';
 import { putProtocol } from './collab/testing.js';
 import { applySync, purgeProtocol, type ClientChange, type MetaAt, type SyncUser } from './sync.js';
 
@@ -32,6 +32,16 @@ const change = (id: string, over: Partial<ClientChange> = {}): ClientChange => (
 const sync = (user: SyncUser, protocols: ClientChange[], since = 0) => applySync(db, { since, protocols }, user);
 const row = (id: string) => db.prepare('SELECT * FROM protocols WHERE id = ?').get(id) as unknown as ProtocolRow;
 const doc = (res: ReturnType<typeof sync>, id: string) => res.changes.find((c) => c.id === id);
+
+describe('applySync: Epoche', () => {
+  it('meldet, ob die Epoche durch eine gewollte Wiederherstellung entstand (dann gilt der Stand des Servers) oder die Datenbank einfach neu ist', () => {
+    expect(sync(ANNA, []).restored).toBe(false); // neu und leer: Die Geräte haben die einzigen Kopien
+    markEpochRestored(db);
+    expect(sync(ANNA, []).restored).toBe(true);
+    setConfig(db, 'epoch', 'eine-neue-epoche'); // eine spätere neue Epoche erbt die Marke nicht
+    expect(sync(ANNA, []).restored).toBe(false);
+  });
+});
 
 describe('applySync: Protokolle anlegen', () => {
   it('legt ein Protokoll aus den Kopfdaten an: Text leer, Yjs-Modus, Zeiten je Feld', () => {

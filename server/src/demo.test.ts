@@ -157,6 +157,7 @@ describe('Demo-Modus', () => {
 
     const after = await sync(await login('jugendwart'), { since: before.rev, epoch: before.epoch });
     expect(after.reset).toBe(true);
+    expect(after.restored).toBe(true); // das Zurücksetzen ist gewollt: Der Stand des Servers gilt
     expect(after.epoch).not.toBe(before.epoch);
     expect(after.changes.map((d) => d.title)).not.toContain('Von einem Besucher');
     expect(after.changes.map((d) => d.title)).toContain('Dienst: Knoten und Stiche');

@@ -6,7 +6,7 @@ import { DatabaseSync } from 'node:sqlite';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from './app.js';
 import { createBackup, listBackups, pruneBackups, restoreFromFile, runAutoBackup, RestoreError } from './backup.js';
-import { getConfig, getEpoch, openDb, setConfig } from './db.js';
+import { epochRestored, getConfig, getEpoch, openDb, setConfig } from './db.js';
 import { headerChange } from './collab/testing.js';
 import type { ClientChange, SyncResponse } from './sync.js';
 
@@ -81,6 +81,17 @@ describe('Wiederherstellen', () => {
     expect(getConfig(db, 'vapidPublic')).toBe('pub-neu');
     expect(getConfig(db, 'revCounter')).toBe('9');
     expect(getEpoch(db)).not.toBe(epoch);
+  });
+
+  it('markiert die neue Epoche als gewollte Wiederherstellung; eine neue, leere Datenbank ist keine', () => {
+    const fresh = openDb(':memory:');
+    expect(epochRestored(fresh)).toBe(false); // neu angelegt (zum Beispiel Volume nicht eingebunden): Die Geräte haben die einzigen Kopien
+    seed(fresh, 'alt');
+    const backup = createBackup(fresh, dir, 'manuell');
+    restoreFromFile(fresh, join(dir, backup.name));
+    expect(epochRestored(fresh)).toBe(true); // gewollt: Der Stand des Servers gilt
+    setConfig(fresh, 'epoch', 'eine-andere-epoche'); // eine spätere neue Epoche erbt die Marke nicht
+    expect(epochRestored(fresh)).toBe(false);
   });
 
   it('nimmt eine Sicherung ohne neuere Spalten an (Migration)', () => {

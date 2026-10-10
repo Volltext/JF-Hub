@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { migrateLegacy } from './auth.js';
-import { getConfig, openDb, setConfig } from './db.js';
+import { getConfig, markEpochRestored, openDb, setConfig } from './db.js';
 import { migrateBlobs } from './migrate.js';
 import { migrateYjs } from './collab/migrate.js';
 
@@ -170,6 +170,7 @@ export function restoreFromFile(db: DatabaseSync, file: string): void {
         // Revisionen nie zurückdrehen und neue Epoche, damit sich alle Clients neu abgleichen.
         setConfig(db, 'revCounter', String(Math.max(liveRev, Number(getConfig(db, 'revCounter') ?? '0'))));
         setConfig(db, 'epoch', randomUUID());
+        markEpochRestored(db); // gewollt: Auf den Geräten gilt danach der Stand dieser Sicherung
         const bad = db.prepare('PRAGMA foreign_key_check').all();
         if (bad.length) throw new RestoreError('Die Sicherung ist in sich nicht stimmig (verwaiste Verweise).');
         db.exec('COMMIT');

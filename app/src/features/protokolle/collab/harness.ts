@@ -5,7 +5,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 import type { JSONContent } from '@tiptap/core';
 import * as Y from 'yjs';
-import { openDb } from '../../../../../server/src/db';
+import { markEpochRestored, openDb } from '../../../../../server/src/db';
 import { exchange, type ExchangeRequest as ServerExchangeRequest } from '../../../../../server/src/collab/exchange';
 import { createPeers, type Peers } from '../../../../../server/src/collab/peers';
 import { putProtocol, type PutOptions } from '../../../../../server/src/collab/testing';
@@ -84,9 +84,13 @@ export class TestServer {
     return putProtocol(this.db, opts);
   }
 
-  /** Ersetzt die Datenbank (zum Beispiel eine Sicherung eingespielt). */
-  replaceDatabase(): void {
+  /**
+   * Ersetzt die Datenbank. Ohne Angabe ist sie neu und leer (zum Beispiel ein Volume nicht eingebunden): Die Geräte haben die einzigen
+   * Kopien. Mit `restored` ist es eine gewollte Wiederherstellung, auf den Geräten gilt der Stand des Servers.
+   */
+  replaceDatabase(opts: { restored?: boolean } = {}): void {
     this.db = openDb(':memory:');
+    if (opts.restored) markEpochRestored(this.db);
   }
 
   row(id: string) {

@@ -279,6 +279,19 @@ export function getEpoch(db: DatabaseSync): string {
   return e;
 }
 
+/**
+ * Markiert die aktuelle Epoche als gewollt gesetzt (Wiederherstellung einer Sicherung, Zurücksetzen der Demo): Der Stand dieses Servers
+ * gilt, auch gegen neuere Stände auf den Geräten. Eine neue, leere Datenbank hat diese Marke nicht; dort haben die Geräte die einzigen
+ * Kopien und bringen sie wieder hoch.
+ */
+export function markEpochRestored(db: DatabaseSync): void {
+  setConfig(db, 'restoredEpoch', getEpoch(db));
+}
+
+export function epochRestored(db: DatabaseSync): boolean {
+  return getConfig(db, 'restoredEpoch') === getEpoch(db);
+}
+
 export function currentRev(db: DatabaseSync): number {
   return Number(getConfig(db, 'revCounter') ?? '0');
 }

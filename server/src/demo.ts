@@ -2,7 +2,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 import { hashPassword } from './auth.js';
 import { migrateYjs } from './collab/migrate.js';
-import { currentRev, getConfig, nextRev, setConfig, type Role } from './db.js';
+import { currentRev, getConfig, markEpochRestored, nextRev, setConfig, type Role } from './db.js';
 import { DEMO_NAMES, demoData } from './demoData.js';
 
 /**
@@ -118,6 +118,7 @@ export async function resetDemo(db: DatabaseSync, now = new Date()): Promise<voi
     // Revisionen nie zurückdrehen; neue Epoche, damit Geräte ihren Stand verwerfen.
     setConfig(db, 'revCounter', String(liveRev));
     setConfig(db, 'epoch', randomUUID());
+    markEpochRestored(db); // das Zurücksetzen ist gewollt: Auf den Geräten gilt der Stand der Demo
     seed(db, now, hashes);
     db.exec('COMMIT');
   } catch (e) {
