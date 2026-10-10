@@ -81,6 +81,15 @@ describe('folderRepo', () => {
     expect((await liveFolders()).map((f) => f.id).sort()).toEqual(['oben', 'unten']);
   });
 
+  it('beim Löschen bekommt nur der Ordner eines älteren Protokolls ohne Feldzeiten eine Zeit, kein anderes Feld', async () => {
+    const p = { ...newProtokoll('mitte'), dirty: 0 as const, rev: 2, metaAt: undefined, updatedAt: 5 };
+    await db.folders.bulkAdd([folder('oben', 'Oben'), folder('mitte', 'Mitte', 'oben')]);
+    await db.protokolle.add(p);
+    await folderRepo.remove('mitte');
+    const moved = (await db.protokolle.get(p.id))!;
+    expect(Object.keys(moved.metaAt!)).toEqual(['folderId']);
+  });
+
   it('nie gesendete Ordner verschwinden sofort', async () => {
     const f = await folderRepo.create('Flüchtig', '');
     await folderRepo.remove(f.id);

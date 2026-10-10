@@ -67,13 +67,20 @@ describe('protokolleRepo.save', () => {
     expect((await db.protokolle.get(p.id))!.metaAt!.title).toBe(5_000_000_000_002);
   });
 
-  it('Felder ohne eigene Zeit (Zeile aus der Zeit vor 3.0.0) gelten als zur Änderungszeit der Zeile geändert, nicht als eben jetzt', async () => {
-    const p = await stored({ metaAt: undefined });
+  it('Felder ohne eigene Zeit (Zeile aus der Zeit vor 3.0.0) bekommen keine: nur das geänderte Feld erhebt einen Anspruch', async () => {
+    // Die Änderungszeit der Zeile rückt mit jeder Textänderung vor. Als Zeit eines nie angefassten Feldes würde sie den Wert eines anderen
+    // Geräts überstimmen, obwohl dieses Gerät das Feld nie geändert hat.
+    const p = await stored({ metaAt: undefined, updatedAt: 111 });
     const at = await protokolleRepo.save(p.id, { ort: 'Neu' });
-    const times = (await db.protokolle.get(p.id))!.metaAt!;
-    expect(times.ort).toBe(at);
-    expect(times.title).toBe(111);
-    expect(times.datum).toBe(111);
+    expect((await db.protokolle.get(p.id))!.metaAt).toEqual({ ort: at });
+  });
+
+  it('eine zweite Änderung eines Feldes ohne bisherige Zeit bekommt trotzdem eine größere Zeit als die erste', async () => {
+    const p = await stored({ metaAt: undefined });
+    await protokolleRepo.save(p.id, { ort: 'A' });
+    const first = (await db.protokolle.get(p.id))!.metaAt!.ort!;
+    await protokolleRepo.save(p.id, { ort: 'B' });
+    expect((await db.protokolle.get(p.id))!.metaAt!.ort!).toBeGreaterThan(first);
   });
 
   it('Sichtbarkeit und Ordner wechseln zählen als Änderung', async () => {

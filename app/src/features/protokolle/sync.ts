@@ -147,8 +147,12 @@ const isKnown = (c: string): c is SyncCollection => (SYNC_COLLECTIONS as string[
 
 const getRev = async (store: HubDb) => ((await store.kv.get(REV_KEY))?.value as number | undefined) ?? 0;
 
-/** Änderungszeit je Kopffeld; fehlt sie (Zeile aus der Zeit vor 3.0.0), gilt die Zeit der Zeile. */
-const timesOf = (p: Protokoll): MetaAt => Object.fromEntries(META_FIELDS.map((f) => [f, p.metaAt?.[f] ?? p.updatedAt])) as MetaAt;
+/**
+ * Änderungszeit je Kopffeld, soweit dieses Gerät das Feld selbst geändert (oder vom Server mit Zeit übernommen) hat. Ein Feld ohne Zeit
+ * erhebt keinen Anspruch und wird vom Server nicht angefasst: Eine Ersatzzeit wie die der Zeile rückt mit jeder Textänderung vor und
+ * würde Änderungen anderer Geräte an Feldern überstimmen, die dieses Gerät nie geändert hat.
+ */
+const timesOf = (p: Protokoll): MetaAt => Object.fromEntries(META_FIELDS.filter((f) => p.metaAt?.[f] !== undefined).map((f) => [f, p.metaAt![f]])) as MetaAt;
 
 const toChange = (p: Protokoll): ClientChange => ({
   id: p.id,
@@ -198,8 +202,8 @@ export function mergeHeader(local: Protokoll | undefined, doc: ServerDoc): { fie
     const sv = valueOf(server, f);
     if (local && local.dirty === 1) {
       const lv = valueOf(local, f);
-      const lt = local.metaAt?.[f] ?? local.updatedAt;
-      if (lv !== sv && (lt > st || (lt === st && lv > sv))) {
+      const lt = local.metaAt?.[f]; // ohne eigene Zeit hat dieses Gerät das Feld nie geändert: Es gilt der Server
+      if (lt !== undefined && lv !== sv && (lt > st || (lt === st && lv > sv))) {
         fields[f] = local[f];
         metaAt[f] = lt;
         pending = true;

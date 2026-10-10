@@ -90,8 +90,7 @@ describe('performSync', () => {
     });
     const sent = seen!.protocols[0]!;
     expect(sent).not.toHaveProperty('content');
-    expect(sent.metaAt).toMatchObject({ title: 1000, datum: 500 });
-    expect(sent.metaAt.ort).toBe(a.updatedAt); // ohne eigene Zeit gilt die der Zeile
+    expect(sent.metaAt).toEqual({ title: 1000, datum: 500 }); // Felder ohne eigene Zeit erheben keinen Anspruch (die Zeit der Zeile rückt mit jeder Textänderung vor)
     expect(JSON.stringify(seen)).not.toContain('"changes"');
   });
 
@@ -155,6 +154,14 @@ describe('performSync: Kopfdaten Feld für Feld', () => {
       conflicts: [],
     }));
     expect(await db.protokolle.get(p.id)).toMatchObject({ title: 'Lokal', ort: 'Neuer Ort', dirty: 1, rev: 8, metaAt: { title: 400, ort: 300 } });
+  });
+
+  it('ein Feld, das dieses Gerät nie geändert hat, erhebt keinen Anspruch: Es gilt der Wert des Servers, auch wenn die Zeile jünger ist', async () => {
+    // Zeile aus der Zeit vor 3.0.0: nur der Titel wurde hier geändert; die Zeit der Zeile (nach jedem Text-Schreiben neu) ist jünger als alles beim Server
+    const p = rowOf({ ort: 'Alt', updatedAt: 9_000, metaAt: { title: 400 } });
+    await db.protokolle.add(p);
+    await performSync(async () => ({ rev: 8, changes: [echo(p, { ort: 'Halle', title: 'Server', rev: 8, metaAt: { title: 200, ort: 300 } })], folders: [], conflicts: [] }));
+    expect(await db.protokolle.get(p.id)).toMatchObject({ title: 'Lokal', ort: 'Halle', dirty: 1, metaAt: { title: 400, ort: 300 } });
   });
 
   it('sind die Werte gleich, ist nichts mehr offen', async () => {

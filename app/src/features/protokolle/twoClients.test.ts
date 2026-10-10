@@ -9,6 +9,7 @@ import { ANNA, BEN, TestServer, closeDevices, newDevice, textOf, typeInto } from
 import { openProtocol } from './collab/openPlan';
 import type { CollabSession } from './collab/session';
 import { loadDoc } from './collab/yStore';
+import { migrateYjs } from '../../../../server/src/collab/migrate';
 import { newProtokoll, type Protokoll } from './model';
 import { saveHeader } from './repo';
 
@@ -322,6 +323,60 @@ describe('Protokolle aus der Zeit vor 3.0.0', () => {
     const copy = (await ben.protokolle.toArray()).find((x) => x.title === 'Alt (lokale Fassung)');
     expect(copy).toBeDefined();
     expect(textOf((await loadDoc(p.id, ben))!.doc)).toBe('Aus 2.3.0');
+  });
+});
+
+describe('Kopfdaten eines Protokolls, das der Server beim Update umgestellt hat', () => {
+  const tick = (ms = 8) => new Promise((r) => setTimeout(r, ms));
+  const ID = 'doc-00001';
+
+  /** Ein Protokoll aus der Zeit vor 3.0.0: Der Server hat keine Feldzeiten, die Geräte auch nicht. */
+  async function migrated(): Promise<void> {
+    server.put({ id: ID, title: 'Sitzung', ownerId: ANNA.id, shared: true, ymode: 0, content: doc(para('Basis')) });
+    migrateYjs(server.db);
+    await server.syncOf(anna, ANNA);
+    await server.syncOf(ben, BEN);
+    await tick();
+  }
+  /** Schreibt Text im offenen Protokoll und schließt es wieder (die Änderungszeit der Zeile rückt vor). */
+  async function typeAndClose(store: HubDb, user: SyncUser, text: string): Promise<void> {
+    const s = await open(store, user, ID);
+    typeInto(s.doc, text);
+    await s.flush();
+    await s.destroy();
+    await tick();
+  }
+
+  it('wer nur Text schreibt und dann den Titel ändert, überstimmt den Ort nicht, den ein anderer inzwischen gesetzt hat', async () => {
+    await migrated();
+    await saveHeader(ben, ID, { ort: 'Halle' });
+    await server.syncOf(ben, BEN);
+    await tick();
+    // Annas Gerät kennt Bens Ort noch nicht: Sie schreibt Text, danach ändert sie den Titel
+    await typeAndClose(anna, ANNA, ' Annas Text');
+    await saveHeader(anna, ID, { title: 'Annas Titel' });
+    await server.syncOf(anna, ANNA);
+    await server.syncOf(ben, BEN);
+    expect(server.row(ID)).toMatchObject({ title: 'Annas Titel', ort: 'Halle' });
+    for (const store of [anna, ben]) expect(await store.protokolle.get(ID)).toMatchObject({ title: 'Annas Titel', ort: 'Halle', dirty: 0 });
+  });
+
+  it('ein Gerät mit veraltetem Stand macht ein zurückgezogenes Protokoll nicht wieder öffentlich, wenn es Text schreibt und etwas anderes ändert', async () => {
+    await migrated();
+    const handy = newDevice('anna-handy');
+    await server.syncOf(handy, ANNA);
+    await tick();
+    await saveHeader(anna, ID, { shared: false }); // am Laptop zurückgezogen
+    await server.syncOf(anna, ANNA);
+    await tick();
+    await typeAndClose(handy, ANNA, ' vom Handy'); // das Handy weiß davon noch nichts
+    await saveHeader(handy, ID, { ort: 'Zeltplatz' });
+    await server.syncOf(handy, ANNA);
+    expect(server.row(ID)).toMatchObject({ shared: 0, ort: 'Zeltplatz' });
+    expect(await handy.protokolle.get(ID)).toMatchObject({ shared: false, ort: 'Zeltplatz' });
+    // Ben sieht das Protokoll nicht mehr
+    await server.syncOf(ben, BEN);
+    expect(await ben.protokolle.get(ID)).toBeUndefined();
   });
 });
 

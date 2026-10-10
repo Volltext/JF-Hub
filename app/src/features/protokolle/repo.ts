@@ -30,11 +30,12 @@ export async function saveHeader(store: HubDb, id: string, patch: ProtokollPatch
   const changed = changedFields(row, patch);
   if (!changed.length) return { updatedAt: row.updatedAt, changed: false };
   const updatedAt = Date.now();
-  // Felder ohne eigene Zeit (Zeile aus der Zeit vor 3.0.0) gelten als zuletzt zur Änderungszeit der Zeile geändert, nicht als eben jetzt.
-  const known = { ...Object.fromEntries(META_FIELDS.map((f) => [f, row.updatedAt])), ...row.metaAt };
   const values = Object.fromEntries(changed.map((f) => [f, patch[f]]));
+  // Nur die geänderten Felder bekommen eine Zeit. Ein Feld ohne eigene Zeit (Zeile aus der Zeit vor 3.0.0, vom Server übernommen ohne Zeit) erhebt
+  // beim Abgleich keinen Anspruch: Die Änderungszeit der Zeile als Ersatz rückt mit jedem Schreiben von Text vor und würde die Änderung eines
+  // anderen Geräts an diesem Feld überstimmen, obwohl dieses Gerät es nie angefasst hat.
   // Eine Änderung gibt dem Server einen neuen Versuch (eine frühere Ablehnung gilt nur für die alte Fassung).
-  await store.protokolle.update(id, { ...values, metaAt: stampMeta(known, changed, updatedAt), updatedAt, dirty: 1, rejected: undefined });
+  await store.protokolle.update(id, { ...values, metaAt: stampMeta(row.metaAt, changed, updatedAt), updatedAt, dirty: 1, rejected: undefined });
   return { updatedAt, changed: true };
 }
 

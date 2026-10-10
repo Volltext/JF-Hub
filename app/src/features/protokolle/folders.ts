@@ -1,6 +1,6 @@
 import { db } from '@/core/db/db';
 import { newId } from '@/core/domain/id';
-import { META_FIELDS, stampMeta, type Ordner } from './model';
+import { stampMeta, type Ordner } from './model';
 import { scheduleSync } from './sync';
 
 /** Oberste Ebene. */
@@ -81,7 +81,7 @@ export const folderRepo = {
       await db.folders.where('parentId').equals(id).modify({ parentId: f.parentId, updatedAt: now, dirty: 1 });
       // Auch hier bekommt das Feld eine eigene Änderungszeit: Der Server führt die Kopfdaten Feld für Feld zusammen.
       await db.protokolle.filter((p) => p.folderId === id && p.deleted === 0).modify((p) => {
-        p.metaAt = stampMeta({ ...Object.fromEntries(META_FIELDS.map((k) => [k, p.updatedAt])), ...p.metaAt }, ['folderId'], now);
+        p.metaAt = stampMeta(p.metaAt, ['folderId'], now);
         p.folderId = f.parentId;
         p.updatedAt = now;
         p.dirty = 1;
