@@ -123,6 +123,24 @@ describe('openProtocol', () => {
     expect(textOf(s.doc)).toBe('Demo-Text');
   });
 
+  it('ein Fehler beim Öffnen (hier: unlesbare Zeile) wird als Nur-lesen-Ansicht gemeldet, statt eine leere Seite zu hinterlassen', async () => {
+    const p = row();
+    await store.protokolle.add(p);
+    await store.ydocs.put({ id: p.id, update: new Uint8Array([7, 7, 7, 7, 7]), dirty: 0, seq: 0 });
+    const o = await openProtocol(p.id, deps());
+    expect(o).toMatchObject({ kind: 'readonly', reason: 'failed' });
+    expect((o as { message: string }).message).toMatch(/nicht öffnen/);
+    expect(await store.ydocs.get(p.id)).toMatchObject({ seq: 0, dirty: 0 }); // unberührt
+  });
+
+  it('antwortet der Server beim Öffnen nicht, ist das Protokoll nach der Frist nur zu lesen, statt ewig zu warten', async () => {
+    const p = row({ rev: 5 });
+    await store.protokolle.add(p);
+    const hanging: ExchangeTransport = () => new Promise(() => undefined);
+    const o = await openProtocol(p.id, { ...deps(hanging), openTimeoutMs: 30 });
+    expect(o).toMatchObject({ kind: 'readonly', reason: 'needs-server' });
+  });
+
   it('ein Zustand mit Elementen, die diese App nicht kennt, wird nie gebunden (der Editor würde sie für alle löschen)', async () => {
     const p = row();
     await store.protokolle.add(p);

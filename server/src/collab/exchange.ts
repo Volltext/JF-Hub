@@ -48,7 +48,7 @@ export type ExchangeStatus =
   | 'rejected'
   /** Das Update setzt Unbekanntes voraus: einmal mit dem vollständigen Zustand wiederholen. */
   | 'resync'
-  /** Die Antwort wäre zu groß geworden: später noch einmal fragen. */
+  /** Die Antwort wäre zu groß geworden, die Zeit war aufgebraucht oder der Server konnte gerade nicht schreiben: später noch einmal fragen. */
   | 'deferred';
 
 export interface ExchangeResult {
@@ -186,7 +186,12 @@ function one(db: DatabaseSync, d: ExchangeDoc, user: SyncUser, peers: Peers, now
     } catch {
       return reject('ungültige Änderung');
     }
-    const applied = apply(current, update, limits);
+    let applied: Applied;
+    try {
+      applied = apply(current, update, limits);
+    } catch {
+      return reject('ungültiger Inhalt'); // reine Rechnung: Mit demselben Text scheitert sie immer wieder
+    }
     if (applied.kind === 'rejected') return reject(applied.reason);
     if (applied.kind === 'resync') return { id, status: 'resync' };
     if (applied.kind === 'changed') {
@@ -203,7 +208,7 @@ function one(db: DatabaseSync, d: ExchangeDoc, user: SyncUser, peers: Peers, now
       } catch (e) {
         db.exec('ROLLBACK TO exchange');
         db.exec('RELEASE exchange');
-        return reject(e instanceof Error ? e.message : 'unbekannter Fehler');
+        throw e; // zurückgerollt; `exchange` macht daraus „deferred“
       }
       current = { state: applied.state, sv: applied.sv };
       missingBlobs = missingBlobIds(db, [id]);
@@ -232,7 +237,16 @@ function one(db: DatabaseSync, d: ExchangeDoc, user: SyncUser, peers: Peers, now
 }
 
 /** Wendet die Austauschanfrage eines Nutzers an und liefert, was seine Geräte brauchen. */
-export function exchange(db: DatabaseSync, req: ExchangeRequest, user: SyncUser, peers: Peers, now = Date.now(), limits: Limits = LIMITS): ExchangeResponse {
+export function exchange(
+  db: DatabaseSync,
+  req: ExchangeRequest,
+  user: SyncUser,
+  peers: Peers,
+  now = Date.now(),
+  limits: Limits = LIMITS,
+  /** Wird mit der Kennung des Protokolls aufgerufen, wenn ein unerwarteter Fehler das Dokument auf später verschiebt (zum Protokollieren). */
+  onError?: (id: string, error: unknown) => void,
+): ExchangeResponse {
   const epoch = getEpoch(db);
   if (req.epoch !== undefined && req.epoch !== epoch) return { epoch, reset: true, docs: [] };
   const docs = Array.isArray(req.docs) ? req.docs : [];
@@ -251,7 +265,10 @@ export function exchange(db: DatabaseSync, req: ExchangeRequest, user: SyncUser,
     try {
       result = one(db, d, user, peers, now, limits);
     } catch (e) {
-      result = { id, status: 'rejected', reason: e instanceof Error ? e.message : 'unbekannter Fehler' };
+      // Ein Fehler des Servers (Speicher voll, Datenbank gesperrt) sagt nichts über den Text: Er wird später noch einmal versucht. „Abgelehnt“
+      // bliebe auf dem Gerät liegen, bis jemand weiterschreibt.
+      onError?.(id, e);
+      result = { id, status: 'deferred' };
     }
     budget -= (result.update?.length ?? 0) + (result.sv?.length ?? 0);
     results.push(result);

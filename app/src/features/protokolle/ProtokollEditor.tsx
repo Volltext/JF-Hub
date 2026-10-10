@@ -106,6 +106,9 @@ function EditorShell({ initial }: { initial: Protokoll }) {
         result.session.start();
       }
       setOpened(result);
+    }).catch(() => {
+      // `openProtocol` fängt Fehler selbst ab; das hier hält die Seite auch bei einem unerwarteten Fehler nicht leer.
+      if (!cancelled) setOpened({ kind: 'readonly', reason: 'failed', message: 'Das Protokoll ließ sich nicht öffnen. Bitte noch einmal versuchen.' });
     });
     return () => {
       cancelled = true;
@@ -117,7 +120,7 @@ function EditorShell({ initial }: { initial: Protokoll }) {
   const back = initial.folderId ? `/protokolle/o/${initial.folderId}` : '/protokolle';
   if (opened.kind === 'readonly') {
     if (opened.reason === 'gone') return <UnreadableProtokoll doc={initial} backTo={back} message={opened.message} />;
-    return <UnreadableProtokoll doc={initial} backTo={back} message={opened.message} onRetry={opened.reason === 'needs-server' ? () => setAttempt((n) => n + 1) : undefined} />;
+    return <UnreadableProtokoll doc={initial} backTo={back} message={opened.message} onRetry={opened.reason === 'needs-server' || opened.reason === 'failed' ? () => setAttempt((n) => n + 1) : undefined} />;
   }
   return <EditorInner key={attempt} initial={initial} session={opened.session} editorRef={editorRef} />;
 }

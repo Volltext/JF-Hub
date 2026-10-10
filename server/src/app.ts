@@ -379,7 +379,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
       if (!body || typeof body !== 'object' || !Array.isArray(body.docs)) return reply.code(400).send({ error: 'Ungültige Anfrage' });
       // Eine App fragt nach höchstens 20 Dokumenten (mehr kommen als „deferred“ zurück); Millionen leere Einträge wären nur Last.
       if (body.docs.length > MAX_EXCHANGE_ENTRIES) return reply.code(400).send({ error: 'Zu viele Dokumente in einer Anfrage' });
-      const res = exchange(db, body, me(req), peers);
+      const res = exchange(db, body, me(req), peers, Date.now(), undefined, (id, e) => req.log.error({ err: e, protocol: id }, 'Austausch des Protokolltextes verschoben'));
       if (res.reset) return reply.code(409).send({ error: 'Die Datenbank des Servers wurde ersetzt. Bitte neu abgleichen.', reset: true, epoch: res.epoch });
       return { ...res, api: API_VERSION };
     },

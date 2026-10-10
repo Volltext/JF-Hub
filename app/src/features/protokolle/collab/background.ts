@@ -18,7 +18,17 @@ export interface BackgroundOptions {
   isOpen?: (id: string) => boolean;
   /** Protokolle je Lauf. Weitere kommen im nächsten Lauf dran. */
   maxDocs?: number;
+  /** Auch Texte noch einmal senden, die der Server abgelehnt hat („Alles neu abgleichen“). Sonst bleiben sie liegen, bis sie geändert werden. */
+  retryRejected?: boolean;
+  /**
+   * Größe einer Anfrage in Base64-Zeichen, ab der weitere Texte auf den nächsten Lauf warten (der erste kommt immer). Ohne Grenze könnten
+   * 20 ungesendete Texte zusammen das Anfragelimit des Servers oder eines Proxys sprengen, und der Lauf scheiterte jedes Mal gleich.
+   */
+  maxRequestChars?: number;
 }
+
+/** Deutlich unter dem Anfragelimit des Servers (24 MiB); ein einzelner Text darf größer sein (er geht allein). */
+const MAX_REQUEST_CHARS = 6_000_000;
 
 export interface BackgroundResult {
   /** Wie viele Protokolle in diesem Lauf mit dem Server abgeglichen wurden. */
@@ -61,6 +71,7 @@ export async function exchangeInBackground(opts: BackgroundOptions): Promise<Bac
   const store = opts.store ?? db;
   const isOpen = opts.isOpen ?? isSessionOpen;
   const maxDocs = opts.maxDocs ?? 20;
+  const maxChars = opts.maxRequestChars ?? MAX_REQUEST_CHARS;
   const result: BackgroundResult = { ...EMPTY, missingBlobs: [] };
 
   // Der Text eines Protokolls, das der Server noch nicht kennt (`rev` 0: die Kopfdaten sind noch nicht angekommen), wartet auf den Abgleich der Kopfdaten.
@@ -81,6 +92,7 @@ export async function exchangeInBackground(opts: BackgroundOptions): Promise<Bac
   const docs: ExchangeDocRequest[] = [];
   const sentSeq = new Map<string, number>();
   const sending = new Set<string>();
+  let chars = 0;
   for (const p of batch) {
     const row = await store.ydocs.get(p.id);
     if (!row) {
@@ -88,9 +100,15 @@ export async function exchangeInBackground(opts: BackgroundOptions): Promise<Bac
       sentSeq.set(p.id, 0);
       continue;
     }
-    if (row.rejected && row.dirty === 1) continue; // nicht erneut senden, bis wieder etwas geändert wurde
-    sentSeq.set(p.id, row.seq);
+    if (row.rejected && row.dirty === 1 && !opts.retryRejected) continue; // nicht erneut senden, bis wieder etwas geändert wurde
     const req = requestFor(row, p.textRev);
+    const size = (req.update?.length ?? 0) + (req.sv?.length ?? 0);
+    if (docs.length && chars + size > maxChars) {
+      result.remaining++; // passt nicht mehr in diese Anfrage: im nächsten Lauf
+      continue;
+    }
+    chars += size;
+    sentSeq.set(p.id, row.seq);
     if (req.update) sending.add(p.id);
     docs.push(req);
   }
@@ -104,7 +122,8 @@ export async function exchangeInBackground(opts: BackgroundOptions): Promise<Bac
     if (seq === undefined) continue; // eine Antwort auf etwas, das nicht gefragt war
     switch (r.status) {
       case 'ok':
-        await applyAnswer(r.id, answerOf(r), seq, store);
+        // Nur was die Anfrage enthielt, gilt als gesendet; ein Text, der nicht dabei war (abgelehnt, nichts zu senden), bleibt, wie er ist.
+        await applyAnswer(r.id, answerOf(r), sending.has(r.id) ? seq : undefined, store);
         result.exchanged++;
         if (sending.has(r.id)) result.sent++;
         result.missingBlobs.push(...(r.missingBlobs ?? []));

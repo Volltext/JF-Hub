@@ -13,9 +13,12 @@ import { yDocToJson } from './yJson';
  *
  * Die Kopie gehört der Person an diesem Gerät, ist standardmäßig privat und wird beim nächsten Abgleich als neues Protokoll gesendet.
  * Liefert die Kennung der Kopie, oder `undefined`, wenn es nichts zu sichern gibt (kein lokaler Text oder nur ein leerer).
+ * Mit `doc` wird der Text dieses Dokuments gesichert statt des gespeicherten Zustands.
  */
-export async function saveLocalCopy(id: string, opts: { shared?: boolean } = {}, store: HubDb = db): Promise<string | undefined> {
-  const [row, text] = await Promise.all([store.protokolle.get(id), store.ydocs.get(id)]);
+export async function saveLocalCopy(id: string, opts: { shared?: boolean; doc?: Y.Doc } = {}, store: HubDb = db): Promise<string | undefined> {
+  // `doc`: Der Zustand liegt nicht mehr auf dem Gerät (verworfen), aber ein offener Editor hat ihn noch im Speicher.
+  const [row, stored] = await Promise.all([store.protokolle.get(id), opts.doc ? undefined : store.ydocs.get(id)]);
+  const text = opts.doc ? { update: Y.encodeStateAsUpdate(opts.doc) } : stored;
   if (!row || !text || isEmptyUpdate(text.update)) return undefined;
 
   const state = new Y.Doc();

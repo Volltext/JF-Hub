@@ -3,6 +3,7 @@ import * as Y from 'yjs';
 import { db, type HubDb, type SyncCollection, type YDocRow } from '@/core/db/db';
 import { saveDirectory, type DirectoryUser } from '@/core/account/account';
 import { rejectedBlobCount, requeueBlobs, retryBlobsNow } from '@/core/db/blobs';
+import { wipeCount } from '@/core/db/wipe';
 import { BASE_COLLECTIONS, SYNC_COLLECTIONS, seedOutboxOnce } from '@/core/db/outbox';
 import { jsonEqual } from '@/core/domain/equal';
 import { httpTransport, uploadPendingBlobs, type BlobTransport } from './blobSync';
@@ -235,6 +236,7 @@ export async function performSync(
   // Protokolle aus der Zeit vor 3.0.0, die der Server nie bekommen hat, brauchen ihre Basis, bevor sie eine Revision haben.
   await ensureBases(store);
 
+  const wipes = await wipeCount(store);
   const storedEpoch = (await store.kv.get(EPOCH_KEY))?.value as string | undefined;
   // Hat der Server bisher keine Mitglieder/Dienste/Aufgaben unterstützt (alter Stand), einmal komplett abgleichen.
   const hadRecordsBefore = (await store.kv.get(RECORDS_KEY))?.value === true;
@@ -274,13 +276,18 @@ export async function performSync(
   // Ältere Server kennen Mitglieder/Dienste/Aufgaben nicht und lassen `records` weg: Vormerkungen behalten,
   // sonst gingen sie verloren. Sobald der Server aktualisiert ist, wird einmal alles abgeglichen.
   const serverHasRecords = Array.isArray(res.records);
-  /** Die Datenbank des Servers ist eine andere als beim letzten Abgleich (ersetzt, wiederhergestellt): ihr Stand zählt, nicht der hier gemerkte. */
-  const epochChanged = !!res.reset;
+  /**
+   * Die Datenbank des Servers ist eine andere als beim letzten Abgleich (ersetzt, wiederhergestellt): ihr Stand zählt, nicht der hier gemerkte.
+   * Bei einem vollständigen Abgleich (`since` 0) meldet der Server das nicht von sich aus; die Kennung verrät es.
+   */
+  const epochChanged = !!res.reset || (storedEpoch !== undefined && res.epoch !== undefined && res.epoch !== storedEpoch);
   const reset = epochChanged || full;
   let reuploaded = 0;
   const nowAccepted = Array.isArray(res.collections) ? SYNC_COLLECTIONS.filter((c) => res.collections!.includes(c)) : [...accepted];
 
   await store.transaction('rw', [store.protokolle, store.ydocs, store.folders, store.outbox, store.members, store.sessions, store.tasks, store.clothing, store.clothingItems, store.runs, store.lineupTemplates, store.kv], async () => {
+    // Wurden die lokalen Daten gelöscht (Abmelden), während die Anfrage unterwegs war, gehört die Antwort zum vorigen Konto: nichts einspielen.
+    if ((await wipeCount(store)) !== wipes) throw new ProtoError('Nicht mehr angemeldet.', 401);
     for (const f of res.folders ?? []) {
       const local = await store.folders.get(f.id);
       // Ordner: letzte Änderung gewinnt; lokale Änderungen seit dem Senden bleiben bestehen.
@@ -409,9 +416,11 @@ export async function performSync(
   try {
     // Ein offener Editor tauscht seinen Text selbst aus; wer „Abgleichen“ wählt, erwartet aber, dass auch er jetzt ankommt.
     for (const open of openSessions()) await open.exchangeNow().catch(() => undefined);
-    text = await exchangeInBackground({ store, transport: textTransport });
+    text = await exchangeInBackground({ store, transport: textTransport, retryRejected: !!opts.full });
   } catch (e) {
-    if (e instanceof ProtoError && e.status !== 0) throw e;
+    // Kein Netz ist hier kein Fehler (die Kopfdaten sind angekommen). Alles andere, ein Speicherfehler auf dem Gerät ebenso wie ein Fehler
+    // des Servers, soll sichtbar werden, statt als „alles gut“ zu enden, während ungesendeter Text liegen bleibt.
+    if (!(e instanceof ProtoError && e.status === 0)) throw e;
   }
 
   // Der Server vermisst Anhänge, auf die ein soeben gesendeter Text verweist (aufgeräumt, Datenbank ersetzt): Hat dieses Gerät sie noch,

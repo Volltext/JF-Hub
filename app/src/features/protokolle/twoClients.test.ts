@@ -257,6 +257,23 @@ describe('zurückgezogen, gelöscht, ersetzt', () => {
     expect(textOf((await loadDoc(copy.id, anna))!.doc)).toBe('Stand der Sicherung und später geschrieben (nur hier)');
   });
 
+  it('auch ein vollständiger Abgleich („Alles neu abgleichen“) als erster nach dem Einspielen einer Sicherung verwirft den lokalen Zustand', async () => {
+    const id = await sharedDoc('Stand der Sicherung');
+    const a = await open(anna, ANNA, id);
+    typeInto(a.doc, ' NACH DER SICHERUNG');
+    await exchange(a);
+    await a.destroy();
+    server.replaceDatabase();
+    server.put({ id, title: 'Sitzung', ownerId: ANNA.id, shared: true, content: doc(para('Stand der Sicherung')) });
+    await server.syncOf(anna, ANNA, { full: true }); // since = 0: Der Server meldet keinen Wechsel der Datenbank, die Kennung verrät ihn
+    expect(textOf((await loadDoc(id, anna))!.doc)).toBe('Stand der Sicherung');
+    // weiterschreiben bringt den Text der Wiederherstellung nicht zurück
+    const again = await open(anna, ANNA, id);
+    typeInto(again.doc, '!');
+    await exchange(again);
+    expect(serverText(id)).toBe('Stand der Sicherung!');
+  });
+
   it('wird die Datenbank ersetzt, während ein Editor offen ist: er lädt neu, auch der noch nicht gesicherte Text aus dem Speicher des Editors bleibt als Kopie', async () => {
     const id = await sharedDoc('Stand der Sicherung');
     let replaced = 0;

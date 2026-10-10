@@ -1,6 +1,7 @@
 import * as Y from 'yjs';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { db } from '@/core/db/db';
+import { wipeLocalData } from '@/core/db/wipe';
 import { putLocalBlob } from '@/core/db/blobs';
 import { newProtokoll, type Protokoll } from './model';
 import type { BlobTransport } from './blobSync';
@@ -92,6 +93,37 @@ describe('performSync', () => {
     expect(sent).not.toHaveProperty('content');
     expect(sent.metaAt).toEqual({ title: 1000, datum: 500 }); // Felder ohne eigene Zeit erheben keinen Anspruch (die Zeit der Zeile rückt mit jeder Textänderung vor)
     expect(JSON.stringify(seen)).not.toContain('"changes"');
+  });
+
+  it('ein Fehler im Text-Schritt, der kein Verbindungsfehler ist (zum Beispiel ein Speicherfehler auf dem Gerät), wird gemeldet statt verschwiegen', async () => {
+    const broken: ExchangeTransport = async () => {
+      throw new Error('IndexedDB nicht beschreibbar');
+    };
+    await db.protokolle.add({ ...newProtokoll(), id: 'bekannt-001', dirty: 0, rev: 3, shared: true });
+    const send = async () => ({ rev: 4, changes: [serverDoc('bekannt-001', { rev: 3, shared: true })], folders: [], records: [], conflicts: [] }) as SyncResponse;
+    await expect(performSync(send, {}, db, undefined, broken)).rejects.toThrow(/IndexedDB/);
+    // ein Verbindungsfehler dagegen ist keiner: Der Abgleich der Kopfdaten gilt
+    const offline: ExchangeTransport = async () => {
+      throw new ProtoError('Keine Verbindung.', 0);
+    };
+    await expect(performSync(send, {}, db, undefined, offline)).resolves.toMatchObject({ text: null });
+  });
+
+  it('eine Antwort, die erst nach dem Abmelden (Löschen der lokalen Daten) eintrifft, legt nichts mehr an', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const running = performSync(async () => {
+      await gate;
+      return { rev: 9, epoch: 'E1', changes: [serverDoc('privat-0001', { title: 'Privates von Anna', shared: false, rev: 9 })], folders: [], records: [], conflicts: [] } as SyncResponse;
+    });
+    const outcome = running.then(() => 'fertig', (e: unknown) => (e instanceof ProtoError ? `Fehler ${e.status}` : 'anderer Fehler'));
+    await new Promise((r) => setTimeout(r, 20));
+    await wipeLocalData(); // Abmelden, während die Anfrage unterwegs ist
+    release();
+    expect(await outcome).toBe('Fehler 401'); // der Abgleich gilt als abgebrochen (nicht mehr angemeldet) …
+    expect(await db.protokolle.toArray()).toEqual([]); // … und hat nichts vom vorigen Konto zurückgebracht
+    expect(await db.kv.get('protokolle.rev')).toBeUndefined();
+    expect(await db.kv.get('protokolle.epoch')).toBeUndefined();
   });
 
   it('übernimmt neue Protokolle und Löschungen vom Server', async () => {

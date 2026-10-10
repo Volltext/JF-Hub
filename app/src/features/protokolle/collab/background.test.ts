@@ -117,15 +117,19 @@ describe('exchangeInBackground', () => {
   describe('Antworten des Servers', () => {
     const stub = (status: string, extra: Record<string, unknown> = {}): ExchangeTransport => async (req) => ({ docs: req.docs.map((d) => ({ id: d.id, status: status as never, ...extra })) });
 
-    async function withUnsent(id: string): Promise<void> {
-      await known(id, 'Basis');
-      await run();
+    /** Schreibt in ein vorgeladenes Protokoll, ohne zu senden. */
+    async function makeUnsent(id: string): Promise<void> {
       const d = (await loadDoc(id, store))!.doc;
       const updates: Uint8Array[] = [];
       d.on('update', (u: Uint8Array) => updates.push(u));
       typeInto(d, ' ungesendet');
       await putLocal(id, Y.mergeUpdates(updates), store);
       await store.protokolle.update(id, { rev: server.row(id)!.rev + 1 }); // der Server hat sich bewegt, damit der Austausch dran ist
+    }
+    async function withUnsent(id: string): Promise<void> {
+      await known(id, 'Basis');
+      await run();
+      await makeUnsent(id);
     }
 
     it('gelöscht oder zurückgezogen: Ungesendetes bleibt als Kopie, der Zustand wird verworfen', async () => {
@@ -171,6 +175,34 @@ describe('exchangeInBackground', () => {
       const calls = server.exchanges.length;
       await run();
       expect(server.exchanges.length).toBe(calls);
+    });
+
+    it('„Alles neu abgleichen“ (retryRejected) sendet einen abgelehnten Text noch einmal; sonst bleibt er liegen', async () => {
+      await withUnsent('doc-000001');
+      await run({ transport: stub('rejected', { reason: 'Serverfehler' }) });
+      const calls = server.exchanges.length;
+      await run();
+      expect(server.exchanges.length).toBe(calls); // der normale Lauf lässt ihn liegen
+      await run({ retryRejected: true });
+      expect(server.exchanges.length).toBe(calls + 1);
+      expect(await store.ydocs.get('doc-000001')).toMatchObject({ dirty: 0 });
+      expect(JSON.stringify(JSON.parse(server.row('doc-000001')!.content))).toContain('ungesendet');
+    });
+
+    it('ein Lauf schickt nur so viel auf einmal, wie ein Proxy mit kleinem Anfragelimit annimmt; der Rest kommt im nächsten Lauf', async () => {
+      const ids = ['doc-000001', 'doc-000002', 'doc-000003'];
+      for (const id of ids) await known(id, 'Basis');
+      await run(); // alle vorladen
+      for (const id of ids) await makeUnsent(id);
+      const before = server.exchanges.length;
+      const r = await run({ maxRequestChars: 1 }); // jedes Dokument für sich
+      expect(server.exchanges.length).toBe(before + 1);
+      expect(server.exchanges[before]!.docs).toHaveLength(1);
+      expect(r).toMatchObject({ sent: 1, remaining: 2 });
+      const r2 = await run({ maxRequestChars: 1 });
+      const r3 = await run({ maxRequestChars: 1 });
+      expect(r2.sent + r3.sent).toBe(2);
+      expect(await store.ydocs.where('dirty').equals(1).count()).toBe(0);
     });
 
     it('resync: beim nächsten Mal geht der ganze Zustand hoch', async () => {

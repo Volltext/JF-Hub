@@ -26,6 +26,8 @@ export function ProtokollList() {
   const navigate = useNavigate();
   const { folderId = ROOT } = useParams();
   const rows = useLiveQuery(() => db.protokolle.filter((p) => p.deleted === 0).toArray(), []);
+  // Texte, die der Server noch nicht bestätigt hat (der Text hat sein eigenes Merkmal), und der Grund, wenn er einen abgelehnt hat.
+  const unsentText = useLiveQuery(async () => new Map((await db.ydocs.where('dirty').equals(1).toArray()).map((r) => [r.id, r.rejected ?? ''] as const)), []);
   const folders = useLiveQuery(liveFolders, []);
   const syncState = useSyncStatus((s) => s.state);
   const syncMessage = useSyncStatus((s) => s.message);
@@ -204,22 +206,26 @@ export function ProtokollList() {
                 </button>
               </div>
             ))}
-            {protocols.map((p) => (
-              <Link key={p.id} to={`/protokolle/${p.id}`} className="item" style={{ textDecoration: 'none', color: 'inherit' }}>
-                <div className="item__main">
-                  <div className="item__title">{p.title || 'Ohne Titel'}</div>
-                  <div className="item__sub">{[p.datum && formatDate(p.datum), p.ort].filter(Boolean).join(' · ')}</div>
-                </div>
-                {(p.shared || !isMine(p, account)) && <span className="chip">{visibilityLabel(p, account, users)}</span>}
-                {p.rejected ? (
-                  <span className="chip chip--warn" title={p.rejected}>
-                    abgelehnt
-                  </span>
-                ) : (
-                  p.dirty === 1 && <span className="chip chip--warn">nicht gesendet</span>
-                )}
-              </Link>
-            ))}
+            {protocols.map((p) => {
+              const text = unsentText?.get(p.id); // undefined: nichts offen · '': ungesendet · sonst: vom Server abgelehnt
+              const rejected = p.rejected || text || undefined;
+              return (
+                <Link key={p.id} to={`/protokolle/${p.id}`} className="item" style={{ textDecoration: 'none', color: 'inherit' }}>
+                  <div className="item__main">
+                    <div className="item__title">{p.title || 'Ohne Titel'}</div>
+                    <div className="item__sub">{[p.datum && formatDate(p.datum), p.ort].filter(Boolean).join(' · ')}</div>
+                  </div>
+                  {(p.shared || !isMine(p, account)) && <span className="chip">{visibilityLabel(p, account, users)}</span>}
+                  {rejected ? (
+                    <span className="chip chip--warn" title={rejected}>
+                      abgelehnt
+                    </span>
+                  ) : (
+                    (p.dirty === 1 || text !== undefined) && <span className="chip chip--warn">nicht gesendet</span>
+                  )}
+                </Link>
+              );
+            })}
           </div>
         </>
       )}

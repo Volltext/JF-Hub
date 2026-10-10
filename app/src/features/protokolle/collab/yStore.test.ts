@@ -66,6 +66,14 @@ describe('putLocal', () => {
     expect(text).toContain('von B');
   });
 
+  it('mit „nur wenn es die Zeile gibt“ entsteht keine Teilzeile aus der letzten Änderung (Zustand wurde verworfen)', async () => {
+    const a = device();
+    expect(await putLocal('p-000001', a.type('eins'), store, true)).toBeUndefined();
+    expect(await getYRow('p-000001', store)).toBeUndefined();
+    await putLocal('p-000001', a.type('zwei'), store);
+    expect(await putLocal('p-000001', a.type('drei'), store, true)).toBe(2); // gibt es die Zeile, schreibt es wie sonst
+  });
+
   it('eine neue Änderung hebt eine frühere Ablehnung auf', async () => {
     const a = device();
     await putLocal('p-000001', a.type('x'), store);
@@ -136,6 +144,28 @@ describe('applyAnswer', () => {
     expect(row.created).toBeUndefined();
     expect(row.rejected).toBeUndefined();
     expect(row.dirty).toBe(0);
+  });
+});
+
+describe('applyAnswer: was die Antwort bestätigt', () => {
+  it('war der eigene Text nicht Teil der Anfrage (sentSeq undefined), bleiben Vormerkung, Ablehnung und Basis stehen, auch wenn Neues vom Server kommt', async () => {
+    await addRow('p-000001');
+    const a = device();
+    await putBase('p-000001', Y.encodeStateAsUpdate(stateOf(a.type('Altbestand'))), store);
+    await markRejected('p-000001', 'Protokoll zu groß', 1, store);
+    const server = device();
+    const row = await applyAnswer('p-000001', { update: server.type('vom Server'), sv: Y.encodeStateVector(server.doc), rev: 4 }, undefined, store);
+    expect(row).toMatchObject({ dirty: 1, rejected: 'Protokoll zu groß', created: true });
+    expect(stateOf(row.update).getXmlFragment(FIELD).toString()).toContain('vom Server'); // das Neue ist trotzdem gemischt
+    expect(await dirtyYCount(store)).toBe(1); // der Text gilt weiter als ungesendet
+  });
+
+  it('für ein Protokoll, das es nicht mehr gibt (abgemeldet), legt eine späte Antwort keine Zeile an', async () => {
+    const server = device();
+    const row = await applyAnswer('weg-000001', { update: server.type('fremder Text'), sv: Y.encodeStateVector(server.doc), rev: 3 }, undefined, store);
+    expect(row).toMatchObject({ id: 'weg-000001', dirty: 0 });
+    expect(await store.ydocs.get('weg-000001')).toBeUndefined();
+    expect(await store.protokolle.get('weg-000001')).toBeUndefined();
   });
 });
 

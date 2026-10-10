@@ -352,6 +352,35 @@ describe('Austausch: Arbeitsgrenzen', () => {
   });
 });
 
+describe('Austausch: Fehler des Servers', () => {
+  it('scheitert das Schreiben unerwartet (Speicher voll, Datenbank gesperrt), ist der Text nicht „abgelehnt“, sondern wird später noch einmal versucht', () => {
+    const id = putProtocol(db, { id: 'fehler-0001', ownerId: ANNA.id });
+    const dev = new Device(ANNA, id, doc(p(t('Wichtiger Text'))));
+    db.exec("CREATE TRIGGER kaputt BEFORE INSERT ON ydocs BEGIN SELECT RAISE(ABORT, 'Platte voll'); END");
+    const first = dev.run({ create: true });
+    expect(first.status).toBe('deferred'); // ein „rejected“ bliebe auf dem Gerät liegen, bis jemand weiterschreibt
+    expect(stored(id)).toBeUndefined(); // zurückgerollt
+    db.exec('DROP TRIGGER kaputt');
+    expect(dev.run({ create: true }).status).toBe('ok'); // dieselbe Anfrage gelingt, sobald der Fehler behoben ist
+    expect(JSON.parse(row(id).content).content[0].content[0].text).toBe('Wichtiger Text');
+  });
+
+  it('auch ein Fehler außerhalb des Schreibens (zum Beispiel beim Lesen) macht aus dem Dokument kein „abgelehnt“', () => {
+    const id = putProtocol(db, { id: 'fehler-0002', ownerId: ANNA.id });
+    const dev = new Device(ANNA, id, doc(p(t('Text'))));
+    db.exec('ALTER TABLE ydocs RENAME TO ydocs_weg');
+    const logged: string[] = [];
+    try {
+      const res = exchange(db, { epoch: getEpoch(db), docs: [dev.request({ create: true })] }, ANNA, peers, Date.now(), LIMITS, (docId) => logged.push(docId));
+      expect(res.docs.map((r) => r.status)).toEqual(['deferred']);
+      expect(logged).toEqual([id]); // der Betreiber erfährt davon (die Route protokolliert es)
+    } finally {
+      db.exec('ALTER TABLE ydocs_weg RENAME TO ydocs');
+    }
+    expect(dev.run({ create: true }).status).toBe('ok');
+  });
+});
+
 describe('Austausch: Anhänge und Mitschreibende', () => {
   it('leitet die Verweise auf Anhänge ab und meldet fehlende', () => {
     const id = putProtocol(db, { ownerId: ANNA.id });

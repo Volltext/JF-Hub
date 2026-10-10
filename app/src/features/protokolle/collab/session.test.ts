@@ -37,6 +37,7 @@ async function open(store: HubDb, user: SyncUser, over: Partial<SessionOptions> 
 }
 
 const stored = (store: HubDb) => store.ydocs.get(ID);
+const dirtyYCountOf = (store: HubDb) => store.ydocs.where('dirty').equals(1).count();
 const sync = async (...ss: CollabSession[]) => {
   for (const s of ss) {
     await s.flush();
@@ -269,6 +270,27 @@ describe('wenn der Server etwas anderes sagt', () => {
     expect((await stored(benDb))!.rejected).toBeUndefined();
   });
 
+  it('eine fremde Änderung oder eine ruhige Runde macht abgelehnten Text nicht „sauber“: Er bleibt ungesendet', async () => {
+    const rejecting: ExchangeTransport = async (req) => {
+      if (req.docs[0]!.update) return { docs: [{ id: ID, status: 'rejected', reason: 'Protokoll zu groß' }] };
+      return server.transport(BEN)(req);
+    };
+    const ben = await open(benDb, BEN, {}, rejecting);
+    typeInto(ben.doc, ' viel');
+    await ben.flush();
+    await ben.exchangeNow();
+    expect(await stored(benDb)).toMatchObject({ dirty: 1, rejected: 'Protokoll zu groß' });
+    // Anna ändert etwas: Bens nächste Runde bringt Neues vom Server
+    const anna = await open(annaDb, ANNA);
+    typeInto(anna.doc, ' Anna');
+    await sync(anna);
+    await ben.exchangeNow();
+    await ben.exchangeNow();
+    expect(textOf(ben.doc)).toContain('Anna');
+    expect(await stored(benDb)).toMatchObject({ dirty: 1, rejected: 'Protokoll zu groß' }); // unverändert ungesendet, nicht als erledigt vermerkt
+    expect(await dirtyYCountOf(benDb)).toBe(1);
+  });
+
   it('der Server hat den Text noch nicht umgestellt (legacy): nur lesen', async () => {
     const ben = await open(benDb, BEN, {}, stub('legacy'));
     await ben.exchangeNow();
@@ -338,6 +360,82 @@ describe('Schutz vor Inhalten, die der Editor nicht kennt', () => {
     expect(ben.getInfo().message).toContain('callout');
     expect(textOf(ben.doc)).toBe(before);
     expect(ben.doc.getXmlFragment('body').length).toBe(1); // nichts davon im geöffneten Dokument
+  });
+});
+
+describe('mehrere Sitzungen auf demselben Gerät', () => {
+  const tick = (ms = 10) => new Promise((r) => setTimeout(r, ms));
+  const serverText = () => (JSON.parse(server.row(ID)!.content).content as { content?: { text?: string }[] }[]).map((b) => (b.content ?? []).map((t) => t.text ?? '').join('')).join('\n');
+
+  it('zwei Tabs mit demselben Protokoll: Was ein Tab gesichert hat, geht auch dann zum Server, wenn der andere zuerst tauscht', async () => {
+    const tab1 = await open(annaDb, ANNA);
+    const tab2 = await open(annaDb, ANNA);
+    typeInto(tab1.doc, ' aus Tab 1');
+    await tab1.flush(); // gesichert, noch nicht gesendet
+    await tab2.exchangeNow(); // Tab 2 tauscht zuerst; sein Dokument kennt den Text nicht, die Zeile schon
+    expect(serverText()).toContain('aus Tab 1');
+    expect(textOf(tab2.doc)).toContain('aus Tab 1'); // Tab 2 übernimmt, was Tab 1 gesichert hat
+    expect(await stored(annaDb)).toMatchObject({ dirty: 0 });
+    await tab1.exchangeNow();
+    expect(serverText()).toBe('Basis aus Tab 1');
+    await tab1.destroy();
+    await tab2.destroy();
+  });
+
+  it('öffnet jemand das Protokoll gleich wieder, während die alte Sitzung noch auf ihre Anfrage wartet, strandet der zuletzt getippte Text nicht', async () => {
+    const inner = server.transport(ANNA);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    let hang = false;
+    const slow: ExchangeTransport = async (req) => {
+      const res = await inner(req);
+      if (hang) await gate;
+      return res;
+    };
+    const s1 = await open(annaDb, ANNA, {}, slow);
+    typeInto(s1.doc, ' ERSTER');
+    await s1.flush();
+    hang = true;
+    const inflight = s1.exchangeNow(); // die Anfrage hängt (schlechtes Netz)
+    await tick();
+    typeInto(s1.doc, ' LETZTER'); // die letzten Zeichen, bevor der Nutzer zurückgeht
+    const closing = s1.destroy();
+    await tick();
+    const s2 = await open(annaDb, ANNA); // dasselbe Protokoll sofort wieder
+    expect(textOf(s2.doc)).toContain('LETZTER'); // die alte Sitzung hat vor dem Warten gesichert
+    release();
+    await Promise.all([inflight, closing]);
+    await s2.exchangeNow();
+    await s2.exchangeNow();
+    expect(serverText()).toBe('Basis ERSTER LETZTER');
+    expect(await stored(annaDb)).toMatchObject({ dirty: 0 });
+    await s2.destroy();
+  });
+
+  it('wird der lokale Zustand verworfen (Datenbank ersetzt), während der Editor offen ist, legt weiteres Tippen keine Teilzeile an: Es bleibt als Kopie erhalten', async () => {
+    const s = await open(annaDb, ANNA);
+    await s.exchangeNow();
+    await annaDb.ydocs.delete(ID); // wie im Abgleich der Protokolle nach einem Wechsel der Server-Datenbank
+    typeInto(s.doc, ' danach getippt');
+    await s.flush().catch(() => undefined);
+    expect(await stored(annaDb)).toBeUndefined(); // keine Zeile, die nur aus der letzten Änderung besteht
+    await s.exchangeNow();
+    expect(s.getInfo().status).toBe('replaced');
+    const copy = (await annaDb.protokolle.toArray()).find((p) => p.title.endsWith('(lokale Fassung)'));
+    expect(copy).toBeDefined();
+    expect(textOf((await loadDoc(copy!.id, annaDb))!.doc)).toContain('danach getippt');
+    await s.destroy();
+  });
+
+  it('zu Beginn der Sitzung wird ein veralteter Schnappschuss (Liste, Suche) aufgefrischt, ohne dass das Protokoll als geändert gilt', async () => {
+    await annaDb.protokolle.update(ID, { content: doc(para('Veralteter Schnappschuss')), dirty: 0 });
+    const before = (await annaDb.protokolle.get(ID))!;
+    const s = await open(annaDb, ANNA);
+    await s.flush();
+    const after = (await annaDb.protokolle.get(ID))!;
+    expect(JSON.stringify(after.content)).toContain('Basis');
+    expect(after).toMatchObject({ dirty: 0, updatedAt: before.updatedAt, rev: before.rev });
+    await s.destroy();
   });
 });
 

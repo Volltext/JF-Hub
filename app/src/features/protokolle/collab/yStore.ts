@@ -28,10 +28,14 @@ export async function loadDoc(id: string, store: HubDb = db): Promise<{ doc: Y.D
 /**
  * Eine lokale Änderung (oder mehrere, zusammengefasst) vormerken. Liefert die neue Zählung. Eine frühere Ablehnung des Servers gilt
  * nur für die alte Fassung und entfällt.
+ *
+ * `onlyIfRow`: Nur schreiben, wenn es die Zeile noch gibt (sonst `undefined`). Ein Editor, dessen Zustand unter ihm verworfen wurde,
+ * würde sonst eine Zeile anlegen, die nur aus seiner letzten Änderung besteht und auf eine Geschichte verweist, die der Server nicht kennt.
  */
-export async function putLocal(id: string, update: Uint8Array, store: HubDb = db): Promise<number> {
+export async function putLocal(id: string, update: Uint8Array, store: HubDb = db, onlyIfRow = false): Promise<number | undefined> {
   return store.transaction('rw', store.ydocs, async () => {
     const row = await store.ydocs.get(id);
+    if (!row && onlyIfRow) return undefined;
     const seq = (row?.seq ?? 0) + 1;
     const next: YDocRow = row
       ? { ...row, update: Y.mergeUpdates([row.update, update]), dirty: 1, seq, rejected: undefined }
@@ -66,23 +70,31 @@ export interface Answer {
 
 /**
  * Übernimmt die Antwort des Servers: mischt, was fehlte, merkt den Stand des Servers und entscheidet, ob noch etwas zu senden ist.
- * `sentSeq` ist die Zählung, die beim Aufbau der Anfrage galt: Wurde seitdem weitergeschrieben, bleibt die Zeile vorgemerkt.
- * Gibt es noch keine Zeile (Vorabladen), entsteht eine saubere.
+ *
+ * `sentSeq` ist die Zählung, die beim Aufbau der Anfrage galt, *wenn der eigene Text Teil der Anfrage war*: Dann bestätigt die Antwort ihn,
+ * und die Zeile gilt als gesendet, außer es wurde seitdem weitergeschrieben. War er nicht Teil der Anfrage (`undefined`: der Text war
+ * abgelehnt und wird nicht erneut gesendet, oder es gab nichts zu senden), nimmt die Zeile nur das Neue des Servers auf; Vormerkung,
+ * Ablehnung und Basis bleiben, wie sie waren. Sonst gälte abgelehnter Text bei der nächsten fremden Änderung als erledigt.
+ *
+ * Gibt es noch keine Zeile (Vorabladen), entsteht eine saubere, aber nur für ein Protokoll, das es hier gibt: Eine Antwort, die nach dem
+ * Abmelden eintrifft, legt nichts vom vorigen Konto neu an.
  */
-export async function applyAnswer(id: string, answer: Answer, sentSeq: number, store: HubDb = db): Promise<YDocRow> {
+export async function applyAnswer(id: string, answer: Answer, sentSeq: number | undefined, store: HubDb = db): Promise<YDocRow> {
   return store.transaction('rw', [store.ydocs, store.protokolle], async () => {
     const row = await store.ydocs.get(id);
     const update = answer.update && !isEmptyUpdate(answer.update) ? answer.update : undefined;
+    const acked = sentSeq !== undefined;
     const next: YDocRow = row
       ? {
           ...row,
           update: update ? Y.mergeUpdates([row.update, update]) : row.update,
           serverSv: answer.sv ?? row.serverSv,
-          dirty: row.seq === sentSeq ? 0 : 1,
-          created: undefined,
-          rejected: undefined,
+          dirty: acked ? (row.seq === sentSeq ? 0 : 1) : row.dirty,
+          created: acked ? undefined : row.created,
+          rejected: acked ? undefined : row.rejected,
         }
       : { id, update: update ?? EMPTY_UPDATE, serverSv: answer.sv, dirty: 0, seq: 0 };
+    if (!row && !(await store.protokolle.get(id))) return next;
     await store.ydocs.put(next);
     // Bis zu welcher Revision dieses Gerät den Text kennt (der Hintergrund-Abgleich sieht daran, was sich seitdem geändert hat).
     if (answer.rev !== undefined) await store.protokolle.update(id, { textRev: answer.rev });

@@ -1,5 +1,16 @@
 import { localBlobCount } from './blobs';
-import { db } from './db';
+import { db, type HubDb } from './db';
+
+/**
+ * Zählt, wie oft die lokalen Daten dieses Geräts gelöscht wurden (Abmelden, Kontowechsel). Er gehört nicht zu den Einträgen, die dabei
+ * verschwinden: Ein Abgleich, der vor dem Löschen begann und danach eine Antwort bekommt, erkennt daran, dass er nichts mehr einspielen darf
+ * (sonst kämen Daten des vorigen Kontos zurück).
+ */
+const WIPE_COUNT_KEY = 'device.wipes';
+
+export async function wipeCount(store: HubDb = db): Promise<number> {
+  return ((await store.kv.get(WIPE_COUNT_KEY))?.value as number | undefined) ?? 0;
+}
 
 /** kv-Einträge, die an einen Server-Stand oder ein Konto gebunden sind. */
 const SYNC_KV_KEYS = [
@@ -37,6 +48,7 @@ export async function wipeLocalData(): Promise<void> {
       db.blobData.clear(),
       db.kv.bulkDelete(SYNC_KV_KEYS),
     ]);
+    await db.kv.put({ key: WIPE_COUNT_KEY, value: (await wipeCount()) + 1 });
   });
 }
 

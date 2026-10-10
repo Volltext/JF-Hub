@@ -2,15 +2,23 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { db } from '@/core/db/db';
 import { newProtokoll } from './model';
 import { dismissConflict, loadConflicts, noteConflicts } from './conflicts';
+import { ProtoError } from './http';
 import { MIN_SERVER_API } from './schemaVersion';
 import { performSync as syncAgainstServer, type ServerDoc } from './sync';
 
 /** Die Server dieser Tests sprechen die Schnittstelle, die die App verlangt (außer ein Test sagt ausdrücklich etwas anderes). */
-const performSync: typeof syncAgainstServer = (send, opts, store, blobs) =>
-  syncAgainstServer(async (req) => {
-    const res = await send(req);
-    return 'api' in res ? res : { ...res, api: MIN_SERVER_API };
-  }, opts, store, blobs);
+const performSync: typeof syncAgainstServer = (send, opts, store, blobs, text) =>
+  syncAgainstServer(
+    async (req) => {
+      const res = await send(req);
+      return 'api' in res ? res : { ...res, api: MIN_SERVER_API };
+    },
+    opts,
+    store,
+    blobs,
+    // Ohne Angabe ist der Server für den Text nicht erreichbar (wie ohne Netz): Der Abgleich der Kopfdaten kommt trotzdem zum Ende.
+    text ?? (async () => Promise.reject(new ProtoError('Keine Verbindung zum Server.', 0))),
+  );
 
 
 beforeEach(async () => {

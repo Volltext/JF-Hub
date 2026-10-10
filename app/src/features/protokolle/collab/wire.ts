@@ -92,6 +92,8 @@ export const httpExchange =
         if (e.status === 409 && (e.body as { reset?: unknown } | undefined)?.reset === true) return { reset: true, docs: [] };
         // Ein Server vor 3.0.0 kennt die Schnittstelle nicht.
         if (e.status === 404) throw new ProtoError('Der Server ist zu alt für diese App-Version. Bitte den Server aktualisieren.', 426);
+        // Ein Proxy vor dem Server nimmt die Anfrage nicht an, weil sie ihm zu groß ist (nginx: `client_max_body_size`).
+        if (e.status === 413) throw new ProtoError('Die Anfrage ist für den Server oder einen Proxy davor zu groß. Bei einem eigenen Proxy die maximale Anfragegröße erhöhen (siehe Installationsanleitung).', 413);
       }
       throw e;
     }

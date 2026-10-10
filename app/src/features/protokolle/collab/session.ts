@@ -82,6 +82,16 @@ export interface SessionOptions {
   maxBackoffMs?: number;
 }
 
+/** Womit eine Bearbeitung beginnt (bestimmt `openProtocol`). */
+export interface SessionStart {
+  /** Revision des Protokolls bei der letzten Antwort des Servers zum Text; `undefined`, wenn dieses Gerät sie nicht kennt. */
+  rev: number | undefined;
+  /** Zählung der gespeicherten Zeile, deren Inhalt das Dokument hat (0: es gibt keine Zeile). */
+  seq: number;
+  /** Dieses Gerät hat einen gespeicherten Zustand zu diesem Protokoll (gehabt). Verschwindet er unter uns, wurde er verworfen. */
+  hadState: boolean;
+}
+
 const sessions = new Map<string, CollabSession>();
 
 /** Ist dieses Protokoll gerade in einem Editor geöffnet? Der Hintergrund-Abgleich lässt solche Texte in Ruhe. */
@@ -113,7 +123,11 @@ export class CollabSession {
   private running: Promise<void> = Promise.resolve();
   private failures = 0;
   private knownRev: number | undefined;
-  private snapshotDue = false;
+  /** Zählung der gespeicherten Zeile, bis zu der dieses Dokument ihren Inhalt kennt, und wie oft diese Bearbeitung seitdem selbst geschrieben hat. */
+  private seenSeq: number;
+  private ownWrites = 0;
+  /** Beim Start ist der Schnappschuss (Liste, Suche) vielleicht veraltet, etwa weil der Text im Hintergrund nachgeladen wurde. */
+  private snapshotDue = true;
   private touched = false;
   private destroyed = false;
   private stopped = false;
@@ -124,19 +138,18 @@ export class CollabSession {
     if (this.isVisible()) this.nudge(0);
   };
 
-  /** Dieses Gerät hat einen gespeicherten Zustand zu diesem Protokoll (gehabt). Verschwindet er unter uns, wurde er verworfen. */
   private hadState: boolean;
 
   constructor(
     readonly id: string,
     doc: Y.Doc,
-    knownRev: number | undefined,
-    hadState: boolean,
+    start: SessionStart,
     private readonly opts: SessionOptions,
   ) {
     this.doc = doc;
-    this.knownRev = knownRev;
-    this.hadState = hadState;
+    this.knownRev = start.rev;
+    this.seenSeq = start.seq;
+    this.hadState = start.hadState;
     this.store = opts.store ?? db;
     this.interval = opts.intervalMs ?? 2500;
     this.nudgeDelay = opts.nudgeMs ?? 800;
@@ -209,8 +222,11 @@ export class CollabSession {
     this.doc.off('update', this.onUpdate);
     if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', this.onVisible);
     try {
-      await this.running;
+      // Zuerst sichern, dann warten: Eine Anfrage, die im schlechten Netz hängt, soll nicht verhindern, dass das gleich wieder geöffnete
+      // Protokoll (oder ein anderer Tab) die zuletzt getippten Zeichen sieht.
       await this.persist();
+      await this.rescuePending();
+      await this.running;
       await this.writeSnapshot();
       await compact(this.id, this.store);
     } catch {
@@ -245,7 +261,14 @@ export class CollabSession {
       // Ein inzwischen gelöschtes Protokoll bekommt keinen Zustand mehr (sonst bliebe er als Waise liegen und zählte als ungesendet).
       if (!(await this.store.protokolle.get(this.id))) return;
       try {
-        await putLocal(this.id, Y.mergeUpdates(batch), this.store);
+        // Wurde der Zustand unter uns verworfen (Datenbank des Servers ersetzt), entsteht keine Zeile aus nur der letzten Änderung:
+        // Sie verwiese auf eine Geschichte, die der Server nicht kennt. Der Text bleibt vorgemerkt; die nächste Runde sichert ihn als Kopie.
+        const seq = await putLocal(this.id, Y.mergeUpdates(batch), this.store, this.hadState);
+        if (seq === undefined) {
+          this.pending = [...batch, ...this.pending];
+          return;
+        }
+        this.ownWrites++;
         this.hadState = true;
       } catch (e) {
         this.pending = [...batch, ...this.pending]; // nicht verlieren: Der nächste Versuch schreibt es mit
@@ -257,6 +280,18 @@ export class CollabSession {
     };
     this.persisting = this.persisting.then(run, run);
     return this.persisting;
+  }
+
+  /**
+   * Gibt es keinen gespeicherten Zustand mehr (verworfen, während der Editor offen war), der Editor aber noch Änderungen im Speicher
+   * hat, werden sie samt dem ganzen Text als Kopie „(lokale Fassung)“ gesichert: Eine Zeile aus nur der letzten Änderung wäre wertlos.
+   */
+  private async rescuePending(): Promise<void> {
+    if (!this.pending.length || (await getYRow(this.id, this.store))) return;
+    const batch = this.pending;
+    await saveLocalCopy(this.id, { doc: this.doc }, this.store);
+    this.pending = this.pending.filter((u) => !batch.includes(u));
+    if (!this.pending.length) this.setInfo({ saved: true });
   }
 
   /**
@@ -342,11 +377,24 @@ export class CollabSession {
     const row = await getYRow(this.id, this.store);
     if (!row && this.hadState) {
       // Der Zustand wurde unter uns verworfen: Die Datenbank des Servers ist eine andere (ersetzt oder wiederhergestellt), und der Abgleich
-      // der Protokolle hat die Fassung dieses Geräts, soweit ungesendet, als Kopie gesichert. Dieses Dokument im Speicher ist veraltet.
-      this.pending = [];
+      // der Protokolle hat die Fassung dieses Geräts, soweit ungesendet, als Kopie gesichert. Dieses Dokument im Speicher ist veraltet;
+      // was seitdem hier geschrieben wurde, kommt ebenfalls in eine Kopie.
+      await this.rescuePending();
       this.stop('replaced', 'Die Datenbank des Servers wurde ersetzt. Dieses Protokoll wird neu geladen; ungesendete Änderungen liegen als Kopie „(lokale Fassung)“ vor.');
       this.opts.onReplaced?.();
       return;
+    }
+    // Hat ein anderer Tab oder der Hintergrund-Abgleich auf diesem Gerät etwas gesichert, das dieses Dokument nicht kennt, kommt es zuerst
+    // hinein: Sonst fehlte es in dem, was gesendet wird, und die Bestätigung nähme es als gesendet.
+    if (row && row.seq !== this.seenSeq + this.ownWrites) {
+      if (this.opts.busy?.()) return; // der Editor ist mitten in einer Eingabe: nächste Runde
+      const unknown = this.applyRemote(row.update);
+      this.seenSeq = row.seq;
+      this.ownWrites = 0;
+      if (unknown) {
+        this.stop('blocked', `Dieses Protokoll enthält Elemente, die diese App-Version nicht kennt (${unknown}). Es wird nur gelesen. Bitte die App aktualisieren.`);
+        return;
+      }
     }
     const sentSeq = row?.seq ?? 0;
     const sending = (row?.dirty === 1 && !row.rejected) || this.pending.length > 0;
@@ -375,7 +423,8 @@ export class CollabSession {
     }
     const r = res.docs.find((d) => d.id === this.id);
     if (!r) return;
-    this.failures = 0;
+    // „Verschoben“ heißt, dass der Server gerade nicht konnte: nicht im Takt der Sekunden nachhaken.
+    this.failures = r.status === 'deferred' ? this.failures + 1 : 0;
     this.setInfo({ offline: false });
 
     switch (r.status) {
@@ -387,7 +436,8 @@ export class CollabSession {
         let blocked: string | null = null;
         if (incoming) blocked = this.applyRemote(incoming);
         // Im Ruhezustand (nichts gesendet, nichts empfangen, gleiche Revision) bleibt der Speicher unberührt.
-        if (sending || incoming || !row || (r.rev !== undefined && r.rev !== this.knownRev)) await applyAnswer(this.id, answer, sentSeq, this.store);
+        // Nur was die Anfrage enthielt (`sending`), gilt als gesendet; ein abgelehnter oder nicht gesendeter Text bleibt vorgemerkt.
+        if (sending || incoming || !row || (r.rev !== undefined && r.rev !== this.knownRev)) await applyAnswer(this.id, answer, sending ? sentSeq : undefined, this.store);
         this.knownRev = r.rev ?? this.knownRev;
         if (r.peers) this.setInfo({ peers: r.peers });
         if (r.missingBlobs?.length) this.opts.onMissingBlobs?.(r.missingBlobs);
@@ -400,6 +450,7 @@ export class CollabSession {
         const current = await getYRow(this.id, this.store);
         // Ungesendete Änderungen gehen nicht verloren: Sie liegen danach als eigenes, privates Protokoll vor.
         if (current?.dirty === 1) await saveLocalCopy(this.id, {}, this.store);
+        else if (!current) await this.rescuePending();
         await discard(this.id, this.store);
         this.stop('gone', 'Dieses Protokoll wurde gelöscht oder von jemand anderem zurückgezogen. Änderungen werden nicht mehr gespeichert.');
         return;
@@ -410,7 +461,7 @@ export class CollabSession {
       case 'exists': {
         // Der Server hat schon Text mit anderer Geschichte (zum Beispiel aus einer Sicherung auf einem anderen Gerät): die eigene Fassung als Kopie sichern, danach gilt die des Servers.
         await this.persist().catch(() => undefined);
-        await saveLocalCopy(this.id, {}, this.store);
+        if (!(await saveLocalCopy(this.id, {}, this.store))) await this.rescuePending();
         await discard(this.id, this.store);
         this.stop('replaced', 'Dieses Protokoll gab es schon auf dem Server. Deine Fassung liegt als Kopie „(lokale Fassung)“ vor.');
         this.opts.onReplaced?.();
