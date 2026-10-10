@@ -56,6 +56,16 @@ describe('exchangeInBackground', () => {
     expect((await store.protokolle.get('alt-000001'))!.textRev).toBe(server.row('alt-000001')!.rev);
   });
 
+  it('holt das Gerät einen Text frisch vom Server, folgt der Schnappschuss (Liste, Suche) dem geholten Text; das Protokoll gilt dadurch nicht als geändert', async () => {
+    const id = await known('doc-000001', 'Neu vom Server');
+    await store.protokolle.update(id, { content: doc(para('Veraltet')), updatedAt: 123 });
+    await run();
+    const p = (await store.protokolle.get(id))!;
+    expect(JSON.stringify(p.content)).toContain('Neu vom Server');
+    expect(JSON.stringify(p.content)).not.toContain('Veraltet');
+    expect(p).toMatchObject({ dirty: 0, updatedAt: 123, rev: server.row(id)!.rev });
+  });
+
   it('ohne etwas zu tun entsteht keine Anfrage', async () => {
     await known('doc-000001', 'Text');
     await run();
@@ -92,6 +102,26 @@ describe('exchangeInBackground', () => {
     expect(merged).toContain('!');
     expect(JSON.stringify(JSON.parse(server.row(id)!.content))).toContain('von Ben');
     expect(JSON.stringify(JSON.parse(server.row(id)!.content))).toContain('!');
+  });
+
+  it('bringt der Austausch Neues vom Server, folgt der Schnappschuss dem zusammengeführten Text (Liste, Suche), auch wenn der Abgleich der Kopfdaten ihn wegen ungesendeter Änderungen stehen ließ', async () => {
+    const id = await known('doc-000001', 'Basis');
+    await run();
+    const ben = (await loadDoc(id, store))!.doc;
+    typeInto(ben, ' von Ben');
+    const sv = (await store.ydocs.get(id))!.serverSv;
+    await server.transport(BEN)({ docs: [{ id, update: Buffer.from(Y.encodeStateAsUpdate(ben, sv)).toString('base64'), sv: Buffer.from(Y.encodeStateVector(ben)).toString('base64') }] });
+    await store.protokolle.update(id, { rev: server.row(id)!.rev });
+    const local = (await loadDoc(id, store))!.doc;
+    const updates: Uint8Array[] = [];
+    local.on('update', (u: Uint8Array) => updates.push(u));
+    typeInto(local, ' lokal');
+    await putLocal(id, Y.mergeUpdates(updates), store);
+    await store.protokolle.update(id, { content: doc(para('Basis lokal')) }); // so blieb es in der Liste stehen
+    await run();
+    const snapshot = JSON.stringify((await store.protokolle.get(id))!.content);
+    expect(snapshot).toContain('von Ben');
+    expect(snapshot).toContain('lokal');
   });
 
   it('lässt Texte in Ruhe, die gerade in einem Editor offen sind', async () => {
@@ -165,6 +195,25 @@ describe('exchangeInBackground', () => {
       const again = await run();
       expect(again.exchanged).toBe(1);
       expect(textOf((await loadDoc('doc-000001', store))!.doc)).toBe('Basis');
+    });
+
+    it('ein vorgemerkter Text, zu dem dem Server nichts mehr fehlt (leere Differenz), gilt nach dem Austausch als bestätigt', async () => {
+      const id = await known('doc-000001', 'Basis');
+      await run(); // vorgeladen: Der Zustand des Servers ist bekannt
+      const row = (await store.ydocs.get(id))!;
+      await store.ydocs.put({ ...row, dirty: 1, seq: row.seq + 1 }); // vorgemerkt, aber nichts mehr offen (etwa nach einer verlorenen Antwort)
+      await run();
+      expect(await store.ydocs.get(id)).toMatchObject({ dirty: 0 });
+    });
+
+    it('exists: danach zeigt das Original in Liste und Suche den Text des Servers, nicht den der Kopie', async () => {
+      await withUnsent('doc-000001');
+      await store.protokolle.update('doc-000001', { content: doc(para('Basis ungesendet')) }); // so stand es zuletzt in der Liste
+      await run({ transport: stub('exists') });
+      await run();
+      expect(JSON.stringify((await store.protokolle.get('doc-000001'))!.content)).not.toContain('ungesendet');
+      const copy = (await store.protokolle.filter((p) => p.title.endsWith('(lokale Fassung)')).toArray())[0]!;
+      expect(JSON.stringify(copy.content)).toContain('ungesendet');
     });
 
     it('abgelehnt (zu groß): wird vermerkt und nicht erneut gesendet', async () => {

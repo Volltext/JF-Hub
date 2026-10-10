@@ -1,6 +1,7 @@
 import type { JSONContent } from '@tiptap/core';
 import { prosemirrorJSONToYDoc } from '@tiptap/y-tiptap';
 import * as Y from 'yjs';
+import { jsonEqual } from '@/core/domain/equal';
 import { appSchema } from '../editorSchema';
 import { FIELD, vocabularyProblem } from './yJson';
 
@@ -18,6 +19,9 @@ export function isEmptySnapshot(json: JSONContent | undefined): boolean {
   if (!json?.content?.length) return true;
   return json.content.every((n) => n.type === 'paragraph' && !n.content?.length);
 }
+
+/** Sind das derselbe Text? Leere Fassungen zählen als gleich. */
+export const sameSnapshot = (a: JSONContent, b: JSONContent): boolean => (isEmptySnapshot(a) && isEmptySnapshot(b)) || jsonEqual(a, b);
 
 /** Warum sich aus diesem Schnappschuss keine Basis bauen lässt (der Editor würde sie nicht öffnen), oder `null`. */
 export function baseProblem(json: JSONContent): string | null {

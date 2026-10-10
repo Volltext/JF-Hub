@@ -3,7 +3,7 @@ import { db, type HubDb } from '@/core/db/db';
 import { bytesToBase64 } from '@/core/domain/base64';
 import { jsonEqual } from '@/core/domain/equal';
 import { ProtoError } from '../http';
-import { isEmptySnapshot } from './base';
+import { sameSnapshot } from './base';
 import { saveLocalCopy } from './localCopy';
 import { NoServer, answerOf, type ExchangeDocRequest, type ExchangeTransport } from './wire';
 import { repairDoc } from './repair';
@@ -316,8 +316,7 @@ export class CollabSession {
     }
     const row = await this.store.protokolle.get(this.id);
     if (!row) return;
-    const same = (isEmptySnapshot(row.content) && isEmptySnapshot(json)) || jsonEqual(row.content, json);
-    if (same) return;
+    if (sameSnapshot(row.content, json)) return;
     await this.store.protokolle.update(this.id, { content: json, ...(this.touched ? { updatedAt: Date.now() } : {}) });
     this.touched = false;
   }

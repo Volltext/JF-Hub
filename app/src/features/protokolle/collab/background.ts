@@ -2,8 +2,9 @@ import { db, type HubDb } from '@/core/db/db';
 import { baseProblem, buildBase, isEmptySnapshot } from './base';
 import { saveLocalCopy } from './localCopy';
 import { isSessionOpen } from './session';
+import { refreshSnapshot } from './snapshot';
 import { answerOf, requestFor, type ExchangeDocRequest, type ExchangeTransport } from './wire';
-import { applyAnswer, discard, forgetServerState, markRejected, putBase } from './yStore';
+import { applyAnswer, discard, forgetServerState, isEmptyUpdate, markRejected, putBase } from './yStore';
 
 /**
  * Austausch des Textes für Protokolle, die gerade nicht in einem Editor offen sind: eigene Änderungen senden (zum Beispiel nach dem
@@ -92,12 +93,14 @@ export async function exchangeInBackground(opts: BackgroundOptions): Promise<Bac
   const docs: ExchangeDocRequest[] = [];
   const sentSeq = new Map<string, number>();
   const sending = new Set<string>();
+  const fresh = new Set<string>(); // Texte, die dieses Gerät noch nicht hatte
   let chars = 0;
   for (const p of batch) {
     const row = await store.ydocs.get(p.id);
     if (!row) {
       docs.push({ id: p.id });
       sentSeq.set(p.id, 0);
+      fresh.add(p.id);
       continue;
     }
     if (row.rejected && row.dirty === 1 && !opts.retryRejected) continue; // nicht erneut senden, bis wieder etwas geändert wurde
@@ -122,8 +125,12 @@ export async function exchangeInBackground(opts: BackgroundOptions): Promise<Bac
     if (seq === undefined) continue; // eine Antwort auf etwas, das nicht gefragt war
     switch (r.status) {
       case 'ok':
-        // Nur was die Anfrage enthielt, gilt als gesendet; ein Text, der nicht dabei war (abgelehnt, nichts zu senden), bleibt, wie er ist.
-        await applyAnswer(r.id, answerOf(r), sending.has(r.id) ? seq : undefined, store);
+        // Die Anfrage kam aus dem ganzen gespeicherten Zustand: Hatte der Server schon alles (leere Differenz), ist der Text ebenso bestätigt wie
+        // nach dem Senden. Ein abgelehnter Text wurde gar nicht erst angefragt (siehe oben).
+        const answer = answerOf(r);
+        const stored = await applyAnswer(r.id, answer, seq, store);
+        // Neues vom Server (oder ein ganz neuer Text) verändert, was das Gerät zeigt: Der Schnappschuss für Liste und Suche zieht nach.
+        if (fresh.has(r.id) || (answer.update && !isEmptyUpdate(answer.update))) await refreshSnapshot(r.id, stored.update, store);
         result.exchanged++;
         if (sending.has(r.id)) result.sent++;
         result.missingBlobs.push(...(r.missingBlobs ?? []));
