@@ -50,6 +50,13 @@ describe('POST /api/collab/exchange', () => {
     for (const body of [undefined, 'text', {}, { docs: 'x' }]) expect((await post(token, body as never)).statusCode, JSON.stringify(body)).toBe(400);
   });
 
+  it('lehnt Anfragen mit unsinnig vielen Einträgen ab (eine App schickt höchstens 20)', async () => {
+    const { token } = await start();
+    const many = Array.from({ length: 201 }, (_, i) => ({ id: `doc-${String(i).padStart(6, '0')}` }));
+    expect((await post(token, { docs: many })).statusCode).toBe(400);
+    expect((await post(token, { docs: many.slice(0, 200) })).statusCode).toBe(200);
+  });
+
   it('wendet an, antwortet mit Zustand und Schnittstellenstand, und das PDF zeigt den Text', async () => {
     const { db, token, userId } = await start();
     const id = putProtocol(db, { ownerId: userId, title: 'Gemeinsam geschrieben' });

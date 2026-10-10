@@ -316,6 +316,42 @@ describe('Austausch: Grenzen und feindliche Eingaben', () => {
   });
 });
 
+describe('Austausch: Arbeitsgrenzen', () => {
+  const big = (id: string, n = 300) => putProtocol(db, { id, ownerId: ANNA.id, content: doc(p(t('a'.repeat(n)))) });
+
+  it('ist das Budget der Antwort verbraucht, wird kein weiteres Dokument angefasst: Seine Änderung bleibt unangewendet', () => {
+    const a = big('gross-0001');
+    const b = putProtocol(db, { id: 'klein-0001', ownerId: ANNA.id });
+    const dev = new Device(ANNA, b, doc(p(t('Neu'))));
+    const limits: Limits = { ...LIMITS, responseBudget: 100 };
+    const out = exchange(db, { docs: [{ id: a }, dev.request({ create: true })] }, ANNA, peers, Date.now(), limits).docs;
+    expect(out.map((r) => r.status)).toEqual(['ok', 'deferred']);
+    expect(stored(b)).toBeUndefined(); // nichts angewendet: Das Gerät schickt es beim nächsten Mal noch einmal
+  });
+
+  it('ein Ergebnis, das schon berechnet ist, wird geliefert, auch wenn es das Budget sprengt (sonst wäre die Änderung angewendet und die Antwort verloren)', () => {
+    const a = big('gross-0001', 50);
+    const b = big('gross-0002', 900);
+    const dev = new Device(ANNA, b);
+    dev.doc.getXmlFragment(FIELD).insert(0, [new Y.XmlElement('paragraph')]); // eine kleine eigene Änderung
+    const limits: Limits = { ...LIMITS, responseBudget: 400 };
+    const out = exchange(db, { docs: [{ id: a }, dev.request()] }, ANNA, peers, Date.now(), limits).docs;
+    expect(out.map((r) => r.status)).toEqual(['ok', 'ok']);
+    expect(out[1]!.update!.length).toBeGreaterThan(400);
+    expect(JSON.parse(row(b).content).content).toHaveLength(2); // die Änderung des Geräts ist angewendet
+  });
+
+  it('ist die Zeit für eine Anfrage verbraucht, kommen die übrigen Dokumente später dran; das erste kommt immer', () => {
+    const ids = ['zeit-0001', 'zeit-0002', 'zeit-0003'].map((id) => putProtocol(db, { id, ownerId: ANNA.id }));
+    const devs = ids.map((id) => new Device(ANNA, id, doc(p(t(`Text ${id}`)))));
+    const limits: Limits = { ...LIMITS, maxMs: 0 };
+    const out = exchange(db, { docs: devs.map((d) => d.request({ create: true })) }, ANNA, peers, Date.now(), limits).docs;
+    expect(out.map((r) => r.status)).toEqual(['ok', 'deferred', 'deferred']);
+    expect(stored(ids[1]!)).toBeUndefined();
+    expect(stored(ids[2]!)).toBeUndefined();
+  });
+});
+
 describe('Austausch: Anhänge und Mitschreibende', () => {
   it('leitet die Verweise auf Anhänge ab und meldet fehlende', () => {
     const id = putProtocol(db, { ownerId: ANNA.id });

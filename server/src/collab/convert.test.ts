@@ -47,6 +47,23 @@ describe('jsonToYDoc / yDocToJson', () => {
     expect(heading.getAttributes()).toEqual({ level: 2 });
   });
 
+  it('ein ausdrückliches null bei einem Attribut mit Vorgabe gilt als Vorgabe (so liest es der Editor), auch in der kanonischen Form', () => {
+    const json = doc({ type: 'orderedList', attrs: { start: null }, content: [{ type: 'listItem', content: [p(t('1'))] }] }, { type: 'heading', attrs: { level: null }, content: [t('H')] });
+    const y = jsonToYDoc(json);
+    expect((y.getXmlFragment(FIELD).get(0) as Y.XmlElement).getAttributes()).toEqual({ start: 1 });
+    expect((y.getXmlFragment(FIELD).get(1) as Y.XmlElement).getAttributes()).toEqual({ level: 1 });
+    expect(canonicalJson(roundTrip(json))).toBe(canonicalJson(json));
+  });
+
+  it('einzelne Surrogate (halbe Emoji) werden zu U+FFFD, in Text und Attributen: Yjs kodiert als UTF-8, die Gegenprobe darf daran nicht scheitern', () => {
+    const json = doc(p(t('ab\uD83Dcd'), t('ef\uDE00', [{ type: 'bold' }])), { type: 'photo', attrs: { caption: 'Bild \uD800' } }, p(t('ganz 😀 heil')));
+    const out = roundTrip(json);
+    expect(canonicalJson(out)).toBe(canonicalJson(json));
+    expect(JSON.stringify(out)).toContain('ab\uFFFDcd');
+    expect(JSON.stringify(out)).toContain('ganz 😀 heil'); // ein vollständiges Paar bleibt
+    expect(JSON.stringify(out).replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, '')).not.toMatch(/[\uD800-\uDFFF]/); // kein einzelnes Surrogat übrig
+  });
+
   it('Listen, Aufgaben und Tabellen mit Attributen', () => {
     const json = doc(
       { type: 'bulletList', content: [{ type: 'listItem', content: [p(t('Punkt')), { type: 'orderedList', attrs: { start: 3, type: null }, content: [{ type: 'listItem', content: [p(t('innen'))] }] }] }] },

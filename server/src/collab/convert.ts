@@ -87,13 +87,31 @@ function plainJson(v: unknown, depth = 0): boolean {
   return false;
 }
 
-/** Attribute ohne `null` und `undefined`, davor die Vorgaben. */
+/**
+ * Yjs kodiert Text und Zeichenketten als UTF-8: Ein einzelnes Surrogat (ein halbes Emoji, etwa durch Abschneiden) wird dabei zu U+FFFD.
+ * Der Konverter tut das gleich beim Bauen, damit Inhalt und Zustand verglichen werden können; sonst bliebe ein solcher Text für immer
+ * unumgestellt, weil die Gegenprobe ihn für verändert hält.
+ */
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
+const scrub = (s: string): string => s.replace(LONE_SURROGATE, '\uFFFD');
+
+function scrubDeep(v: unknown): unknown {
+  if (typeof v === 'string') return scrub(v);
+  if (Array.isArray(v)) return v.map(scrubDeep);
+  if (isRecord(v)) return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, scrubDeep(x)]));
+  return v;
+}
+
+/**
+ * Attribute ohne `null` und `undefined`, davor die Vorgaben. Ein ausdrückliches `null` bei einem Attribut mit Vorgabe lässt die Vorgabe
+ * stehen: So liest es der Editor (y-tiptap schreibt `null` nie, das Schema füllt die Vorgabe), und die Struktur ist kanonisch.
+ */
 function attrsOf(defaults: Record<string, unknown> | undefined, given: unknown): Record<string, unknown> {
   if (given !== undefined && given !== null && !isRecord(given)) throw new ConvertError('Attribute sind kein Objekt');
   const out: Record<string, unknown> = { ...defaults };
   for (const [k, v] of Object.entries(given ?? {})) {
-    if (v === null || v === undefined) delete out[k];
-    else out[k] = v;
+    if (v === null || v === undefined) continue;
+    out[k] = scrubDeep(v);
   }
   return out;
 }
@@ -114,7 +132,7 @@ function textOf(runs: Run[]): Y.XmlText {
         if (!isRecord(m) || typeof m.type !== 'string' || !m.type) throw new ConvertError('Markierung ohne Typ');
         attributes[m.type] = attrsOf(MARK_DEFAULTS[m.type], m.attrs);
       }
-      return { insert: r.text, attributes };
+      return { insert: scrub(r.text), attributes };
     }),
   );
   return text;
@@ -256,10 +274,11 @@ function canonicalChildren(content: DocNode[] | undefined): DocNode[] {
   for (const n of content ?? []) {
     if (n.type === 'text') {
       if (!n.text) continue;
+      const text = scrub(n.text);
       const marks = canonicalMarks(n.marks);
       const last = out[out.length - 1];
-      if (last?.type === 'text' && JSON.stringify(stable(last.marks)) === JSON.stringify(stable(marks))) last.text += n.text;
-      else out.push(marks ? { type: 'text', text: n.text, marks } : { type: 'text', text: n.text });
+      if (last?.type === 'text' && JSON.stringify(stable(last.marks)) === JSON.stringify(stable(marks))) last.text += text;
+      else out.push(marks ? { type: 'text', text, marks } : { type: 'text', text });
     } else {
       out.push(canonicalNode(n));
     }

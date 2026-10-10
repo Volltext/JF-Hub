@@ -51,6 +51,8 @@ import { createPeers } from './collab/peers.js';
 import { collabStats, migrateYjs } from './collab/migrate.js';
 
 export const VERSION = '3.0.0';
+/** Höchste Zahl von Einträgen in einer Austausch-Anfrage, die noch beantwortet wird. */
+const MAX_EXCHANGE_ENTRIES = 200;
 export { API_VERSION, MIN_SCHEMA };
 const COOKIE = 'jfh_session';
 
@@ -143,6 +145,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
     // verlustfrei umwandeln lässt, bleibt unverändert und nur lesbar; die Verwaltung zeigt es an.
     try {
       const done = migrateYjs(db, { backupDir: opts.backupDir, backedUp, log: (message) => app.log.info(message) });
+      if (done.error) app.log.error(done.error);
       if (done.failed.length) app.log.warn(`${done.failed.length} Protokoll(e) konnten nicht für das gemeinsame Bearbeiten umgestellt werden und bleiben nur lesbar`);
     } catch (e) {
       // Nichts ist verloren (je Protokoll eine Transaktion, vorher gab es ein Backup). Der Server läuft, der nächste Start versucht es erneut.
@@ -369,11 +372,13 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
   const peers = createPeers();
   app.post<{ Body: ExchangeRequest }>(
     '/api/collab/exchange',
-    { bodyLimit: 24 * 1024 * 1024, config: { rateLimit: { max: opts.demo ? 3000 : 900, timeWindow: '1 minute' } } },
+    { bodyLimit: 24 * 1024 * 1024, config: { rateLimit: { max: opts.demo ? 3000 : 1800, timeWindow: '1 minute' } } },
     async (req, reply) => {
       if (clientTooOld(req)) return tooOld(reply);
       const body = req.body;
       if (!body || typeof body !== 'object' || !Array.isArray(body.docs)) return reply.code(400).send({ error: 'Ungültige Anfrage' });
+      // Eine App fragt nach höchstens 20 Dokumenten (mehr kommen als „deferred“ zurück); Millionen leere Einträge wären nur Last.
+      if (body.docs.length > MAX_EXCHANGE_ENTRIES) return reply.code(400).send({ error: 'Zu viele Dokumente in einer Anfrage' });
       const res = exchange(db, body, me(req), peers);
       if (res.reset) return reply.code(409).send({ error: 'Die Datenbank des Servers wurde ersetzt. Bitte neu abgleichen.', reset: true, epoch: res.epoch });
       return { ...res, api: API_VERSION };
@@ -581,7 +586,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
   });
 
   // ---------- Administration ----------
-  app.get('/api/admin/info', async () => {
+  app.get('/api/admin/info', async (req) => {
     const count = (where: string) => (db.prepare(`SELECT COUNT(*) AS n FROM protocols WHERE ${where}`).get() as { n: number }).n;
     const blobs = blobStats(db);
     return {
@@ -593,7 +598,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
       users: countUsers(db),
       blobs: blobs.count,
       blobBytes: blobs.bytes,
-      collab: collabStats(db),
+      collab: collabStats(db, me(req)),
     };
   });
 

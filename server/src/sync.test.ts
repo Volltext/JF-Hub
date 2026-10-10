@@ -210,6 +210,15 @@ describe('applySync: Löschen, Papierkorb, Leeren', () => {
     expect(row('doc-00001').purgedAt).toBeNull();
   });
 
+  it('ein geleerter Eintrag lebt mit allen Feldern des Geräts wieder auf, auch mit denen, deren Zeit älter ist als das Leeren', () => {
+    // Das Leeren hat Titel und Ort gelöscht, ihre Feldzeiten aber stehen lassen. Ein Gerät, das danach etwas ändert und dabei seinen älteren
+    // Titel mitschickt, bekäme sonst einen leeren Titel zurück, obwohl niemand nach dem Leeren etwas an ihm geändert hat.
+    putProtocol(db, { id: 'doc-00001', ownerId: ANNA.id, deleted: true, title: 'Alter Titel', metaAt: times(Date.now() - 1000) });
+    expect(purgeProtocol(db, 'doc-00001')).toBe(true);
+    const back = sync(ANNA, [change('doc-00001', { title: 'Mein Titel', ort: 'Gerätehaus', metaAt: times(T0, { datum: Date.now() + 1000 }) })]);
+    expect(doc(back, 'doc-00001')).toMatchObject({ deleted: false, title: 'Mein Titel', ort: 'Gerätehaus' });
+  });
+
   it('Löschen eines schon gelöschten Protokolls schickt es dem Gerät noch einmal', () => {
     sync(ANNA, [change('doc-00001')]);
     sync(ANNA, [change('doc-00001', { deleted: true })]);

@@ -333,7 +333,9 @@ function applyProtocol(db: DatabaseSync, c: ClientChange, user: SyncUser, now: n
     revive = true;
   }
 
-  const known = parseMetaAt(existing.metaAt);
+  // Das Leeren hat Titel, Ort und Leitung gelöscht, ihre Feldzeiten aber stehen lassen. Lebt der Eintrag durch eine jüngere Änderung wieder auf,
+  // gelten alle Felder, die das Gerät schickt: Niemand hat sie nach dem Leeren geändert, und ein älterer Titel soll nicht am leeren Wert scheitern.
+  const known = revive && existing.purgedAt !== null ? {} : parseMetaAt(existing.metaAt);
   const set: Record<string, string | number> = {};
   let serverNewer = false;
   for (const f of META_FIELDS) {

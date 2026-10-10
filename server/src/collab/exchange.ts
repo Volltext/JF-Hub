@@ -79,8 +79,13 @@ export const LIMITS = {
   /** Größe des gespeicherten Zustands und eines Updates in Byte. */
   maxState: 12 * 1024 * 1024,
   maxUpdate: 12 * 1024 * 1024,
-  /** Summe der Antwort in Base64-Zeichen; das erste Dokument kommt immer vollständig. */
+  /**
+   * Summe der Antwort in Base64-Zeichen; das erste Dokument kommt immer vollständig. Ein Dokument, das noch vor dem Ende des Budgets
+   * drankommt, wird ganz geliefert, auch wenn es das Budget sprengt (die Antwort ist dann höchstens um ein Dokument größer).
+   */
   responseBudget: 8 * 1024 * 1024,
+  /** Wie lange eine Anfrage rechnen darf, bevor weitere Dokumente auf später verschoben werden (das erste kommt immer). */
+  maxMs: 2500,
 };
 
 export type Limits = typeof LIMITS;
@@ -233,9 +238,12 @@ export function exchange(db: DatabaseSync, req: ExchangeRequest, user: SyncUser,
   const docs = Array.isArray(req.docs) ? req.docs : [];
   const results: ExchangeResult[] = [];
   let budget = limits.responseBudget;
+  const started = performance.now();
   docs.forEach((d, index) => {
     const id = typeof d?.id === 'string' ? d.id : '';
-    if (index >= limits.maxDocs) {
+    // Was nicht mehr drankommt (zu viele Dokumente, Budget oder Zeit verbraucht), wird gar nicht erst angefasst: Es käme sonst angewendet
+    // und doch ohne Antwort zurück. Das Gerät fragt beim nächsten Mal wieder. Das erste Dokument kommt immer dran.
+    if (index >= limits.maxDocs || (index > 0 && (budget <= 0 || performance.now() - started >= limits.maxMs))) {
       results.push({ id, status: 'deferred' });
       return;
     }
@@ -245,12 +253,7 @@ export function exchange(db: DatabaseSync, req: ExchangeRequest, user: SyncUser,
     } catch (e) {
       result = { id, status: 'rejected', reason: e instanceof Error ? e.message : 'unbekannter Fehler' };
     }
-    const size = (result.update?.length ?? 0) + (result.sv?.length ?? 0);
-    if (results.length > 0 && size > budget) {
-      results.push({ id, status: 'deferred' });
-      return;
-    }
-    budget -= size;
+    budget -= (result.update?.length ?? 0) + (result.sv?.length ?? 0);
     results.push(result);
   });
   return { epoch, docs: results };

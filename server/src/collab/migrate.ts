@@ -3,7 +3,7 @@ import * as Y from 'yjs';
 import { createBackup } from '../backup.js';
 import { normalizeContent } from '../blobs.js';
 import { getConfig, nextRev, setConfig } from '../db.js';
-import { validateContent } from '../sync.js';
+import { canSee, validateContent, type SyncUser } from '../sync.js';
 import { canonicalJson, FIELD, jsonToYDoc, yDocToJson } from './convert.js';
 import { LIMITS } from './exchange.js';
 
@@ -20,12 +20,15 @@ export interface YMigrationResult {
   failed: YMigrationFailure[];
   /** Name des Backups, das vor dem Eingriff angelegt wurde. */
   backup?: string;
+  /** Warum gar nichts umgestellt wurde (das Backup vorher ließ sich nicht anlegen). Beim nächsten Start geht es erneut los. */
+  error?: string;
 }
 
 /** Protokolle, deren Text noch nicht als Yjs-Dokument vorliegt. Geleerte (Grabsteine) haben keinen Text mehr. */
 const PENDING = 'ymode = 0 AND purgedAt IS NULL';
 
 const FAILED_KEY = 'yMigrationFailed';
+const ERROR_KEY = 'yMigrationError';
 
 type Prepared = { kind: 'empty' } | { kind: 'doc'; state: Uint8Array; sv: Uint8Array } | { kind: 'failed'; reason: string };
 
@@ -78,6 +81,11 @@ function saveFailures(db: DatabaseSync, failed: YMigrationFailure[]): void {
   else db.prepare('DELETE FROM config WHERE key = ?').run(FAILED_KEY);
 }
 
+function saveError(db: DatabaseSync, error: string | undefined): void {
+  if (error) setConfig(db, ERROR_KEY, error);
+  else db.prepare('DELETE FROM config WHERE key = ?').run(ERROR_KEY);
+}
+
 /**
  * Stellt den Text der Protokolle auf Yjs um (ab 3.0.0 wird er zusammen bearbeitet). Bis 2.3.x stand er nur als JSON in der Zeile.
  *
@@ -105,11 +113,21 @@ export function migrateYjs(db: DatabaseSync, opts: { backupDir?: string; backedU
   }
   if (!todo.length) {
     saveFailures(db, result.failed);
+    saveError(db, undefined);
     return result;
   }
 
   if (opts.backupDir && !opts.backedUp) {
-    result.backup = createBackup(db, opts.backupDir, 'update').name;
+    try {
+      result.backup = createBackup(db, opts.backupDir, 'update').name;
+    } catch (e) {
+      // Ohne die Sicherung vorher wird nichts umgestellt (sie ist die Rückfallebene, falls die Umwandlung etwas übersehen hat). Die Protokolle bleiben
+      // lesbar; die Verwaltung nennt den Grund, und der nächste Start versucht es erneut. Wer die Ursache behebt (Platz, Rechte), muss nur neu starten.
+      result.error = `Das Backup vor der Umstellung ließ sich nicht anlegen (${e instanceof Error && e.message ? e.message : 'unbekannter Fehler'}); es wurde nichts umgestellt.`;
+      saveFailures(db, result.failed);
+      saveError(db, result.error);
+      return result;
+    }
     log(`Der Text von ${todo.length} Protokoll(en) wird auf gemeinsames Bearbeiten umgestellt; Sicherung vorher: ${result.backup}`);
   }
 
@@ -139,8 +157,10 @@ export function migrateYjs(db: DatabaseSync, opts: { backupDir?: string; backedU
     }
   }
   saveFailures(db, result.failed);
+  saveError(db, undefined);
   log(`Umgestellt: ${result.migrated} Protokoll(e)${result.failed.length ? `, ${result.failed.length} bleiben nur lesbar` : ''}`);
-  for (const f of result.failed) log(`Protokoll ${f.id} („${f.title}“) bleibt nur lesbar: ${f.reason}`);
+  // Im Protokoll des Servers stehen Kennungen, keine Titel: Wer es liest, braucht den Grund, nicht den Titel eines privaten Protokolls.
+  for (const f of result.failed) log(`Protokoll ${f.id} bleibt nur lesbar: ${f.reason}`);
   return result;
 }
 
@@ -151,14 +171,19 @@ export interface CollabStats {
   bytes: number;
   /** Protokolle, die noch nicht umgestellt sind (nur lesbar). */
   pending: number;
-  /** Die noch nicht umgestellten Protokolle mit dem Grund des letzten Versuchs. */
+  /** Die noch nicht umgestellten Protokolle mit dem Grund des letzten Versuchs. Titel nennt die Übersicht nur, wenn der Admin das Protokoll sehen darf. */
   failed: YMigrationFailure[];
+  /** Warum der letzte Start gar nichts umstellen konnte (zum Beispiel: kein Backup möglich). */
+  error?: string;
 }
 
-/** Kennzahlen für die Verwaltung („Info“). */
-export function collabStats(db: DatabaseSync): CollabStats {
+/**
+ * Kennzahlen für die Verwaltung („Info“). Der Admin hat in der Oberfläche keinen Einblick in private Protokolle anderer: Deren Titel
+ * stehen auch hier nicht.
+ */
+export function collabStats(db: DatabaseSync, user: SyncUser): CollabStats {
   const states = db.prepare('SELECT COUNT(*) AS n, COALESCE(SUM(length(state)), 0) AS bytes FROM ydocs').get() as { n: number; bytes: number };
-  const pending = db.prepare(`SELECT id, title FROM protocols WHERE ${PENDING} ORDER BY rev`).all() as { id: string; title: string }[];
+  const pending = db.prepare(`SELECT id, title, shared, ownerId FROM protocols WHERE ${PENDING} ORDER BY rev`).all() as { id: string; title: string; shared: number; ownerId: string }[];
   let known: YMigrationFailure[] = [];
   try {
     const parsed: unknown = JSON.parse(getConfig(db, FAILED_KEY) ?? '[]');
@@ -167,10 +192,12 @@ export function collabStats(db: DatabaseSync): CollabStats {
     /* kein Grund bekannt */
   }
   const reasons = new Map(known.map((f) => [f.id, f.reason]));
+  const error = getConfig(db, ERROR_KEY) ?? undefined;
   return {
     docs: Number(states.n),
     bytes: Number(states.bytes),
     pending: pending.length,
-    failed: pending.slice(0, 50).map((p) => ({ id: p.id, title: p.title, reason: reasons.get(p.id) ?? 'noch nicht umgestellt' })),
+    failed: pending.slice(0, 50).map((p) => ({ id: p.id, title: canSee(p, user) ? p.title : 'Privates Protokoll', reason: reasons.get(p.id) ?? 'noch nicht umgestellt' })),
+    ...(error ? { error } : {}),
   };
 }

@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -112,6 +112,15 @@ describe('migrateYjs', () => {
     expect(row('gut-0002').ymode).toBe(1);
   });
 
+  it('Inhalte mit einem einzelnen Surrogat oder einem ausdrücklichen null bei einem Attribut mit Vorgabe werden umgestellt, statt für immer nur lesbar zu bleiben', () => {
+    legacy('surr-0001', doc(p('Teich \uD83D')));
+    legacy('null-0001', doc({ type: 'orderedList', attrs: { start: null }, content: [{ type: 'listItem', content: [p('eins')] }] }, { type: 'heading', attrs: { level: null }, content: [{ type: 'text', text: 'H' }] }));
+    expect(migrateYjs(db)).toMatchObject({ migrated: 2, failed: [] });
+    const state = new Y.Doc();
+    Y.applyUpdate(state, ydoc('surr-0001')!.state);
+    expect(JSON.stringify(yDocToJson(state))).toContain('Teich \uFFFD');
+  });
+
   it('ein Protokoll, aus dem sich noch Anhänge auslagern lassen, kommt erst danach dran, und ohne Arbeit gibt es kein Backup', () => {
     const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(64, 7), Buffer.from([0xff, 0xd9])]);
     const inline = doc(p('Text'), { type: 'photo', attrs: { src: `data:image/jpeg;base64,${jpeg.toString('base64')}`, w: 1, h: 1, caption: '' } });
@@ -170,7 +179,7 @@ describe('migrateYjs', () => {
     legacy('gut-0001', doc(p('gut')));
     legacy('doppelt1', doc({ type: 'paragraph', content: [{ type: 'text', text: 'x', marks: [{ type: 'bold' }, { type: 'bold' }] }] }));
     migrateYjs(db);
-    const stats = collabStats(db);
+    const stats = collabStats(db, { id: 'u-admin', role: 'admin' });
     expect(stats).toMatchObject({ docs: 1, pending: 1 });
     expect(stats.bytes).toBeGreaterThan(0);
     expect(stats.failed).toMatchObject([{ id: 'doppelt1', title: 'Titel doppelt1' }]);
@@ -178,7 +187,7 @@ describe('migrateYjs', () => {
     // das Protokoll wird beim Gerät bearbeitet (hier: Zeile ersetzt) und der nächste Lauf ist sauber
     db.prepare("UPDATE protocols SET content = ? WHERE id = 'doppelt1'").run(JSON.stringify(doc(p('repariert'))));
     migrateYjs(db);
-    expect(collabStats(db)).toMatchObject({ docs: 2, pending: 0, failed: [] });
+    expect(collabStats(db, { id: 'u-admin', role: 'admin' })).toMatchObject({ docs: 2, pending: 0, failed: [] });
   });
 
   it('der Austausch liefert nach der Umstellung den Text, auch für ein Gerät ohne Vorwissen', () => {
@@ -190,6 +199,37 @@ describe('migrateYjs', () => {
     const client = new Y.Doc();
     Y.applyUpdate(client, Buffer.from(res.docs[0]!.update!, 'base64'));
     expect(canonicalJson(yDocToJson(client))).toBe(canonicalJson(doc(p('Aus der alten Zeit'))));
+  });
+
+  it('scheitert das Backup vor der Umstellung, wird nichts umgestellt, und die Verwaltung nennt den Grund', () => {
+    legacy('doc-0001', doc(p('Bestand')));
+    const notADir = join(dir, 'datei');
+    writeFileSync(notADir, 'keine Ordner');
+    const result = migrateYjs(db, { backupDir: notADir });
+    expect(result).toMatchObject({ migrated: 0, failed: [] });
+    expect(result.error).toMatch(/Backup/);
+    expect(row('doc-0001').ymode).toBe(0);
+    expect(collabStats(db, { id: 'u-admin', role: 'admin' }).error).toBe(result.error);
+    // beim nächsten Start geht es, und der Hinweis verschwindet
+    expect(migrateYjs(db, { backupDir: join(dir, 'backups') })).toMatchObject({ migrated: 1 });
+    expect(row('doc-0001').ymode).toBe(1);
+    expect(collabStats(db, { id: 'u-admin', role: 'admin' }).error).toBeUndefined();
+  });
+
+  it('die Verwaltung nennt keine Titel privater Protokolle anderer, weder in der Übersicht noch im Protokoll des Servers', () => {
+    const twice = (text: string): DocNode => doc({ type: 'paragraph', content: [{ type: 'text', text, marks: [{ type: 'bold' }, { type: 'bold' }] }] });
+    legacy('privat-01', twice('x'), { ownerId: 'u-ben', shared: false, title: 'Bens Arztbrief' });
+    legacy('offen-01', twice('y'), { ownerId: 'u-ben', shared: true, title: 'Offener Titel' });
+    legacy('eigen-01', twice('z'), { ownerId: 'u-admin', shared: false, title: 'Eigenes Privates' });
+    const lines: string[] = [];
+    migrateYjs(db, { log: (m) => lines.push(m) });
+    const stats = collabStats(db, { id: 'u-admin', role: 'admin' });
+    expect(stats.pending).toBe(3);
+    const titles = Object.fromEntries(stats.failed.map((f) => [f.id, f.title]));
+    expect(titles).toEqual({ 'privat-01': 'Privates Protokoll', 'offen-01': 'Offener Titel', 'eigen-01': 'Eigenes Privates' });
+    expect(JSON.stringify(stats)).not.toContain('Arztbrief');
+    expect(lines.join('\n')).not.toContain('Arztbrief');
+    expect(lines.join('\n')).toContain('privat-01'); // die Kennung genügt für die Suche im Protokoll
   });
 
   it('die Verwaltung zeigt, wie viele Protokolle umgestellt sind und welche nur lesbar bleiben', async () => {

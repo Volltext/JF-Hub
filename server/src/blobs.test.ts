@@ -132,7 +132,8 @@ describe('Blob-Schnittstelle', () => {
     expect((await put(anna, `p-${hash}`, jpeg(200))).statusCode).toBe(400);
     const other = jpeg(50);
     const otherHash = createHash('sha256').update(other).digest('hex').slice(0, 40);
-    expect((await put(anna, `p-${otherHash.replace(/.$/, '0')}`, other)).statusCode).toBe(400); // andere Kennung als der Hash
+    const wrongHash = otherHash.slice(0, 39) + (otherHash.endsWith('0') ? '1' : '0'); // letztes Zeichen sicher verschieden (sonst wäre es in 1 von 16 Läufen der richtige Hash)
+    expect((await put(anna, `p-${wrongHash}`, other)).statusCode).toBe(400); // andere Kennung als der Hash
     expect((await put(anna, `f-${otherHash}`, other)).statusCode).toBe(400); // Kennung einer Datei, aber als Foto hochgeladen
     expect((await put(anna, `f-${otherHash}`, other, { kind: 'file', name: 'x.bin', mime: 'application/octet-stream' })).statusCode).toBe(200);
   });
