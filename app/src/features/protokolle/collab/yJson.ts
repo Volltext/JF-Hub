@@ -1,4 +1,5 @@
 import type { JSONContent } from '@tiptap/core';
+import { initProseMirrorDoc } from '@tiptap/y-tiptap';
 import * as Y from 'yjs';
 import { appSchema } from '../editorSchema';
 
@@ -45,8 +46,11 @@ function plainJson(v: unknown, depth = 0): boolean {
   return false;
 }
 
-/** `bold--hash` → `bold` (y-tiptap hängt bei Markierungen, die sich überlappen dürfen, einen Hash an). */
-const markName = (key: string): string => key.split('--')[0]!;
+/**
+ * `bold--hash` → `bold`: y-tiptap hängt bei Markierungen, die sich überlappen dürfen, einen Hash von acht Zeichen an. Genau diese Form
+ * erkennt es wieder (`yattr2markname`); alles andere gilt dort als eigener, unbekannter Name.
+ */
+export const markName = (key: string): string => /^(.*)--[a-zA-Z0-9+/=]{8}$/.exec(key)?.[1] ?? key;
 
 function attrsOf(given: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
@@ -151,15 +155,35 @@ export function vocabularyProblem(json: JSONContent): string | null {
   try {
     schema.nodeFromJSON(json).check();
   } catch (e) {
-    return e instanceof Error ? e.message : 'Ungültiger Inhalt';
+    return `Ungültiger Aufbau: ${e instanceof Error ? e.message : 'Inhalt verletzt die Regeln'}`; // die Meldung von ProseMirror ist englisch, hilft aber bei der Suche
   }
   return null;
+}
+
+/**
+ * Löscht `@tiptap/y-tiptap` beim Binden etwas aus diesem Dokument? Es baut die ProseMirror-Knoten aus dem Y-Baum und entfernt dabei, was es
+ * nicht bauen kann. Die Probe läuft auf einer Kopie und fängt jede Abweichung der Prüfung oben von dessen Regeln ab (ein Wert, den das Schema
+ * nur beim Bauen ablehnt, ein Format mit unerwartetem Wert), ohne sie nachzubauen. Geändert wird dabei nur die Kopie.
+ */
+function bindProblem(doc: Y.Doc): string | null {
+  const probe = new Y.Doc();
+  try {
+    Y.applyUpdate(probe, Y.encodeStateAsUpdate(doc));
+    let changed = false;
+    probe.on('update', () => (changed = true));
+    initProseMirrorDoc(probe.getXmlFragment(FIELD), appSchema());
+    return changed ? 'Ungültiger Aufbau: Der Editor würde Teile des Dokuments beim Öffnen entfernen' : null;
+  } catch (e) {
+    return `Ungültiger Aufbau: ${e instanceof Error ? e.message : 'Der Editor kann das Dokument nicht aufbauen'}`;
+  } finally {
+    probe.destroy();
+  }
 }
 
 /** Würde der Editor dieses Y-Dokument ohne Verlust öffnen? Liefert den Grund, warum nicht, oder `null`. */
 export function docProblem(doc: Y.Doc): string | null {
   try {
-    return vocabularyProblem(yDocToJson(doc));
+    return vocabularyProblem(yDocToJson(doc)) ?? bindProblem(doc);
   } catch (e) {
     return e instanceof Error ? e.message : 'Ungültiger Inhalt';
   }

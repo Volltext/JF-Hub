@@ -102,6 +102,17 @@ const SafeLink = Link.extend({
   shouldAutoLink: (url) => allowedLink(normalizeUrl(url) ?? ''),
 });
 
+/**
+ * Die Tabelle bringt `fixTables` mit, das unregelmäßige Tabellen (eine Zeile mit zu wenigen Zellen) bei jeder Änderung des Dokuments
+ * repariert, auch beim ersten Rendern und bei Änderungen anderer Geräte. Das würde beim Öffnen ins gemeinsame Dokument schreiben, und zwei
+ * Geräte, die dieselbe Tabelle gleichzeitig ergänzen, bekämen die Zellen doppelt. Deshalb läuft es nur nach eigenen Änderungen.
+ */
+const LocalTable = Table.extend({
+  addProseMirrorPlugins() {
+    return (this.parent?.() ?? []).map(localOnly);
+  },
+});
+
 /** Attribute einer Zelle: die von TipTap, die Spannen begrenzt. */
 function cellAttributes(this: { parent?: () => Record<string, unknown> }) {
   return { ...this.parent?.(), colspan: span('colspan', MAX_TABLE_COLS), rowspan: span('rowspan', MAX_TABLE_ROWS) };
@@ -121,7 +132,7 @@ export const EXTENSIONS = [
   TaskList,
   TaskItem.configure({ nested: true }),
   // Spaltenbreiten gibt es nicht (`resizable: false`); `cellMinWidth` sorgt dafür, dass viele Spalten waagerecht scrollen statt zu zerquetschen.
-  Table.configure({ resizable: false, cellMinWidth: 96 }),
+  LocalTable.configure({ resizable: false, cellMinWidth: 96 }),
   TableRow,
   TableHeader.extend({ content: CELL_CONTENT, addAttributes: cellAttributes }),
   TableCell.extend({ content: CELL_CONTENT, addAttributes: cellAttributes }),

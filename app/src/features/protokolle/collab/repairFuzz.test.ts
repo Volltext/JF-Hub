@@ -32,9 +32,11 @@ function rng(seed: number) {
 type Rnd = ReturnType<typeof rng>;
 
 const WORDS = ['Alarm', 'Übung', 'Atemschutz', 'Knoten', 'Löschangriff', 'Spiel', 'Wetter', 'Protokoll'];
+/** Markierungen ohne Attribute; Code schließt alle anderen aus, deshalb entstehen beim gleichzeitigen Formatieren ungültige Mischungen. */
+const INLINE_MARKS = [schema.marks.bold!, schema.marks.italic!, schema.marks.underline!, schema.marks.code!];
 
 function text(r: Rnd, type: NodeType): PMNode[] {
-  return Array.from({ length: r.int(1, 3) }, () => schema.text(`${r.pick(WORDS)} `, type.spec.marks === '' ? Mark.none : r.p(0.2) ? [schema.marks.bold!.create()] : Mark.none));
+  return Array.from({ length: r.int(1, 3) }, () => schema.text(`${r.pick(WORDS)} `, type.spec.marks === '' ? Mark.none : r.p(0.3) ? [r.pick(INLINE_MARKS)!.create()] : Mark.none));
 }
 
 function block(r: Rnd, type: NodeType, depth: number): PMNode {
@@ -93,7 +95,7 @@ function edit(r: Rnd, doc: PMNode): { doc: PMNode; what: string } | null {
   });
   const blocks = nodes.filter((n) => n.node.isBlock);
   const textblocks = nodes.filter((n) => n.node.isTextblock);
-  const kind = r.pick(['delete', 'delete', 'text', 'text', 'split', 'wrap', 'lift', 'join', 'level', 'mark', 'newpara'] as const);
+  const kind = r.pick(['delete', 'delete', 'text', 'text', 'split', 'wrap', 'lift', 'join', 'level', 'mark', 'mark', 'mark', 'newpara'] as const);
   try {
     switch (kind) {
       case 'delete': {
@@ -148,7 +150,8 @@ function edit(r: Rnd, doc: PMNode): { doc: PMNode; what: string } | null {
       case 'mark': {
         const b = r.pick(textblocks);
         if (b.node.content.size < 2) return null;
-        tr.addMark(b.pos + 1, b.pos + 1 + Math.min(3, b.node.content.size), schema.marks.bold!.create());
+        const from = b.pos + 1 + r.int(0, b.node.content.size - 2);
+        tr.addMark(from, Math.min(from + r.int(2, 5), b.pos + 1 + b.node.content.size), r.pick(INLINE_MARKS).create());
         break;
       }
       case 'newpara': {
@@ -182,9 +185,11 @@ function device(baseBytes: Uint8Array, r: Rnd): { ydoc: Y.Doc; sv: Uint8Array; o
   return { ydoc, sv, ops };
 }
 
+/** Der Text je Textblock (ohne die Grenzen zwischen gleich oder verschieden formatierten Stücken: Formate zu entfernen verschmilzt Stücke). */
 const allText = (json: unknown): string[] => {
-  const n = json as { type?: string; text?: string; content?: unknown[] };
-  return n.type === 'text' ? [n.text ?? ''] : (n.content ?? []).flatMap(allText);
+  const n = json as { type?: string; text?: string; content?: { type?: string; text?: string }[] };
+  if (n.content?.some((c) => c.type === 'text')) return [n.content.filter((c) => c.type === 'text').map((c) => c.text ?? '').join('')];
+  return ((n.content ?? []) as unknown[]).flatMap(allText);
 };
 
 describe('Reparatur nach gleichzeitigen Strukturänderungen (echte Editor-Schritte)', () => {
@@ -230,4 +235,58 @@ describe('Reparatur nach gleichzeitigen Strukturänderungen (echte Editor-Schrit
     expect(broken).toBeGreaterThan(0); // der Test findet die Fälle, für die es die Reparatur gibt
     expect(repaired).toBe(broken);
   }, 120_000);
+});
+
+describe('Reparatur nach gleichzeitigem Formatieren derselben Stelle', () => {
+  const plain = Object.values(schema.marks).filter((m) => m.name !== 'link'); // ohne Pflichtattribut
+  const base = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Löschangriff mit Atemschutz' }] }] };
+
+  it('jede Mischung zweier Markierungen wird repariert, der Text bleibt, Code gewinnt', () => {
+    const baseBytes = Y.encodeStateAsUpdate(jsonToYDoc(base as never));
+    const size = 'Löschangriff mit Atemschutz'.length;
+    let conflicts = 0;
+    for (let seed = 1; seed <= 400; seed++) {
+      const r = rng(seed * 104729);
+      const range = () => {
+        const from = r.int(1, size - 2);
+        return [from, Math.min(size + 1, from + r.int(2, 9))] as const;
+      };
+      const [af, at] = range();
+      const [bf, bt] = range();
+      const ma = r.pick(plain);
+      const mb = r.pick(plain);
+      const run = (from: number, to: number, m: (typeof plain)[number]) => {
+        const d = new Y.Doc();
+        Y.applyUpdate(d, baseBytes);
+        const sv = Y.encodeStateVector(d);
+        const frag = d.getXmlFragment(FIELD);
+        const { doc: pm, meta } = initProseMirrorDoc(frag, schema);
+        const tr = new Transform(pm);
+        tr.addMark(from, to, m.create());
+        updateYFragment(d, frag, tr.doc, meta);
+        return Y.encodeStateAsUpdate(d, sv);
+      };
+      const merged = new Y.Doc();
+      Y.applyUpdate(merged, baseBytes);
+      Y.applyUpdate(merged, run(af, at, ma));
+      Y.applyUpdate(merged, run(bf, bt, mb));
+      const label = `seed ${seed}: ${ma.name} [${af},${at}] + ${mb.name} [${bf},${bt}]`;
+      if (!docProblem(merged)) {
+        expect(repairDoc(merged), `${label}: ein gültiges Dokument wird nicht angefasst`).toBe(false);
+        continue;
+      }
+      conflicts++;
+      expect(repairDoc(merged), label).toBe(true);
+      expect(docProblem(merged), label).toBeNull();
+      expect(allText(yDocToJson(merged)).join(''), `${label}: Text unverändert`).toBe('Löschangriff mit Atemschutz');
+      // wo Code ist, ist nichts sonst
+      const json = yDocToJson(merged);
+      const bad = (json.content ?? []).flatMap((blk) => blk.content ?? []).filter((t) => (t.marks ?? []).some((m) => m.type === 'code') && (t.marks ?? []).length > 1);
+      expect(bad, label).toEqual([]);
+      const before = merged.getXmlFragment(FIELD).toString();
+      initProseMirrorDoc(merged.getXmlFragment(FIELD), schema);
+      expect(merged.getXmlFragment(FIELD).toString(), `${label}: Binden verändert das Dokument`).toBe(before);
+    }
+    expect(conflicts).toBeGreaterThan(20); // der Test trifft die Fälle, für die es die Reparatur gibt
+  });
 });

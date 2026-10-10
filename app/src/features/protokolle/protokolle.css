@@ -8,9 +8,9 @@
 .proto-error { margin: 0; padding: var(--s-3); border-radius: var(--r-md); background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); }
 .proto-notice { margin: 0; padding: var(--s-3); border-radius: var(--r-md); background: color-mix(in srgb, var(--warning) 14%, transparent); display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2) var(--s-3); }
 .proto-notice a { font-weight: 600; }
-/* Wer das Protokoll gerade noch geöffnet hat; ohne Mitschreibende ist die Zeile ausgeblendet. */
+/* Wer das Protokoll gerade noch geöffnet hat; ohne Mitschreibende ist die Zeile leer, nimmt keinen Platz und bleibt für Screenreader da. */
 .proto-peers { margin: 0; display: flex; align-items: center; gap: var(--s-2); font-size: 0.85rem; font-weight: 600; color: var(--success); }
-.proto-peers[hidden] { display: none; }
+.proto-peers--empty { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .proto-offline { margin: 0; font-size: 0.85rem; font-weight: 600; color: var(--warning); }
 body.web .icon-btn { cursor: pointer; }
 

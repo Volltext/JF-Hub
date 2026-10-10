@@ -1,4 +1,4 @@
-import { getSchema } from '@tiptap/core';
+import { getExtensionField, getSchema } from '@tiptap/core';
 import { EditorState, Plugin } from '@tiptap/pm/state';
 import { ySyncPluginKey } from '@tiptap/y-tiptap';
 import { describe, expect, it } from 'vitest';
@@ -71,5 +71,35 @@ describe('LocalTrailingNode', () => {
   it('beachtet das Kennzeichen zum Überspringen', () => {
     const s = stateOf([para('Text'), photo], plugins());
     expect(lastType(s.apply(local(s).setMeta('skipTrailingNode', true)))).toBe('photo');
+  });
+});
+
+describe('Tabellen im geteilten Dokument', () => {
+  /** Die Plugins der Tabellen-Erweiterung, wie der Editor sie anlegt. */
+  const tablePlugins = (): Plugin[] => {
+    const table = EXTENSIONS.find((e) => e.name === 'table')!;
+    const context = { name: 'table', options: table.options, storage: {}, editor: { isEditable: true }, type: schema.nodes.table };
+    return (getExtensionField(table, 'addProseMirrorPlugins', context as never) as () => Plugin[])();
+  };
+  const cell = { type: 'tableCell', content: [{ type: 'paragraph' }] };
+  const row = (n: number) => ({ type: 'tableRow', content: Array.from({ length: n }, () => cell) });
+  /** Drei Zeilen mit 3, 2 und 3 Zellen: Das Schema erlaubt es, `fixTables` ergänzt die fehlende Zelle. */
+  const irregular = { type: 'doc', content: [{ type: 'table', content: [row(3), row(2), row(3)] }] };
+  const cellsPerRow = (s: EditorState): number[] => {
+    const counts: number[] = [];
+    s.doc.firstChild!.forEach((r) => counts.push(r.childCount));
+    return counts;
+  };
+  /** Das Dokument wird durch eine frische Fassung ersetzt, wie y-tiptap es beim ersten Rendern und bei Änderungen anderer Geräte tut. */
+  const replaced = (s: EditorState, remoteOrigin: boolean) => {
+    const fresh = schema.nodeFromJSON(irregular);
+    const tr = s.tr.replaceWith(0, s.doc.content.size, fresh.content);
+    return remoteOrigin ? tr.setMeta(ySyncPluginKey, { isChangeOrigin: true }) : tr;
+  };
+
+  it('ergänzt eine fehlende Zelle nur nach einer eigenen Änderung, beim Öffnen und bei Änderungen anderer Geräte bleibt die Tabelle, wie sie ist', () => {
+    const s = EditorState.create({ doc: schema.nodeFromJSON({ type: 'doc', content: [{ type: 'paragraph' }] }), plugins: tablePlugins() });
+    expect(cellsPerRow(s.apply(replaced(s, true)))).toEqual([3, 2, 3]); // wie beim Öffnen und bei Änderungen anderer: nichts schreiben
+    expect(cellsPerRow(s.apply(replaced(s, false)))).toEqual([3, 3, 3]); // die eigene Änderung darf die Tabelle in Ordnung bringen
   });
 });

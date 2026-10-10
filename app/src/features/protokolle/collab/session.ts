@@ -63,6 +63,12 @@ export interface SessionOptions {
   transport: ExchangeTransport;
   /** Läuft vor dem Senden eigener Änderungen (neue Anhänge hochladen). Ein Fehler hält den Austausch nicht auf. */
   beforeSend?: () => Promise<void>;
+  /**
+   * Wie lange eine Runde darauf wartet (Standard 3 Sekunden). Ein langsamer Upload (großes Foto, schlechtes Netz) soll den Text nicht
+   * aufhalten, nicht die Änderungen anderer, nicht das Beenden und nicht den PDF-Export; er läuft weiter, und was der Server noch vermisst,
+   * meldet er als fehlenden Anhang.
+   */
+  beforeSendMs?: number;
   /** Fehlende Anhänge, die der Server meldet (hat dieses Gerät sie noch, gehen sie im nächsten Abgleich hoch). */
   onMissingBlobs?: (ids: string[]) => void;
   /** Der Editor verarbeitet gerade eine Eingabe (zum Beispiel die Wortvorschläge der Tastatur): Änderungen anderer warten. */
@@ -112,6 +118,7 @@ export class CollabSession {
   private readonly nudgeDelay: number;
   private readonly persistDelay: number;
   private readonly persistRetry: number;
+  private readonly beforeSendDelay: number;
   private readonly snapshotDelay: number;
   private readonly maxBackoff: number;
   private pending: Uint8Array[] = [];
@@ -155,6 +162,7 @@ export class CollabSession {
     this.nudgeDelay = opts.nudgeMs ?? 800;
     this.persistDelay = opts.persistMs ?? 500;
     this.persistRetry = opts.persistRetryMs ?? 3000;
+    this.beforeSendDelay = opts.beforeSendMs ?? 3000;
     this.snapshotDelay = opts.snapshotMs ?? 3000;
     this.maxBackoff = opts.maxBackoffMs ?? 30_000;
     // Änderungen werden ab jetzt gesichert, auch wenn der regelmäßige Austausch (`start`) nicht läuft (Tests steuern ihn von Hand).
@@ -282,6 +290,19 @@ export class CollabSession {
     return this.persisting;
   }
 
+  /** Wartet auf das Hochladen neuer Anhänge, aber nur eine Weile; der Upload selbst wird nicht abgebrochen. */
+  private async waitForUploads(): Promise<void> {
+    const upload = this.opts.beforeSend;
+    if (!upload) return;
+    let timer: Timer | undefined;
+    const limit = new Promise<void>((resolve) => (timer = setTimeout(resolve, this.beforeSendDelay)));
+    try {
+      await Promise.race([upload().catch(() => undefined), limit]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   /**
    * Gibt es keinen gespeicherten Zustand mehr (verworfen, während der Editor offen war), der Editor aber noch Änderungen im Speicher
    * hat, werden sie samt dem ganzen Text als Kopie „(lokale Fassung)“ gesichert: Eine Zeile aus nur der letzten Änderung wäre wertlos.
@@ -405,7 +426,7 @@ export class CollabSession {
       const diff = Y.encodeStateAsUpdate(this.doc, row?.serverSv);
       if (!isEmptyUpdate(diff)) req.update = bytesToBase64(diff);
       if (row?.created) req.create = true;
-      await this.opts.beforeSend?.().catch(() => undefined);
+      await this.waitForUploads();
     } else if (this.knownRev !== undefined) {
       req.rev = this.knownRev;
     }
@@ -527,7 +548,7 @@ export class CollabSession {
     const status = e instanceof ProtoError ? e.status : -1;
     this.failures++;
     if (status === 0) {
-      this.setInfo({ offline: true });
+      this.setInfo({ offline: true, peers: [] }); // wer gerade noch da ist, weiß ohne Server niemand
     } else if (status === 401) {
       this.stop('auth', 'Nicht angemeldet. Die Änderungen bleiben auf diesem Gerät.', false);
     } else if (status === 426) {

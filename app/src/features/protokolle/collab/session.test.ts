@@ -211,6 +211,20 @@ describe('Mitschreibende', () => {
     await sync(ben);
     expect(ben.getInfo().peers).toEqual([ANNA.id]);
   });
+
+  it('erreicht die Sitzung den Server nicht mehr, verschwindet die Anzeige der Mitschreibenden (sie wäre nicht mehr aktuell)', async () => {
+    const anna = await open(annaDb, ANNA);
+    const ben = await open(benDb, BEN);
+    await sync(anna);
+    await sync(ben);
+    expect(ben.getInfo().peers).toEqual([ANNA.id]);
+    server.offline = true;
+    await ben.exchangeNow();
+    expect(ben.getInfo()).toMatchObject({ offline: true, peers: [] });
+    server.offline = false;
+    await ben.exchangeNow();
+    expect(ben.getInfo()).toMatchObject({ offline: false, peers: [ANNA.id] }); // wieder da, sobald der Server antwortet
+  });
 });
 
 describe('wenn der Server etwas anderes sagt', () => {
@@ -361,6 +375,55 @@ describe('wenn der Server etwas anderes sagt', () => {
       await ben.destroy();
     }
     expect(await stored(benDb)).toMatchObject({ dirty: 1 });
+  });
+});
+
+describe('Anhänge hochladen, bevor der Text geht', () => {
+  const serverHas = (needle: string) => server.row(ID)!.content.includes(needle);
+
+  it('ein schneller Upload geht dem Text voraus', async () => {
+    const order: string[] = [];
+    const inner = server.transport(ANNA);
+    const s = await open(annaDb, ANNA, { beforeSend: async () => void order.push('Upload') }, async (req) => {
+      if (req.docs[0]!.update) order.push('Text');
+      return inner(req);
+    });
+    typeInto(s.doc, ' mit Foto');
+    await s.flush();
+    await s.exchangeNow();
+    expect(order).toEqual(['Upload', 'Text']);
+    await s.destroy();
+  });
+
+  it('ein hängender Upload hält den Text nicht auf: Nach der Frist geht er trotzdem zum Server, der Upload läuft weiter', async () => {
+    let finished = false;
+    const slow = () =>
+      new Promise<void>((resolve) =>
+        setTimeout(() => {
+          finished = true;
+          resolve();
+        }, 400),
+      );
+    const s = await open(annaDb, ANNA, { beforeSend: slow, beforeSendMs: 20 });
+    typeInto(s.doc, ' trotzdem');
+    await s.flush();
+    const started = Date.now();
+    await s.exchangeNow();
+    expect(Date.now() - started).toBeLessThan(300);
+    expect(serverHas('trotzdem')).toBe(true);
+    expect(finished).toBe(false); // der Upload ist noch unterwegs und wird nicht abgebrochen
+    await new Promise((r) => setTimeout(r, 450));
+    expect(finished).toBe(true);
+    await s.destroy();
+  });
+
+  it('ein fehlgeschlagener Upload hält den Text ebenfalls nicht auf', async () => {
+    const s = await open(annaDb, ANNA, { beforeSend: () => Promise.reject(new Error('Server nicht erreichbar')) });
+    typeInto(s.doc, ' trotz Fehler');
+    await s.flush();
+    await s.exchangeNow();
+    expect(serverHas('trotz Fehler')).toBe(true);
+    await s.destroy();
   });
 });
 

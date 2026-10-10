@@ -56,6 +56,29 @@ describe('Anhänge hochladen', () => {
     expect(uploaded).toEqual(['anh-000001', 'anh-000002']);
   });
 
+  it('zwei gleichzeitige Läufe (Editor und Abgleich) laden denselben Anhang nicht doppelt hoch, und jeder kehrt erst zurück, wenn alles Wartende oben ist', async () => {
+    await local('anh-gross01', 50);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const uploaded: string[] = [];
+    const { t } = transport({
+      upload: async (meta) => {
+        uploaded.push(meta.id);
+        await gate; // ein langsamer Upload
+      },
+    });
+    const first = uploadPendingBlobs(t, store);
+    await new Promise((r) => setTimeout(r, 10));
+    await local('anh-000002'); // kommt dazu, während der erste Lauf noch hängt
+    const second = uploadPendingBlobs(t, store);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(uploaded).toEqual(['anh-gross01']); // der zweite Lauf wartet, statt denselben Anhang noch einmal zu senden
+    release();
+    await Promise.all([first, second]);
+    expect(uploaded.sort()).toEqual(['anh-000002', 'anh-gross01']);
+    expect((await store.blobs.get('anh-000002'))!.state).toBe('synced');
+  });
+
   it('ein vom Server abgelehnter Anhang wird vermerkt und nicht erneut versucht; die übrigen gehen durch', async () => {
     await local('anh-gross01');
     await local('anh-gut-001');

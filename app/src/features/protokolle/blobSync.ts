@@ -45,7 +45,22 @@ const REFUSED = new Set([400, 403, 409, 413, 415, 422]);
  * - Zeitlimit oder Serverfehler: Der Anhang pausiert mit wachsender Pause (bis zu einer Stunde) und blockiert so weder den Abgleich
  *   noch bei jedem Lauf zwei Minuten Wartezeit (`failed`).
  */
-export async function uploadPendingBlobs(transport: BlobTransport = httpTransport, store: HubDb = db, now = Date.now()): Promise<{ uploaded: number; rejected: number; failed: number }> {
+export function uploadPendingBlobs(transport: BlobTransport = httpTransport, store: HubDb = db, now = Date.now()): Promise<UploadResult> {
+  // Läufe kommen von zwei Seiten (der offene Editor vor jedem Senden, der Abgleich) und können sich überschneiden, vor allem bei einem
+  // langsamen Upload. Sie laufen hintereinander: Ein zweiter Lauf lädt nicht noch einmal hoch, was der erste gerade sendet, und kehrt erst
+  // zurück, wenn auch alles Wartende von vorhin oben ist.
+  const run = (running.get(store) ?? Promise.resolve()).then(
+    () => uploadAll(transport, store, now),
+    () => uploadAll(transport, store, now),
+  );
+  running.set(store, run);
+  return run;
+}
+
+type UploadResult = { uploaded: number; rejected: number; failed: number };
+const running = new WeakMap<HubDb, Promise<unknown>>();
+
+async function uploadAll(transport: BlobTransport, store: HubDb, now: number): Promise<UploadResult> {
   let uploaded = 0;
   let rejected = 0;
   let failed = 0;

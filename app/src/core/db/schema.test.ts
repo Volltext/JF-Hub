@@ -106,7 +106,7 @@ describe('Datenbank-Update auf 3.0.0 (Text als Yjs-Dokument)', () => {
       await upgraded.open();
       const all = await upgraded.protokolle.toArray();
       const copy = all.find((p) => p.title === 'Geändert (lokale Fassung)')!;
-      expect(copy).toMatchObject({ rev: 0, dirty: 1, shared: true, deleted: 0 });
+      expect(copy).toMatchObject({ rev: 0, dirty: 1, shared: false, deleted: 0 }); // privat, auch wenn das Original veröffentlicht ist: kein Duplikat für alle Betreuer
       expect(copy.id).not.toBe('geaendert');
       expect(copy.ownerId).toBeUndefined();
       expect(JSON.stringify(copy.content)).toContain('Text von geaendert');

@@ -1,5 +1,6 @@
 import { getSchema, type JSONContent } from '@tiptap/core';
-import { initProseMirrorDoc } from '@tiptap/y-tiptap';
+import { Transform } from '@tiptap/pm/transform';
+import { initProseMirrorDoc, updateYFragment } from '@tiptap/y-tiptap';
 import * as Y from 'yjs';
 import { describe, expect, it } from 'vitest';
 import { FIELD, jsonToYDoc } from '../../../../../server/src/collab/convert';
@@ -149,5 +150,109 @@ describe('repairDoc: ergänzt, was die Inhaltsregeln verlangen, und löscht nich
     Y.applyUpdate(b, Y.encodeStateAsUpdate(a, sv));
     expect(yDocToJson(b)).toEqual(yDocToJson(a));
     expect(docProblem(b)).toBeNull();
+  });
+});
+
+/** Eine Bearbeitung wie im Editor: ProseMirror-Schritt auf dem gebundenen Dokument, danach `updateYFragment`. */
+function edit(ydoc: Y.Doc, fn: (tr: Transform) => void): void {
+  const frag = ydoc.getXmlFragment(FIELD);
+  const { doc: pm, meta } = initProseMirrorDoc(frag, schema);
+  const tr = new Transform(pm);
+  fn(tr);
+  updateYFragment(ydoc, frag, tr.doc, meta);
+}
+const clone = (bytes: Uint8Array): Y.Doc => {
+  const d = new Y.Doc();
+  Y.applyUpdate(d, bytes);
+  return d;
+};
+/** Zwei Geräte bearbeiten dieselbe Basis gleichzeitig; Ergebnis: der zusammengeführte Zustand und die Zustände der beiden Geräte. */
+function concurrently(base: JSONContent, a: (tr: Transform) => void, b: (tr: Transform) => void) {
+  const bytes = Y.encodeStateAsUpdate(jsonToYDoc(base));
+  const da = clone(bytes);
+  const db = clone(bytes);
+  const svA = Y.encodeStateVector(da);
+  const svB = Y.encodeStateVector(db);
+  edit(da, a);
+  edit(db, b);
+  const merged = clone(bytes);
+  Y.applyUpdate(merged, Y.encodeStateAsUpdate(da, svA));
+  Y.applyUpdate(merged, Y.encodeStateAsUpdate(db, svB));
+  return { merged, bytes, da, db, svA, svB };
+}
+const marksOfText = (json: JSONContent, word: string): string[] => {
+  const found: string[] = [];
+  const walk = (n: JSONContent) => {
+    if (n.type === 'text' && n.text?.includes(word)) found.push((n.marks ?? []).map((m) => m.type).sort().join('+'));
+    (n.content ?? []).forEach(walk);
+  };
+  walk(json);
+  return found;
+};
+
+describe('repairDoc: Markierungen, die sich ausschließen', () => {
+  const hallo = doc(p('Hallo Welt'));
+  const bold = () => schema.marks.bold!.create();
+  const code = () => schema.marks.code!.create();
+
+  it('fett (Gerät A) und Code (Gerät B) gleichzeitig auf demselben Wort: Das Ergebnis ist ungültig, die Reparatur lässt Code stehen', () => {
+    const { merged } = concurrently(hallo, (tr) => tr.addMark(7, 11, bold()), (tr) => tr.addMark(7, 11, code()));
+    expect(docProblem(merged)).toMatch(/marks/); // Code schließt alle anderen Markierungen aus
+    expect(repairDoc(merged)).toBe(true);
+    expect(docProblem(merged)).toBeNull();
+    expect(marksOfText(yDocToJson(merged), 'Welt')).toEqual(['code']);
+    expect(textOf(yDocToJson(merged))).toBe('Hallo |Welt'); // der Text bleibt, wie er ist
+  });
+
+  it('überlappen sich die Bereiche nur teilweise, wird nur die Überschneidung bereinigt', () => {
+    const { merged } = concurrently(hallo, (tr) => tr.addMark(1, 8, bold()), (tr) => tr.addMark(6, 11, code())); // fett „Hallo W“, Code „o Welt“
+    expect(repairDoc(merged)).toBe(true);
+    expect(docProblem(merged)).toBeNull();
+    const json = yDocToJson(merged);
+    expect(marksOfText(json, 'Hall')).toEqual(['bold']); // außerhalb der Überschneidung bleibt fett
+    expect(marksOfText(json, 'lt')).toEqual(['code']);
+    expect(texts(json).join('')).toBe('Hallo Welt');
+  });
+
+  it('andere Markierungen vertragen sich und bleiben unberührt', () => {
+    const { merged } = concurrently(hallo, (tr) => tr.addMark(1, 6, bold()), (tr) => tr.addMark(1, 6, schema.marks.italic!.create()));
+    expect(docProblem(merged)).toBeNull();
+    let updates = 0;
+    merged.on('update', () => updates++);
+    expect(repairDoc(merged)).toBe(false);
+    expect(updates).toBe(0);
+    expect(marksOfText(yDocToJson(merged), 'Hallo')).toEqual(['bold+italic']);
+  });
+
+  it('beide Geräte reparieren für sich: Nach dem Zusammenführen ist das Ergebnis gültig und gleich (die Reparatur ist wiederholbar)', () => {
+    const { merged, da, db, svA, svB } = concurrently(hallo, (tr) => tr.addMark(7, 11, bold()), (tr) => tr.addMark(7, 11, code()));
+    // jedes Gerät sieht den Zustand des anderen und repariert, bevor es das Ergebnis des anderen kennt
+    const a = clone(Y.encodeStateAsUpdate(merged));
+    const b = clone(Y.encodeStateAsUpdate(merged));
+    void da;
+    void db;
+    void svA;
+    void svB;
+    const beforeA = Y.encodeStateVector(a);
+    const beforeB = Y.encodeStateVector(b);
+    expect(repairDoc(a)).toBe(true);
+    expect(repairDoc(b)).toBe(true);
+    Y.applyUpdate(a, Y.encodeStateAsUpdate(b, beforeA));
+    Y.applyUpdate(b, Y.encodeStateAsUpdate(a, beforeB));
+    for (const d of [a, b]) {
+      expect(docProblem(d)).toBeNull();
+      expect(marksOfText(yDocToJson(d), 'Welt')).toEqual(['code']);
+    }
+    expect(yDocToJson(a)).toEqual(yDocToJson(b));
+    expect(repairDoc(a)).toBe(false); // ein zweiter Lauf findet nichts mehr
+  });
+
+  it('nach der Reparatur bindet der Editor, ohne etwas aus dem geteilten Dokument zu löschen', () => {
+    const { merged } = concurrently(hallo, (tr) => tr.addMark(7, 11, bold()), (tr) => tr.addMark(7, 11, code()));
+    repairDoc(merged);
+    const before = merged.getXmlFragment(FIELD).toString();
+    const { doc: pm } = initProseMirrorDoc(merged.getXmlFragment(FIELD), schema);
+    expect(merged.getXmlFragment(FIELD).toString()).toBe(before);
+    expect(pm.textContent).toBe('Hallo Welt');
   });
 });

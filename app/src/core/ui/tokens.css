@@ -33,8 +33,8 @@
   --primary: #d42a22;
   --primary-press: #b4221b;
   --accent: #c2570c;
-  --success: #1b8a52;
-  --warning: #9a6a00;
+  --success: #177a47; /* mindestens 4,5 : 1 als Text auf --bg und --surface (WCAG AA) */
+  --warning: #8a5f00;
   --danger: #c93028;
   color-scheme: light;
 }

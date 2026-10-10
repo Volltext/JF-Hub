@@ -12,14 +12,15 @@ export function peersLabel(names: string[]): string {
 
 /**
  * Wer dieses Protokoll gerade geöffnet hat (laut Server die letzten Sekunden). Die Zeile bleibt als Hinweisbereich eingehängt, damit
- * Screenreader es melden, wenn jemand dazukommt oder geht; ohne Mitschreibende ist sie leer und nimmt keinen Platz.
+ * Screenreader es melden, wenn jemand dazukommt oder geht; ohne Mitschreibende ist sie leer und nimmt keinen Platz (nicht `hidden`: Ein
+ * ausgeblendeter Bereich fehlt im Baum der Hilfstechniken, und Änderungen darin werden nicht angesagt).
  */
 export function Presence({ ids }: { ids: string[] }) {
   const users = useDirectory();
   const names = ids.map((id) => users.find((u) => u.id === id)?.name ?? 'Jemand');
   const text = peersLabel(names);
   return (
-    <p className="proto-peers" role="status" aria-live="polite" hidden={!text}>
+    <p className={text ? 'proto-peers' : 'proto-peers proto-peers--empty'} role="status" aria-live="polite">
       {text && <Users size={16} aria-hidden="true" />}
       {text}
     </p>

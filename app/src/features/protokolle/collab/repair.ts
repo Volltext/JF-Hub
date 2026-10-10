@@ -1,7 +1,7 @@
 import { Fragment, type Node as PMNode, type NodeType } from '@tiptap/pm/model';
 import * as Y from 'yjs';
 import { appSchema } from '../editorSchema';
-import { FIELD } from './yJson';
+import { FIELD, markName } from './yJson';
 
 /**
  * Repariert ein Yjs-Dokument, das gegen die Inhaltsregeln des Schemas verstößt, ohne etwas zu löschen.
@@ -11,7 +11,10 @@ import { FIELD } from './yJson';
  * andere dort eine Überschrift einfügt, beginnt der Punkt mit der Überschrift. `@tiptap/y-tiptap` löscht ein Element, das es nicht bauen
  * kann, beim Binden aus dem *geteilten* Dokument, samt Inhalt und für alle. Ohne Reparatur bliebe nur, das Protokoll für alle zu sperren.
  *
- * Die Reparatur ergänzt, was die Regeln verlangen (ein leerer Absatz, ein leerer Listenpunkt, eine leere Zelle), und fasst sonst nichts an.
+ * Die Reparatur ergänzt, was die Regeln verlangen (ein leerer Absatz, ein leerer Listenpunkt, eine leere Zelle), und löscht nie Text.
+ * Dasselbe gilt für Markierungen, die sich ausschließen: Formatieren zwei Personen dasselbe Wort gleichzeitig, die eine fett, die andere als
+ * Code, trägt es beides, und das Schema erlaubt es nicht (Code schließt alle anderen Markierungen aus). Es bleibt, was auch der Editor beim
+ * Anwenden einer zweiten Markierung behielte (`Mark.addToSet`: Code gewinnt); die übrigen werden vom Text genommen.
  * Was sich so nicht reparieren lässt (ein Element an einer Stelle, wo es nie stehen darf, ein unbekanntes Element), bleibt unverändert; dann
  * bleibt es bei der Sperre. Sie läuft in einer Transaktion des Aufrufers oder in einer eigenen und ist ein gewöhnliches Update, das an die
  * anderen Geräte geht. Wiederholen findet nichts mehr. Liefert true, wenn etwas ergänzt wurde.
@@ -21,7 +24,59 @@ export function repairDoc(doc: Y.Doc): boolean {
   let changed = false;
   doc.transact(() => {
     changed = repairContainer(doc.getXmlFragment(FIELD), schema.topNodeType, true);
+    changed = repairMarks(doc.getXmlFragment(FIELD)) || changed;
   });
+  return changed;
+}
+
+/**
+ * Welche der Formate eines Textstücks (Schlüssel wie in Yjs) müssen weg, weil sie sich nach dem Schema ausschließen? Dieselbe Rechnung wie
+ * `Mark.addToSet` in der Reihenfolge der Schema-Rangfolge, damit jedes Gerät zum selben Ergebnis kommt.
+ */
+function excludedFormats(keys: string[]): string[] {
+  const schema = appSchema();
+  const rank = (name: string): number => Object.keys(schema.marks).indexOf(name); // die Reihenfolge im Schema ist die Rangfolge von ProseMirror
+  const entries = keys
+    .map((key) => ({ key, type: schema.marks[markName(key)] }))
+    .filter((e): e is { key: string; type: NonNullable<typeof e.type> } => !!e.type) // Unbekanntes ist nicht unsere Sache
+    .sort((x, y) => rank(x.type.name) - rank(y.type.name) || (x.key < y.key ? -1 : x.key > y.key ? 1 : 0));
+  const kept: typeof entries = [];
+  const drop: string[] = [];
+  for (const e of entries) {
+    if (kept.some((k) => k.type.excludes(e.type))) {
+      drop.push(e.key);
+      continue;
+    }
+    for (let i = kept.length - 1; i >= 0; i--) {
+      if (e.type.excludes(kept[i]!.type)) drop.push(...kept.splice(i, 1).map((k) => k.key));
+    }
+    kept.push(e);
+  }
+  return drop;
+}
+
+/** Nimmt ausgeschlossene Markierungen von jedem Textstück. Ändert keinen Text. */
+function repairMarks(fragment: Y.XmlFragment): boolean {
+  let changed = false;
+  const visit = (parent: Container): void => {
+    for (const child of parent.toArray()) {
+      if (child instanceof Y.XmlText) {
+        let at = 0;
+        for (const op of child.toDelta() as { insert: unknown; attributes?: Record<string, unknown> }[]) {
+          const length = typeof op.insert === 'string' ? op.insert.length : 1;
+          const drop = op.attributes ? excludedFormats(Object.keys(op.attributes)) : [];
+          if (drop.length) {
+            child.format(at, length, Object.fromEntries(drop.map((key) => [key, null])));
+            changed = true;
+          }
+          at += length;
+        }
+      } else if (isElement(child)) {
+        visit(child);
+      }
+    }
+  };
+  visit(fragment);
   return changed;
 }
 

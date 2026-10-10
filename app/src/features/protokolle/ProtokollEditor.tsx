@@ -443,7 +443,7 @@ function EditorInner({ initial, session, editorRef }: { initial: Protokoll; sess
         />
       )}
 
-      {editor && <EditorToolbar editor={editor} />}
+      {editor && editable && <EditorToolbar editor={editor} />}
 
       <div className="proto-sheet proto-sheet--body" onClick={(e) => e.target === e.currentTarget && editor?.commands.focus('end')}>
         <EditorContent editor={editor} />
