@@ -436,6 +436,44 @@ describe('Lebenslauf und Zeitsteuerung', () => {
     await ben.destroy();
   });
 
+  it('scheitert das Sichern auf dem Gerät (Speicher voll), bleibt der Text im Speicher, es erscheint ein Hinweis, und es wird von selbst noch einmal versucht', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    // Der Austausch ist so spät angesetzt, dass er hier nicht stört: Das erneute Sichern muss von der Sitzung selbst kommen.
+    const anna = await open(annaDb, ANNA, { persistMs: 100, persistRetryMs: 1000, snapshotMs: 60_000, nudgeMs: 600_000, intervalMs: 600_000 });
+    const put = vi.spyOn(annaDb.ydocs, 'put').mockRejectedValueOnce(new DOMException('Der Speicher ist voll', 'QuotaExceededError'));
+    typeInto(anna.doc, ' eins');
+    await vi.waitFor(async () => {
+      await vi.advanceTimersByTimeAsync(100); // der erste Versuch scheitert
+      expect(anna.getInfo().message).toContain('Speichern auf diesem Gerät fehlgeschlagen');
+    }, { timeout: 20_000, interval: 20 });
+    expect(anna.getInfo().saved).toBe(false);
+    expect(textOf((await loadDoc(ID, annaDb))!.doc)).toBe('Basis'); // noch nicht auf dem Gerät
+    // niemand tippt weiter: Die Sitzung versucht es trotzdem noch einmal, und diesmal klappt es
+    await vi.waitFor(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(anna.getInfo()).toMatchObject({ saved: true, message: '' });
+    }, { timeout: 20_000, interval: 100 });
+    expect(textOf((await loadDoc(ID, annaDb))!.doc)).toBe('Basis eins');
+    expect(await stored(annaDb)).toMatchObject({ dirty: 1 });
+    put.mockRestore();
+    await anna.destroy();
+  });
+
+  it('scheitert das Sichern auf dem Gerät, geht der Text trotzdem zum Server (der Austausch nutzt das Dokument im Speicher)', async () => {
+    const anna = await open(annaDb, ANNA);
+    const put = vi.spyOn(annaDb.ydocs, 'put').mockRejectedValueOnce(new DOMException('Der Speicher ist voll', 'QuotaExceededError'));
+    typeInto(anna.doc, ' eins');
+    await anna.flush().catch(() => undefined);
+    expect(anna.getInfo().saved).toBe(false);
+    await anna.exchangeNow();
+    expect(JSON.parse(server.row(ID)!.content).content[0].content[0].text).toBe('Basis eins');
+    put.mockRestore();
+    await anna.flush();
+    expect(anna.getInfo()).toMatchObject({ saved: true, message: '' });
+    expect(textOf((await loadDoc(ID, annaDb))!.doc)).toBe('Basis eins');
+    await anna.destroy();
+  });
+
   it('ein Update, das nur aus Löschungen besteht, ist nicht leer', () => {
     const d = new Y.Doc();
     d.getText('t').insert(0, 'abc');

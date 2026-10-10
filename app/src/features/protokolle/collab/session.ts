@@ -73,6 +73,8 @@ export interface SessionOptions {
   intervalMs?: number;
   nudgeMs?: number;
   persistMs?: number;
+  /** Pause, bevor ein gescheitertes Sichern auf dem Gerät noch einmal versucht wird. */
+  persistRetryMs?: number;
   snapshotMs?: number;
   maxBackoffMs?: number;
 }
@@ -96,6 +98,7 @@ export class CollabSession {
   private readonly interval: number;
   private readonly nudgeDelay: number;
   private readonly persistDelay: number;
+  private readonly persistRetry: number;
   private readonly snapshotDelay: number;
   private readonly maxBackoff: number;
   private pending: Uint8Array[] = [];
@@ -135,6 +138,7 @@ export class CollabSession {
     this.interval = opts.intervalMs ?? 2500;
     this.nudgeDelay = opts.nudgeMs ?? 800;
     this.persistDelay = opts.persistMs ?? 500;
+    this.persistRetry = opts.persistRetryMs ?? 3000;
     this.snapshotDelay = opts.snapshotMs ?? 3000;
     this.maxBackoff = opts.maxBackoffMs ?? 30_000;
     // Änderungen werden ab jetzt gesichert, auch wenn der regelmäßige Austausch (`start`) nicht läuft (Tests steuern ihn von Hand).
@@ -243,12 +247,23 @@ export class CollabSession {
       } catch (e) {
         this.pending = [...batch, ...this.pending]; // nicht verlieren: Der nächste Versuch schreibt es mit
         this.setInfo({ saved: false, message: 'Speichern auf diesem Gerät fehlgeschlagen. Das Protokoll bleibt geöffnet, der Abgleich mit dem Server läuft weiter.' });
+        this.retryPersist();
         throw e;
       }
       if (!this.pending.length) this.setInfo({ saved: true, ...(this.info.message.startsWith('Speichern auf diesem Gerät') ? { message: '' } : {}) });
     };
     this.persisting = this.persisting.then(run, run);
     return this.persisting;
+  }
+
+  /**
+   * Ein gescheitertes Sichern (Speicher voll, Datenbank kurz gesperrt) wird wiederholt, auch wenn niemand weitertippt und kein Austausch
+   * mehr läuft (ohne Server, nach dem Sperren des Protokolls): Sonst bliebe der Text bis zur nächsten Eingabe nur im Speicher.
+   */
+  private retryPersist(): void {
+    if (this.destroyed || !this.pending.length) return;
+    clearTimeout(this.persistTimer);
+    this.persistTimer = setTimeout(() => void this.persist().catch(() => undefined), this.persistRetry);
   }
 
   /** Schreibt den Text als Schnappschuss in die Zeile des Protokolls (Liste, Suche, Nur-lesen-Ansicht). Nur nach einer Änderung. */
