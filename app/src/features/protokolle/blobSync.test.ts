@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HubDb } from '@/core/db/db';
 import { markFailed, markRejected, markSynced, pendingBlobs, putLocalBlob, readBlob, rejectedBlobCount, retryBlobsNow, retryDelay } from '@/core/db/blobs';
 import { BlobUnavailable, ensureBlob, uploadPendingBlobs, type BlobTransport } from './blobSync';
@@ -12,6 +12,7 @@ beforeEach(() => {
   store = new HubDb(`blobsync-test-${n}`);
 });
 afterEach(async () => {
+  vi.useRealTimers();
   await store.delete();
 });
 
@@ -110,6 +111,26 @@ describe('Anhänge hochladen', () => {
       expect(await store.blobs.where('state').equals('local').count()).toBe(2);
       expect(await store.blobs.get('anh-000001')).not.toHaveProperty('retryAt'); // ohne Pause: Sobald es wieder geht, geht es weiter
     }
+  });
+
+  it('die Pause nach einem Fehlschlag rechnet ab dem Fehlschlag, nicht ab dem Aufruf: Ein Upload, der lange hängt, bevor er scheitert, bekommt trotzdem seine Pause', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(1_000_000);
+    await local('anh-000002');
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const { t } = transport({
+      upload: async () => {
+        await gate; // hängt (schlechtes Netz) und scheitert dann
+        throw new ProtoError('Zeitüberschreitung', 0, true);
+      },
+    });
+    const run = uploadPendingBlobs(t, store);
+    await new Promise((r) => setTimeout(r, 10));
+    vi.setSystemTime(1_000_000 + 5 * 60_000); // der Upload hat fünf Minuten gebraucht
+    release();
+    expect(await run).toEqual({ uploaded: 0, rejected: 0, failed: 1 });
+    expect((await store.blobs.get('anh-000002'))!.retryAt).toBe(1_000_000 + 5 * 60_000 + 60_000); // die Pause beginnt jetzt, nicht vor fünf Minuten
   });
 
   it('ein Zeitlimit oder Serverfehler lässt den Anhang mit wachsender Pause pausieren; die übrigen kommen dran', async () => {

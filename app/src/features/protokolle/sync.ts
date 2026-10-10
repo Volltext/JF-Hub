@@ -190,7 +190,7 @@ function valueOf(p: Pick<Protokoll, MetaField>, f: MetaField): string | number {
  * des Editors). Liefert 1, wenn der Text ungesendete Änderungen hat und eine Kopie verdient, sonst 0.
  */
 async function withPendingOfEditor(id: string, text: YDocRow, store: HubDb): Promise<0 | 1> {
-  const extra = getOpenSession(id)?.takePending();
+  const extra = getOpenSession(id)?.takePending(text);
   if (extra) await store.ydocs.put({ ...text, update: Y.mergeUpdates([text.update, extra]), dirty: 1, seq: text.seq + 1 });
   return extra || text.dirty === 1 ? 1 : 0;
 }
@@ -397,18 +397,23 @@ export async function performSync(
     }
 
     if (reset) {
-      // Dem Server fehlt, was er in der Vollauslieferung nicht kannte: erneut hochladen.
+      // Dem Server fehlt, was er in der Vollauslieferung nicht kannte: erneut hochladen. Was er in dieser Antwort gerade abgelehnt hat, nicht.
       const knownDocs = new Set(res.changes.map((d) => d.id));
+      const rejectedNow = new Set((res.rejected ?? []).filter((r) => r.kind === 'protocol').map((r) => r.id));
       for (const p of await store.protokolle.toArray()) {
         if (knownDocs.has(p.id)) continue;
         if (p.deleted === 1) {
           await store.protokolle.delete(p.id);
           await store.ydocs.delete(p.id);
         } else {
-          // Der Server kennt das Protokoll nicht: Kopfdaten und der ganze Text gehen als neu hoch.
-          await store.protokolle.update(p.id, { rev: 0, dirty: 1, textRev: undefined });
+          // Der Server kennt das Protokoll nicht: Kopfdaten und der ganze Text gehen als neu hoch, und zwar als Basis (`created`). Hat ein
+          // anderes Gerät dem Server inzwischen eine Basis mit anderer Geschichte geschickt, antwortet er `exists`, und dieses Gerät sichert
+          // seine Fassung als Kopie; ohne die Marke führte er beide zusammen, und der Text stünde doppelt da. Eine frühere Ablehnung galt dem
+          // alten Server: Der neue bekommt einen eigenen Versuch (sonst bliebe das Protokoll für immer vorgemerkt, denn gesendet wird es erst,
+          // wenn die Kopfdaten auf dem Server sind, und das ist erst der nächste Lauf, nicht der „Alles neu abgleichen“, der es aufräumt).
+          await store.protokolle.update(p.id, { rev: 0, dirty: 1, textRev: undefined, ...(rejectedNow.has(p.id) ? {} : { rejected: undefined }) });
           const text = await store.ydocs.get(p.id);
-          if (text) await store.ydocs.put({ ...text, serverSv: undefined, dirty: 1, seq: text.seq + 1 });
+          if (text) await store.ydocs.put({ ...text, serverSv: undefined, dirty: 1, created: true, rejected: undefined, seq: text.seq + 1 });
           reuploaded++;
         }
       }

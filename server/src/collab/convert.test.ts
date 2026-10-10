@@ -118,14 +118,24 @@ describe('jsonToYDoc / yDocToJson', () => {
     expect(delta[0]!.attributes.link).toEqual({ href: 'https://x.de', ...MARK_DEFAULTS.link });
   });
 
-  it('ein angehängter Hash beim Format wird abgeschnitten', () => {
-    const ydoc = new Y.Doc();
-    const text = new Y.XmlText();
-    const paragraph = new Y.XmlElement('paragraph');
-    ydoc.getXmlFragment(FIELD).insert(0, [paragraph]);
-    paragraph.insert(0, [text]);
-    text.insert(0, 'Wort', { 'bold--abc123': {} });
-    expect(yDocToJson(ydoc)).toEqual(doc(p(t('Wort', [{ type: 'bold' }]))));
+  it('ein angehängter Hash beim Format wird abgeschnitten, aber nur genau so, wie es y-tiptap tut: „--“ und acht Zeichen aus [a-zA-Z0-9+/=]', () => {
+    const marksOfKey = (key: string) => {
+      const ydoc = new Y.Doc();
+      const text = new Y.XmlText();
+      const paragraph = new Y.XmlElement('paragraph');
+      ydoc.getXmlFragment(FIELD).insert(0, [paragraph]);
+      paragraph.insert(0, [text]);
+      text.insert(0, 'Wort', { [key]: {} });
+      return (yDocToJson(ydoc) as { content: { content: { marks: { type: string }[] }[] }[] }).content[0]!.content[0]!.marks.map((m) => m.type);
+    };
+    expect(marksOfKey('bold--abcd1234')).toEqual(['bold']);
+    expect(marksOfKey('link--a+/=1234')).toEqual(['link']);
+    expect(marksOfKey('a--b--AbCd1234')).toEqual(['a--b']);
+    // Alles andere ist für y-tiptap ein eigener Name (hier unbekannt), den die App nicht öffnet: Der Server liest ihn nicht als „bold“.
+    expect(marksOfKey('bold--abc123')).toEqual(['bold--abc123']);
+    expect(marksOfKey('bold--x')).toEqual(['bold--x']);
+    expect(marksOfKey('bold--')).toEqual(['bold--']);
+    expect(marksOfKey('bold--abcd12345')).toEqual(['bold--abcd12345']);
   });
 
   it('zwei Clients, die zusammenführen, ergeben dasselbe JSON', () => {

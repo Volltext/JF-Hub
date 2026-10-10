@@ -66,6 +66,12 @@ export interface YDocRow {
   created?: boolean;
   /** Grund, wenn der Server den Text abgelehnt hat (zu groß, ungültig). Er wird erst nach einer weiteren Änderung erneut gesendet. */
   rejected?: string;
+  /**
+   * Erzeugung der Zeile: Sie wird vergeben, wenn die Zeile entsteht, und bleibt beim Schreiben, Antworten und Verdichten gleich. Wird der
+   * Zustand verworfen und neu angelegt (Datenbank des Servers ersetzt), ist es eine andere. Daran erkennt ein offener Editor, dass sein
+   * Dokument zu einer anderen Geschichte gehört und nichts mehr in die Zeile schreiben darf. Zeilen aus früherer Zeit haben keine (`''`).
+   */
+  gen?: string;
 }
 
 export class HubDb extends Dexie {

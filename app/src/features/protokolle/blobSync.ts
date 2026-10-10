@@ -45,7 +45,7 @@ const REFUSED = new Set([400, 403, 409, 413, 415, 422]);
  * - Zeitlimit oder Serverfehler: Der Anhang pausiert mit wachsender Pause (bis zu einer Stunde) und blockiert so weder den Abgleich
  *   noch bei jedem Lauf zwei Minuten Wartezeit (`failed`).
  */
-export function uploadPendingBlobs(transport: BlobTransport = httpTransport, store: HubDb = db, now = Date.now()): Promise<UploadResult> {
+export function uploadPendingBlobs(transport: BlobTransport = httpTransport, store: HubDb = db, now?: number): Promise<UploadResult> {
   // Läufe kommen von zwei Seiten (der offene Editor vor jedem Senden, der Abgleich) und können sich überschneiden, vor allem bei einem
   // langsamen Upload. Sie laufen hintereinander: Ein zweiter Lauf lädt nicht noch einmal hoch, was der erste gerade sendet, und kehrt erst
   // zurück, wenn auch alles Wartende von vorhin oben ist.
@@ -60,11 +60,13 @@ export function uploadPendingBlobs(transport: BlobTransport = httpTransport, sto
 type UploadResult = { uploaded: number; rejected: number; failed: number };
 const running = new WeakMap<HubDb, Promise<unknown>>();
 
-async function uploadAll(transport: BlobTransport, store: HubDb, now: number): Promise<UploadResult> {
+/** `fixedNow`: eine feste Uhrzeit (Tests); sonst zählt die Zeit, zu der gelesen wird oder etwas scheitert, nicht die des Aufrufs (ein früherer Lauf kann lange gedauert haben). */
+async function uploadAll(transport: BlobTransport, store: HubDb, fixedNow?: number): Promise<UploadResult> {
+  const clock = (): number => fixedNow ?? Date.now();
   let uploaded = 0;
   let rejected = 0;
   let failed = 0;
-  const queue = (await pendingBlobs(store, now)).sort((a, b) => a.size - b.size);
+  const queue = (await pendingBlobs(store, clock())).sort((a, b) => a.size - b.size);
   for (const meta of queue) {
     const row = await store.blobData.get(meta.id);
     if (!row) {
@@ -85,7 +87,7 @@ async function uploadAll(transport: BlobTransport, store: HubDb, now: number): P
       }
       failed++;
       if (e.status === 401 || e.status === 429 || (e.status === 0 && !e.timedOut)) break;
-      await markFailed(meta.id, store, now);
+      await markFailed(meta.id, store, clock());
     }
   }
   return { uploaded, rejected, failed };

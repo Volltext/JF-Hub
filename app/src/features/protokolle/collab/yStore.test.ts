@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { HubDb } from '@/core/db/db';
 import { newProtokoll } from '../model';
 import { FIELD } from './yJson';
-import { applyAnswer, compact, discard, dirtyYCount, forgetServerState, getYRow, isEmptyUpdate, loadDoc, markRejected, putBase, putLocal } from './yStore';
+import { applyAnswer, compact, discard, dirtyYCount, forgetServerState, genOf, getYRow, isEmptyUpdate, loadDoc, markRejected, putBase, putGuarded, putLocal } from './yStore';
 
 let store: HubDb;
 let n = 0;
@@ -66,14 +66,6 @@ describe('putLocal', () => {
     expect(text).toContain('von B');
   });
 
-  it('mit „nur wenn es die Zeile gibt“ entsteht keine Teilzeile aus der letzten Änderung (Zustand wurde verworfen)', async () => {
-    const a = device();
-    expect(await putLocal('p-000001', a.type('eins'), store, true)).toBeUndefined();
-    expect(await getYRow('p-000001', store)).toBeUndefined();
-    await putLocal('p-000001', a.type('zwei'), store);
-    expect(await putLocal('p-000001', a.type('drei'), store, true)).toBe(2); // gibt es die Zeile, schreibt es wie sonst
-  });
-
   it('eine neue Änderung hebt eine frühere Ablehnung auf', async () => {
     const a = device();
     await putLocal('p-000001', a.type('x'), store);
@@ -81,6 +73,70 @@ describe('putLocal', () => {
     expect((await getYRow('p-000001', store))!.rejected).toBe('Protokoll zu groß');
     await putLocal('p-000001', a.type('y'), store);
     expect((await getYRow('p-000001', store))!.rejected).toBeUndefined();
+  });
+});
+
+describe('putGuarded: Schreiben nur in die Zeile, die diese Bearbeitung kennt', () => {
+  it('eine Zeile bekommt bei ihrer Entstehung eine Erzeugung; Schreiben ändert sie nicht', async () => {
+    const a = device();
+    const first = await putGuarded('p-000001', a.type('eins'), undefined, store);
+    expect(first).toMatchObject({ seq: 1 });
+    expect(first!.gen).toBeTruthy();
+    expect(genOf(await getYRow('p-000001', store))).toBe(first!.gen);
+    const second = await putGuarded('p-000001', a.type('zwei'), first!.gen, store);
+    expect(second).toEqual({ seq: 2, gen: first!.gen });
+  });
+
+  it('kennt die Bearbeitung noch keine Zeile, entsteht eine; gibt es inzwischen eine (anderer Tab), wird gemischt und deren Erzeugung gemeldet', async () => {
+    const a = device();
+    const b = device();
+    const theirs = await putGuarded('p-000001', b.type('vom anderen Tab'), undefined, store);
+    const mine = await putGuarded('p-000001', a.type('von mir'), undefined, store);
+    expect(mine!.gen).toBe(theirs!.gen);
+    const text = stateOf((await getYRow('p-000001', store))!.update).getXmlFragment(FIELD).toString();
+    expect(text).toContain('vom anderen Tab');
+    expect(text).toContain('von mir');
+  });
+
+  it('war die Zeile verworfen (fehlt) oder wurde sie neu angelegt (andere Erzeugung), entsteht nichts und es wird nichts hineingemischt', async () => {
+    await addRow('p-000001');
+    const a = device();
+    const mine = await putGuarded('p-000001', a.type('eins'), undefined, store);
+    // verworfen: keine Teilzeile aus der letzten Änderung
+    await store.ydocs.delete('p-000001');
+    expect(await putGuarded('p-000001', a.type('zwei'), mine!.gen, store)).toBeUndefined();
+    expect(await getYRow('p-000001', store)).toBeUndefined();
+    // verworfen und mit dem Stand des Servers neu angelegt: Die Änderung gehört zu einer anderen Geschichte
+    const server = device();
+    const fresh = await applyAnswer('p-000001', { update: server.type('vom Server'), sv: Y.encodeStateVector(server.doc) }, undefined, store);
+    expect(fresh.gen).not.toBe(mine!.gen);
+    expect(await putGuarded('p-000001', a.type('drei'), mine!.gen, store)).toBeUndefined();
+    const text = stateOf((await getYRow('p-000001', store))!.update).getXmlFragment(FIELD).toString();
+    expect(text).toContain('vom Server');
+    expect(text).not.toContain('drei');
+  });
+
+  it('Zeilen ohne Erzeugung (aus früherer Zeit) gelten als eine eigene Erzeugung', async () => {
+    const a = device();
+    a.type('alt');
+    await store.ydocs.put({ id: 'p-000001', update: Y.encodeStateAsUpdate(a.doc), dirty: 0, seq: 3 });
+    expect(genOf(await getYRow('p-000001', store))).toBe('');
+    expect(await putGuarded('p-000001', a.type('x'), '', store)).toEqual({ seq: 4, gen: '' });
+    expect(genOf(undefined)).toBeUndefined();
+  });
+
+  it('putBase und eine Antwort, die eine Zeile anlegt, vergeben ebenfalls eine Erzeugung; jede neue Zeile eine andere', async () => {
+    await addRow('p-000001');
+    await addRow('p-000002');
+    const a = device();
+    const base = await putBase('p-000001', a.type('Basis'), store);
+    const answered = await applyAnswer('p-000002', { sv: Y.encodeStateVector(a.doc) }, undefined, store);
+    expect(base.gen).toBeTruthy();
+    expect(answered.gen).toBeTruthy();
+    expect(answered.gen).not.toBe(base.gen);
+    // Antworten und Verdichten verändern die Erzeugung einer bestehenden Zeile nicht
+    const again = await applyAnswer('p-000002', { update: a.type('mehr'), sv: Y.encodeStateVector(a.doc) }, undefined, store);
+    expect(again.gen).toBe(answered.gen);
   });
 });
 

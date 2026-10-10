@@ -6,7 +6,7 @@ import { repairDoc } from './repair';
 import { CollabSession, type SessionOptions, type SessionStart } from './session';
 import { answerOf, type ExchangeTransport } from './wire';
 import { docProblem } from './yJson';
-import { applyAnswer, compact, putBase, putLocal } from './yStore';
+import { applyAnswer, compact, genOf, putBase, putLocal } from './yStore';
 
 /**
  * Was passiert, wenn ein Protokoll im Editor geöffnet wird? Der Editor bindet sich immer an ein Yjs-Dokument; die Frage ist, woher es
@@ -99,7 +99,7 @@ async function openPlanned(id: string, deps: OpenDeps): Promise<Opened> {
     case 'legacy':
       return readonly('legacy', 'Der Server hat den Text dieses Protokolls noch nicht für das gemeinsame Bearbeiten umgestellt. Es wird nur gelesen.');
     case 'empty':
-      return session(new Y.Doc(), { rev: undefined, seq: 0, hadState: false });
+      return session(new Y.Doc(), { rev: undefined, seq: 0, gen: undefined });
     case 'base': {
       const problem = baseProblem(row!.content);
       if (problem) return readonly('unreadable', UNREADABLE(problem));
@@ -141,14 +141,14 @@ async function fromState(
   const doc = new Y.Doc();
   Y.applyUpdate(doc, stored.update);
   const problem = docProblem(doc);
-  if (!problem) return session(doc, { rev, seq: stored.seq, hadState: true });
+  if (!problem) return session(doc, { rev, seq: stored.seq, gen: genOf(stored) });
   // Gleichzeitige Strukturänderungen können gegen die Inhaltsregeln verstoßen (eine Liste, aus der zwei Personen je einen Punkt gestrichen
   // haben, ist leer). Das Ergänzen leerer Teile (`repairDoc`) löscht nichts; erst wenn das Ergebnis besteht, wird es gesichert (und geht als
   // Änderung dieses Geräts zum Server) und gebunden. Sonst bleibt das Protokoll unberührt gesperrt.
   const before = Y.encodeStateVector(doc);
   if (repairDoc(doc) && !docProblem(doc)) {
     const seq = await putLocal(id, Y.encodeStateAsUpdate(doc, before), store);
-    return session(doc, { rev, seq: seq ?? stored.seq, hadState: true });
+    return session(doc, { rev, seq, gen: genOf(stored) });
   }
   doc.destroy();
   return readonly('unreadable', UNREADABLE(problem));

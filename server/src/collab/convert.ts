@@ -190,8 +190,12 @@ export function jsonToYDoc(json: unknown, limits: Limits = {}): Y.Doc {
 
 // ---------- Y → JSON ----------
 
-/** `bold--hash` → `bold` (y-tiptap hängt bei Markierungen, die sich überlappen dürfen, einen Hash an). */
-const markName = (key: string): string => key.split('--')[0]!;
+/**
+ * `bold--hash` → `bold`: y-tiptap hängt bei Markierungen, die sich überlappen dürfen, einen Hash von acht Zeichen an und erkennt genau diese
+ * Form wieder (`yattr2markname`); alles andere gilt dort als eigener, unbekannter Name. Der Zwilling in der App (`markName` in
+ * `collab/yJson.ts`) liest dasselbe; ein Test hält beide gleich.
+ */
+const markName = (key: string): string => /^(.*)--[a-zA-Z0-9+/=]{8}$/.exec(key)?.[1] ?? key;
 
 function marksOf(attributes: unknown): DocMark[] | undefined {
   if (attributes === undefined || attributes === null) return undefined;

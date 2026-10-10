@@ -198,6 +198,21 @@ describe('App-Zwilling von yDocToJson', () => {
   });
 });
 
+describe('Zwillinge: Namen von Formaten mit angehängtem Hash', () => {
+  it.each(['bold', 'bold--abcd1234', 'link--a+/=1234', 'a--b--AbCd1234', 'bold--abc123', 'bold--x', 'bold--', 'bold--abcd12345', '--abcd1234'])(
+    'Server und App lesen den Schlüssel „%s“ gleich',
+    (key) => {
+      const ydoc = new Y.Doc();
+      const text = new Y.XmlText();
+      const paragraph = new Y.XmlElement('paragraph');
+      ydoc.getXmlFragment(FIELD).insert(0, [paragraph]);
+      paragraph.insert(0, [text]);
+      text.insert(0, 'Wort', { [key]: {} });
+      expect(appYDocToJson(ydoc)).toEqual(yDocToJson(ydoc));
+    },
+  );
+});
+
 describe('Vokabularprüfung: was der Editor nicht bauen kann, wird nie gebunden', () => {
   const doc = (...content: JSONContent[]): JSONContent => ({ type: 'doc', content });
 

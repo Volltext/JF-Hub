@@ -1,5 +1,5 @@
 import * as Y from 'yjs';
-import { db, type HubDb } from '@/core/db/db';
+import { db, type HubDb, type YDocRow } from '@/core/db/db';
 import { bytesToBase64 } from '@/core/domain/base64';
 import { jsonEqual } from '@/core/domain/equal';
 import { ProtoError } from '../http';
@@ -8,7 +8,7 @@ import { saveLocalCopy } from './localCopy';
 import { NoServer, answerOf, type ExchangeDocRequest, type ExchangeTransport } from './wire';
 import { repairDoc } from './repair';
 import { docProblem, yDocToJson } from './yJson';
-import { applyAnswer, compact, discard, forgetServerState, getYRow, isEmptyUpdate, markRejected, putLocal } from './yStore';
+import { applyAnswer, compact, discard, forgetServerState, genOf, getYRow, isEmptyUpdate, markRejected, putGuarded } from './yStore';
 
 /**
  * Eine offene Bearbeitung: hält das Yjs-Dokument des Protokolls, sichert Änderungen auf dem Gerät, tauscht sie alle paar Sekunden mit
@@ -94,8 +94,11 @@ export interface SessionStart {
   rev: number | undefined;
   /** Zählung der gespeicherten Zeile, deren Inhalt das Dokument hat (0: es gibt keine Zeile). */
   seq: number;
-  /** Dieses Gerät hat einen gespeicherten Zustand zu diesem Protokoll (gehabt). Verschwindet er unter uns, wurde er verworfen. */
-  hadState: boolean;
+  /**
+   * Erzeugung der gespeicherten Zeile, deren Inhalt das Dokument hat (`genOf`); `undefined`, wenn dieses Gerät noch keinen gespeicherten
+   * Zustand zu diesem Protokoll hat. Verschwindet die Zeile unter uns oder wird sie neu angelegt, wurde der Zustand verworfen.
+   */
+  gen: string | undefined;
 }
 
 const sessions = new Map<string, CollabSession>();
@@ -145,7 +148,12 @@ export class CollabSession {
     if (this.isVisible()) this.nudge(0);
   };
 
-  private hadState: boolean;
+  /**
+   * Erzeugung der Zeile, deren Inhalt dieses Dokument hat (`undefined`: noch keine). Wurde der Zustand unter uns verworfen (Datenbank des
+   * Servers ersetzt) und vielleicht von einem anderen Tab neu angelegt, gehört dieses Dokument zu einer anderen Geschichte: Es darf nichts
+   * mehr in die Zeile schreiben und nichts aus ihr übernehmen.
+   */
+  private gen: string | undefined;
 
   constructor(
     readonly id: string,
@@ -156,7 +164,7 @@ export class CollabSession {
     this.doc = doc;
     this.knownRev = start.rev;
     this.seenSeq = start.seq;
-    this.hadState = start.hadState;
+    this.gen = start.gen;
     this.store = opts.store ?? db;
     this.interval = opts.intervalMs ?? 2500;
     this.nudgeDelay = opts.nudgeMs ?? 800;
@@ -201,10 +209,12 @@ export class CollabSession {
 
   /**
    * Die noch nicht gesicherten Änderungen (zusammengefasst), und sie gelten als abgegeben: Der Aufrufer sichert sie selbst. Gebraucht, wenn
-   * der Abgleich der Protokolle den Zustand verwirft, während jemand tippt, und vorher eine Kopie anlegt.
+   * der Abgleich der Protokolle den Zustand verwirft, während jemand tippt, und vorher eine Kopie anlegt. `row` ist die Zeile, in die der
+   * Aufrufer sie schreiben will: Gehört dieses Dokument nicht (mehr) zu ihr, weil ein anderer Tab sie neu angelegt hat, bleiben die
+   * Änderungen hier (sie wären in der anderen Geschichte unbrauchbar) und werden beim Beenden als Kopie gesichert.
    */
-  takePending(): Uint8Array | undefined {
-    if (!this.pending.length) return undefined;
+  takePending(row?: YDocRow): Uint8Array | undefined {
+    if (!this.pending.length || (row && this.isReplaced(row))) return undefined;
     const merged = Y.mergeUpdates(this.pending);
     this.pending = [];
     clearTimeout(this.persistTimer);
@@ -269,15 +279,16 @@ export class CollabSession {
       // Ein inzwischen gelöschtes Protokoll bekommt keinen Zustand mehr (sonst bliebe er als Waise liegen und zählte als ungesendet).
       if (!(await this.store.protokolle.get(this.id))) return;
       try {
-        // Wurde der Zustand unter uns verworfen (Datenbank des Servers ersetzt), entsteht keine Zeile aus nur der letzten Änderung:
-        // Sie verwiese auf eine Geschichte, die der Server nicht kennt. Der Text bleibt vorgemerkt; die nächste Runde sichert ihn als Kopie.
-        const seq = await putLocal(this.id, Y.mergeUpdates(batch), this.store, this.hadState);
-        if (seq === undefined) {
+        // Wurde der Zustand unter uns verworfen (Datenbank des Servers ersetzt), entsteht keine Zeile aus nur der letzten Änderung, und in
+        // eine neu angelegte Zeile kommt nichts aus dieser Geschichte: Sie verwiese auf Strukturen, die der Server nicht kennt. Der Text
+        // bleibt vorgemerkt; die nächste Runde (oder das Beenden) sichert ihn als Kopie.
+        const written = await putGuarded(this.id, Y.mergeUpdates(batch), this.gen, this.store);
+        if (!written) {
           this.pending = [...batch, ...this.pending];
           return;
         }
         this.ownWrites++;
-        this.hadState = true;
+        this.gen = written.gen;
       } catch (e) {
         this.pending = [...batch, ...this.pending]; // nicht verlieren: Der nächste Versuch schreibt es mit
         this.setInfo({ saved: false, message: 'Speichern auf diesem Gerät fehlgeschlagen. Das Protokoll bleibt geöffnet, der Abgleich mit dem Server läuft weiter.' });
@@ -303,12 +314,20 @@ export class CollabSession {
     }
   }
 
+  /** Wurde der Zustand dieses Geräts verworfen (Zeile fehlt) oder neu angelegt (andere Erzeugung), seit dieses Dokument ihn kennt? */
+  private isReplaced(row: YDocRow | undefined): boolean {
+    return this.gen !== undefined && genOf(row) !== this.gen;
+  }
+
   /**
-   * Gibt es keinen gespeicherten Zustand mehr (verworfen, während der Editor offen war), der Editor aber noch Änderungen im Speicher
-   * hat, werden sie samt dem ganzen Text als Kopie „(lokale Fassung)“ gesichert: Eine Zeile aus nur der letzten Änderung wäre wertlos.
+   * Gibt es keinen gespeicherten Zustand mehr (verworfen, während der Editor offen war, oder von einem anderen Tab neu angelegt), der
+   * Editor aber noch Änderungen im Speicher hat, werden sie samt dem ganzen Text als Kopie „(lokale Fassung)“ gesichert: Eine Zeile aus
+   * nur der letzten Änderung wäre wertlos, und in die neue Zeile gehören sie nicht.
    */
   private async rescuePending(): Promise<void> {
-    if (!this.pending.length || (await getYRow(this.id, this.store))) return;
+    if (!this.pending.length) return;
+    const row = await getYRow(this.id, this.store);
+    if (row && !this.isReplaced(row)) return;
     const batch = this.pending;
     await saveLocalCopy(this.id, { doc: this.doc }, this.store);
     this.pending = this.pending.filter((u) => !batch.includes(u));
@@ -337,6 +356,7 @@ export class CollabSession {
     }
     const row = await this.store.protokolle.get(this.id);
     if (!row) return;
+    if (this.isReplaced(await getYRow(this.id, this.store))) return; // der Text dieses Dokuments ist veraltet: nicht über den Stand des Geräts schreiben
     if (sameSnapshot(row.content, json)) return;
     await this.store.protokolle.update(this.id, { content: json, ...(this.touched ? { updatedAt: Date.now() } : {}) });
     this.touched = false;
@@ -398,15 +418,17 @@ export class CollabSession {
       return;
     }
     const row = await getYRow(this.id, this.store);
-    if (!row && this.hadState) {
+    if (this.isReplaced(row)) {
       // Der Zustand wurde unter uns verworfen: Die Datenbank des Servers ist eine andere (ersetzt oder wiederhergestellt), und der Abgleich
-      // der Protokolle hat die Fassung dieses Geräts, soweit ungesendet, als Kopie gesichert. Dieses Dokument im Speicher ist veraltet;
-      // was seitdem hier geschrieben wurde, kommt ebenfalls in eine Kopie.
+      // der Protokolle hat die Fassung dieses Geräts, soweit ungesendet, als Kopie gesichert. Dieses Dokument im Speicher ist veraltet,
+      // auch wenn ein anderer Tab die Zeile inzwischen mit dem Stand des Servers neu angelegt hat; was seitdem hier geschrieben wurde,
+      // kommt ebenfalls in eine Kopie.
       await this.rescuePending();
       this.stop('replaced', 'Die Datenbank des Servers wurde ersetzt. Dieses Protokoll wird neu geladen; ungesendete Änderungen liegen als Kopie „(lokale Fassung)“ vor.');
       this.opts.onReplaced?.();
       return;
     }
+    if (row && this.gen === undefined) this.gen = genOf(row); // ein anderer Tab oder der Hintergrund-Abgleich hat die Zeile angelegt
     // Hat ein anderer Tab oder der Hintergrund-Abgleich auf diesem Gerät etwas gesichert, das dieses Dokument nicht kennt, kommt es zuerst
     // hinein: Sonst fehlte es in dem, was gesendet wird, und die Bestätigung nähme es als gesendet.
     if (row && row.seq !== this.seenSeq + this.ownWrites) {
@@ -460,7 +482,14 @@ export class CollabSession {
         if (incoming) blocked = this.applyRemote(incoming);
         // Im Ruhezustand (nichts gesendet, nichts empfangen, gleiche Revision) bleibt der Speicher unberührt.
         // Nur was die Anfrage enthielt (`sending`), gilt als gesendet; ein abgelehnter oder nicht gesendeter Text bleibt vorgemerkt.
-        if (sending || incoming || !row || (r.rev !== undefined && r.rev !== this.knownRev)) await applyAnswer(this.id, answer, sending ? sentSeq : undefined, this.store);
+        if (sending || incoming || !row || (r.rev !== undefined && r.rev !== this.knownRev)) {
+          const written = await applyAnswer(this.id, answer, sending ? sentSeq : undefined, this.store);
+          // Die Antwort hat die Zeile angelegt (das Protokoll war hier noch nicht vorgeladen): Ab jetzt gehört ihr Zustand zu diesem Dokument.
+          if (!row && this.gen === undefined) {
+            const now = await getYRow(this.id, this.store);
+            if (now && now.gen === written.gen) this.gen = genOf(now);
+          }
+        }
         this.knownRev = r.rev ?? this.knownRev;
         if (r.peers) this.setInfo({ peers: r.peers });
         if (r.missingBlobs?.length) this.opts.onMissingBlobs?.(r.missingBlobs);

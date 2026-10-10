@@ -1,5 +1,6 @@
 import * as Y from 'yjs';
 import { db, type HubDb, type YDocRow } from '@/core/db/db';
+import { newId } from '@/core/domain/id';
 
 /**
  * Lokaler Speicher für den Text der Protokolle (Tabelle `ydocs`). Jeder Zugriff liest, mischt und schreibt in einer Transaktion:
@@ -25,23 +26,38 @@ export async function loadDoc(id: string, store: HubDb = db): Promise<{ doc: Y.D
   return { doc, row };
 }
 
+/** Die Erzeugung einer Zeile (`''` bei Zeilen aus früherer Zeit); `undefined`, wenn es sie nicht gibt. */
+export const genOf = (row: YDocRow | undefined): string | undefined => (row ? (row.gen ?? '') : undefined);
+
 /**
  * Eine lokale Änderung (oder mehrere, zusammengefasst) vormerken. Liefert die neue Zählung. Eine frühere Ablehnung des Servers gilt
  * nur für die alte Fassung und entfällt.
- *
- * `onlyIfRow`: Nur schreiben, wenn es die Zeile noch gibt (sonst `undefined`). Ein Editor, dessen Zustand unter ihm verworfen wurde,
- * würde sonst eine Zeile anlegen, die nur aus seiner letzten Änderung besteht und auf eine Geschichte verweist, die der Server nicht kennt.
  */
-export async function putLocal(id: string, update: Uint8Array, store: HubDb = db, onlyIfRow = false): Promise<number | undefined> {
+export async function putLocal(id: string, update: Uint8Array, store: HubDb = db): Promise<number> {
+  return (await write(id, update, store))!.seq;
+}
+
+/**
+ * Wie `putLocal`, aber nur in die Zeile, die die Bearbeitung kennt (`known`: ihre Erzeugung, `undefined`, wenn sie noch keine hatte).
+ * Hat sie eine, muss es genau diese Zeile noch geben: Wurde der Zustand unter ihr verworfen (Datenbank des Servers ersetzt) und vielleicht
+ * von einem anderen Tab neu angelegt, entstünde sonst eine Zeile aus nur der letzten Änderung oder eine Mischung zweier Geschichten, die
+ * der Server nicht kennt. Dann schreibt es nichts und liefert `undefined`. Sonst die neue Zählung und die Erzeugung der Zeile (bei einer
+ * neuen die frische; gibt es sie inzwischen, weil ein anderer Tab sie angelegt hat, wird gemischt und deren Erzeugung gemeldet).
+ */
+export async function putGuarded(id: string, update: Uint8Array, known: string | undefined, store: HubDb = db): Promise<{ seq: number; gen: string } | undefined> {
+  return write(id, update, store, known === undefined ? undefined : { gen: known });
+}
+
+async function write(id: string, update: Uint8Array, store: HubDb, guard?: { gen: string }): Promise<{ seq: number; gen: string } | undefined> {
   return store.transaction('rw', store.ydocs, async () => {
     const row = await store.ydocs.get(id);
-    if (!row && onlyIfRow) return undefined;
+    if (guard && genOf(row) !== guard.gen) return undefined;
     const seq = (row?.seq ?? 0) + 1;
     const next: YDocRow = row
       ? { ...row, update: Y.mergeUpdates([row.update, update]), dirty: 1, seq, rejected: undefined }
-      : { id, update, dirty: 1, seq };
+      : { id, update, dirty: 1, seq, gen: newId() };
     await store.ydocs.put(next);
-    return seq;
+    return { seq, gen: next.gen ?? '' };
   });
 }
 
@@ -54,7 +70,7 @@ export async function putBase(id: string, update: Uint8Array, store: HubDb = db)
   return store.transaction('rw', store.ydocs, async () => {
     const existing = await store.ydocs.get(id);
     if (existing) return existing;
-    const row: YDocRow = { id, update, dirty: 1, seq: 1, created: true };
+    const row: YDocRow = { id, update, dirty: 1, seq: 1, created: true, gen: newId() };
     await store.ydocs.put(row);
     return row;
   });
@@ -93,7 +109,7 @@ export async function applyAnswer(id: string, answer: Answer, sentSeq: number | 
           created: acked ? undefined : row.created,
           rejected: acked ? undefined : row.rejected,
         }
-      : { id, update: update ?? EMPTY_UPDATE, serverSv: answer.sv, dirty: 0, seq: 0 };
+      : { id, update: update ?? EMPTY_UPDATE, serverSv: answer.sv, dirty: 0, seq: 0, gen: newId() };
     if (!row && !(await store.protokolle.get(id))) return next;
     await store.ydocs.put(next);
     // Bis zu welcher Revision dieses Gerät den Text kennt (der Hintergrund-Abgleich sieht daran, was sich seitdem geändert hat).

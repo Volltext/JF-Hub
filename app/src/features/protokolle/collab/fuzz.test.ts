@@ -37,7 +37,8 @@ import { loadDoc } from './yStore';
  * Zufallsläufe: drei Geräte (zwei Konten) schreiben, öffnen und schließen Sitzungen, gleichen ab, verlieren die Verbindung oder Antworten,
  * während der Server eine Sicherung zurückbekommt, ersetzt wird oder das Protokoll gelöscht, zurückgezogen und wieder freigegeben wird.
  * Ein Lauf („tabs“) öffnet das Protokoll auf einem Gerät in zwei Tabs und lässt den Server Texte zeitweise ablehnen (danach „Alles neu
- * abgleichen“). Danach kehrt Ruhe ein. Dann muss gelten:
+ * abgleichen“); zwei weitere („tabsRestore“, „tabsWipe“) lassen dazu die Datenbank des Servers wechseln, sodass der Tab ohne Editor aufräumt
+ * und der mit Editor es merken muss. Danach kehrt Ruhe ein. Dann muss gelten:
  *
  * - Jedes getippte Zeichen steht irgendwo auf dem Server (im Protokoll oder in einer Kopie „(lokale Fassung)“), außer es gehörte zu einem
  *   Stand, den eine Wiederherstellung bewusst entfernt hat.
@@ -56,7 +57,7 @@ const TRACE = process.env.FUZZ_TRACE;
 const LOG = process.env.FUZZ_LOG ?? join(tmpdir(), 'jfh-fuzz.log');
 const log = (line: string): void => appendFileSync(LOG, `${line}\n`);
 
-type Mode = 'restore' | 'wipe' | 'delete' | 'tabs';
+type Mode = 'restore' | 'wipe' | 'delete' | 'tabs' | 'tabsRestore' | 'tabsWipe';
 
 const para = (text: string) => ({ type: 'paragraph', content: [{ type: 'text', text }] });
 const doc = (...content: object[]) => ({ type: 'doc', content }) as never;
@@ -93,11 +94,16 @@ type Json = { content?: { content?: { text?: string }[] }[] };
 const textOfJson = (j: Json): string => (j.content ?? []).map((b) => (b.content ?? []).map((t) => t.text ?? '').join('')).join('\n');
 const tokensIn = (text: string): string[] => text.match(/<[a-z]\d+>/g) ?? [];
 
+const TABS: [string, number][] = [['type', 18], ['type2', 10], ['open', 5], ['open2', 6], ['flush', 6], ['flush2', 4], ['round', 6], ['round2', 5], ['close', 5], ['close2', 5], ['sync', 9], ['sync2', 5], ['offline', 3], ['lossy', 3], ['reject', 9], ['typeInFlight', 4], ['persistInFlight', 3], ['header', 4]];
+
 const ACTIONS: Record<Mode, [string, number][]> = {
   restore: [['type', 22], ['open', 6], ['flush', 7], ['round', 8], ['close', 6], ['sync', 11], ['offline', 3], ['lossy', 3], ['typeInFlight', 5], ['persistInFlight', 4], ['backup', 5], ['restore', 7], ['header', 5]],
   wipe: [['type', 22], ['open', 6], ['flush', 7], ['round', 8], ['close', 6], ['sync', 12], ['offline', 3], ['lossy', 3], ['typeInFlight', 5], ['persistInFlight', 4], ['header', 4], ['wipeServer', 5]],
   delete: [['type', 22], ['open', 7], ['flush', 7], ['round', 8], ['close', 6], ['sync', 14], ['offline', 3], ['lossy', 3], ['typeInFlight', 5], ['persistInFlight', 4], ['header', 4], ['ownerDeletes', 4], ['ownerRestores', 4], ['unshare', 3], ['reshare', 3]],
-  tabs: [['type', 18], ['type2', 10], ['open', 5], ['open2', 6], ['flush', 6], ['flush2', 4], ['round', 6], ['round2', 5], ['close', 5], ['close2', 5], ['sync', 9], ['sync2', 5], ['offline', 3], ['lossy', 3], ['reject', 9], ['typeInFlight', 4], ['persistInFlight', 3], ['header', 4]],
+  tabs: TABS,
+  // Dazu wechselt die Datenbank des Servers: Der Tab ohne Editor räumt auf, der mit Editor muss es merken (Erzeugung der Zeile).
+  tabsRestore: [...TABS, ['backup', 5], ['restore', 6]],
+  tabsWipe: [...TABS, ['wipeServer', 5]],
 };
 
 async function scenario(seed: number, mode: Mode): Promise<{ problems: string[]; trace: string[] }> {
@@ -184,6 +190,18 @@ async function scenario(seed: number, mode: Mode): Promise<{ problems: string[];
     const token = `<${d.name}${d.typed++}>`;
     typeInto(s.doc, token, rand() < 0.3 ? 0 : undefined);
     typed.push(token);
+  };
+
+  /** Der Zustand des Servers und aller Geräte in die Datei `FUZZ_LOG` (nur mit `FUZZ_TRACE`). */
+  const dump = async (): Promise<void> => {
+    log(`  Server: ${JSON.stringify(serverText())}`);
+    for (const x of devices) {
+      const rows = await x.store.ydocs.toArray();
+      const parts = await Promise.all(rows.map(async (r) => `${r.id}[dirty=${r.dirty},seq=${r.seq},created=${r.created ? 1 : 0},rej=${r.rejected ? 1 : 0}]=${JSON.stringify(textOf((await loadDoc(r.id, x.store))!.doc))}`));
+      const titles = (await x.store.protokolle.toArray()).map((p) => `${p.id}(${p.title},rev=${p.rev},textRev=${p.textRev},d=${p.dirty})`);
+      const tab = (s?: CollabSession) => (s ? `${JSON.stringify(textOf(s.doc))}:${s.getInfo().status}` : '-');
+      log(`  ${x.name}: offline=${x.offline} rejecting=${x.rejecting} Tab1=${tab(x.session)} Tab2=${tab(x.tab2)} Zustand: ${parts.join(' | ') || '-'} Zeilen: ${titles.join(' ')}`);
+    }
   };
 
   try {
@@ -304,16 +322,7 @@ async function scenario(seed: number, mode: Mode): Promise<{ problems: string[];
           applySync(server.db, { since: 0, protocols: [headerChange(ID, { shared: act === 'reshare', title: 'Sitzung' })], folders: [], records: [] } as never, ANNA);
           break;
       }
-      if (tracing) {
-        log(`  Server: ${JSON.stringify(serverText())}`);
-        for (const x of devices) {
-          const rows = await x.store.ydocs.toArray();
-          const parts = await Promise.all(rows.map(async (r) => `${r.id}[dirty=${r.dirty},seq=${r.seq},rej=${r.rejected ? 1 : 0}]=${JSON.stringify(textOf((await loadDoc(r.id, x.store))!.doc))}`));
-          const titles = (await x.store.protokolle.toArray()).map((p) => `${p.id}(${p.title},rev=${p.rev},textRev=${p.textRev})`);
-          const tab = (s?: CollabSession) => (s ? `${JSON.stringify(textOf(s.doc))}:${s.getInfo().status}` : '-');
-          log(`  ${x.name}: offline=${x.offline} rejecting=${x.rejecting} Tab1=${tab(x.session)} Tab2=${tab(x.tab2)} Zustand: ${parts.join(' | ') || '-'} Zeilen: ${titles.join(' ')}`);
-        }
-      }
+      if (tracing) await dump();
     }
 
     // Ruhe: alle online, der Server lehnt nichts mehr ab, alle Sitzungen beenden (wie im Editor: erst die Sitzung, dann der Abgleich), mehrere
@@ -331,8 +340,24 @@ async function scenario(seed: number, mode: Mode): Promise<{ problems: string[];
         await close(d, tab);
       }
     }
-    if (mode === 'tabs') for (const d of devices) await sync(d, 1, { full: true });
+    if (TRACE === String(seed)) {
+      log('--- Ruhe: Beginn');
+      await dump();
+    }
+    if (mode.startsWith('tabs')) {
+      for (const d of devices) {
+        await sync(d, 1, { full: true });
+        if (TRACE === String(seed)) {
+          log(`--- Ruhe: vollständiger Abgleich ${d.name}`);
+          await dump();
+        }
+      }
+    }
     for (let round = 0; round < 5; round++) for (const d of devices) await sync(d);
+    if (TRACE === String(seed)) {
+      log('--- Ruhe: Ende');
+      await dump();
+    }
 
     const everything = serverText();
     for (const t of typed) if (!everything.includes(t) && !excused.has(t)) problems.push(`verloren: ${t}`);
@@ -370,6 +395,8 @@ describe('Zufallsläufe: mehrere Geräte, Verbindungsabbrüche, Wiederherstellun
     ['wipe', 'der Server wird durch eine leere Datenbank ersetzt'],
     ['delete', 'das Protokoll wird gelöscht, zurückgeholt, zurückgezogen und wieder freigegeben'],
     ['tabs', 'ein Gerät hat das Protokoll in zwei Tabs offen, der Server lehnt zeitweise Texte ab'],
+    ['tabsRestore', 'zwei Tabs, dazu werden Sicherungen zurückgespielt (der Tab ohne Editor räumt auf, der mit Editor muss es merken)'],
+    ['tabsWipe', 'zwei Tabs, dazu wird der Server durch eine leere Datenbank ersetzt'],
   ];
   for (const [mode, what] of modes) {
     it(`nichts geht verloren, alle Geräte konvergieren: ${what}`, async () => {

@@ -5,8 +5,8 @@ import type { SyncUser } from '../../../../../server/src/sync';
 import { ANNA, BEN, TestServer, closeDevices, newDevice, textOf, typeInto } from './harness';
 import { openProtocol } from './openPlan';
 import { REMOTE, isSessionOpen, type CollabSession, type SessionOptions } from './session';
-import { NoServer, type ExchangeTransport } from './wire';
-import { isEmptyUpdate, loadDoc } from './yStore';
+import { NoServer, answerOf, type ExchangeTransport } from './wire';
+import { applyAnswer, isEmptyUpdate, loadDoc } from './yStore';
 
 const ID = 'doc-00001';
 const para = (text: string) => ({ type: 'paragraph', content: [{ type: 'text', text }] });
@@ -509,6 +509,78 @@ describe('mehrere Sitzungen auf demselben Gerät', () => {
     expect(copy).toBeDefined();
     expect(textOf((await loadDoc(copy!.id, annaDb))!.doc)).toContain('danach getippt');
     await s.destroy();
+  });
+
+  /** Ein anderer Tab (oder der Hintergrund-Abgleich) verwirft die Zeile und legt sie mit dem Stand des Servers neu an. */
+  async function replacedByOtherTab(store: HubDb, user: SyncUser) {
+    await store.ydocs.delete(ID);
+    const res = await server.transport(user)({ docs: [{ id: ID }] });
+    await applyAnswer(ID, answerOf(res.docs.find((d) => d.id === ID)!), undefined, store);
+  }
+  const copyTextsOf = async (store: HubDb) => {
+    const copies = (await store.protokolle.toArray()).filter((p) => p.title.endsWith('(lokale Fassung)'));
+    return Promise.all(copies.map(async (c) => textOf((await loadDoc(c.id, store))!.doc)));
+  };
+
+  it('verwirft ein anderer Tab den Zustand und legt ihn neu an (Datenbank des Servers ersetzt), erkennt die Sitzung das: Nichts wird hineingemischt, das noch nicht Gesicherte bleibt als Kopie', async () => {
+    const s = await open(annaDb, ANNA);
+    await s.exchangeNow();
+    typeInto(s.doc, ' danach getippt'); // noch nicht gesichert
+    await replacedByOtherTab(annaDb, ANNA);
+    await s.exchangeNow();
+    expect(s.getInfo().status).toBe('replaced');
+    expect(textOf((await loadDoc(ID, annaDb))!.doc)).toBe('Basis'); // der Zustand des anderen Tabs, ohne etwas aus der alten Geschichte
+    expect(serverText()).toBe('Basis');
+    expect(await copyTextsOf(annaDb)).toEqual(['Basis danach getippt']);
+    await s.destroy();
+    expect(await copyTextsOf(annaDb)).toEqual(['Basis danach getippt']); // beim Beenden keine zweite
+  });
+
+  it('der Editor eines noch nicht vorgeladenen Protokolls (leerer Schnappschuss): Die erste Antwort legt die Zeile an; wird sie später verworfen, erkennt die Sitzung das', async () => {
+    await annaDb.ydocs.delete(ID);
+    await annaDb.protokolle.update(ID, { content: doc({ type: 'paragraph' }), textRev: undefined }); // hier nur der leere Schnappschuss
+    const s = await open(annaDb, ANNA);
+    await s.exchangeNow(); // die Antwort legt die Zeile an
+    expect(textOf(s.doc)).toBe('Basis');
+    expect(await stored(annaDb)).toBeDefined();
+    await annaDb.ydocs.delete(ID); // die Datenbank des Servers wurde ersetzt
+    typeInto(s.doc, ' danach');
+    await s.flush().catch(() => undefined);
+    expect(await stored(annaDb)).toBeUndefined(); // keine Teilzeile
+    await s.exchangeNow();
+    expect(s.getInfo().status).toBe('replaced');
+    expect(await copyTextsOf(annaDb)).toEqual(['Basis danach']);
+    await s.destroy();
+  });
+
+  it('ein Editor, dessen Zustand ersetzt wurde, schreibt seinen veralteten Text nicht mehr als Schnappschuss in die Liste; beim Beenden bleibt er als Kopie', async () => {
+    const s = await open(annaDb, ANNA);
+    await s.exchangeNow();
+    await replacedByOtherTab(annaDb, ANNA);
+    await annaDb.protokolle.update(ID, { content: doc(para('Stand des Servers')) });
+    typeInto(s.doc, ' veraltet');
+    await s.flush(); // Sichern wird verweigert, der Schnappschuss unterbleibt
+    const snapshot = JSON.stringify((await annaDb.protokolle.get(ID))!.content);
+    expect(snapshot).toContain('Stand des Servers');
+    expect(snapshot).not.toContain('veraltet');
+    expect(textOf((await loadDoc(ID, annaDb))!.doc)).toBe('Basis');
+    await s.destroy();
+    expect(await copyTextsOf(annaDb)).toEqual(['Basis veraltet']);
+  });
+
+  it('der Abgleich der Protokolle nimmt dem Editor das Ungesicherte nur ab, wenn es zur Zeile passt: Nach einem Ersetzen durch einen anderen Tab bleibt es beim Editor und wird dort als Kopie gesichert', async () => {
+    const s = await open(annaDb, ANNA);
+    await s.exchangeNow();
+    typeInto(s.doc, ' ungesichert');
+    const current = (await stored(annaDb))!;
+    expect(s.takePending(current)).toBeDefined(); // gleiche Zeile: Der Abgleich übernimmt es (und merkt es sich in der Zeile vor)
+    typeInto(s.doc, ' noch mehr');
+    await replacedByOtherTab(annaDb, ANNA);
+    const fresh = (await stored(annaDb))!;
+    expect(s.takePending(fresh)).toBeUndefined(); // andere Zeile: Es gehört zu einer anderen Geschichte und gehört nicht hinein
+    await s.destroy();
+    expect(await copyTextsOf(annaDb)).toEqual(['Basis ungesichert noch mehr']);
+    expect(textOf((await loadDoc(ID, annaDb))!.doc)).toBe('Basis');
   });
 
   it('zu Beginn der Sitzung wird ein veralteter Schnappschuss (Liste, Suche) aufgefrischt, ohne dass das Protokoll als geändert gilt', async () => {
