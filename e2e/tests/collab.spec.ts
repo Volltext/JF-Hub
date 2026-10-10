@@ -111,31 +111,65 @@ test.describe.serial('Gemeinsam schreiben', () => {
     await ben.context.close();
   });
 
-  test('Öffnen und Zurück verändert auch ein Protokoll mit Foto am Ende und Adresse im Text nicht (nichts wird beim Laden ins Dokument geschrieben)', async ({ browser, request }) => {
-    const title = 'Foto am Ende';
-    const token = await adminToken(request);
-    await putForeignText(request, token, 'foto-ende-0001', title, (frag) => {
-      const photo = new Y.XmlElement('photo');
-      for (const [k, v] of Object.entries({ src: '', w: 8, h: 6, caption: '', blobId: 'gibt-es-nicht-1', mime: 'image/jpeg' })) photo.setAttribute(k, v as never);
-      frag.insert(0, [foreignParagraph('Siehe https://beispiel.de/seite'), photo]);
+  const OPEN_SHAPES: { title: string; id: string; text: string; fill: (frag: Y.XmlFragment) => void }[] = [
+    {
+      title: 'Foto am Ende',
+      id: 'foto-ende-0001',
+      text: 'Siehe https://beispiel.de/seite',
+      fill: (frag) => {
+        const photo = new Y.XmlElement('photo');
+        for (const [k, v] of Object.entries({ src: '', w: 8, h: 6, caption: '', blobId: 'gibt-es-nicht-1', mime: 'image/jpeg' })) photo.setAttribute(k, v as never);
+        frag.insert(0, [foreignParagraph('Siehe https://beispiel.de/seite'), photo]);
+      },
+    },
+    {
+      // Eine Zeile mit zu wenigen Zellen: Die Reparatur von ProseMirror (`fixTables`) würde sie beim Öffnen ergänzen und dadurch schreiben.
+      title: 'Unregelmäßige Tabelle am Ende',
+      id: 'tabelle-ende-0001',
+      text: 'Zelle A',
+      fill: (frag) => {
+        const cell = (text: string) => {
+          const c = new Y.XmlElement('tableCell');
+          c.setAttribute('colspan', 1 as never);
+          c.setAttribute('rowspan', 1 as never);
+          c.insert(0, [foreignParagraph(text)]);
+          return c;
+        };
+        const row = (...cells: Y.XmlElement[]) => {
+          const r = new Y.XmlElement('tableRow');
+          r.insert(0, cells);
+          return r;
+        };
+        const table = new Y.XmlElement('table');
+        table.insert(0, [row(cell('Zelle A'), cell('Zelle B')), row(cell('Zelle C'))]);
+        frag.insert(0, [foreignParagraph('vor der Tabelle'), table]);
+      },
+    },
+  ];
+
+  for (const shape of OPEN_SHAPES) {
+    test(`Öffnen und Zurück verändert „${shape.title}“ nicht (nichts wird beim Laden ins Dokument geschrieben)`, async ({ browser, request }) => {
+      const token = await adminToken(request);
+      await putForeignText(request, token, shape.id, shape.title, shape.fill);
+      const before = await serverDoc(request, token, shape.title);
+      expect(before).toBeTruthy();
+
+      const { context, page } = await open(browser, ADMIN);
+      await openProtocol(page, shape.title);
+      await expect(editorOf(page)).toContainText(shape.text);
+      await expect(editorOf(page).locator('a')).toHaveCount(0); // die Adresse im ersten Protokoll wird beim Öffnen nicht still zum Link
+      await editorOf(page).click({ position: { x: 5, y: 5 } }); // Cursor setzen, ohne zu tippen
+      await page.waitForTimeout(7_000); // mehrere Runden des Austauschs bei geöffnetem Editor
+      await page.getByRole('link', { name: /Protokolle/ }).first().click();
+      await syncNow(page);
+
+      const after = await serverDoc(request, token, shape.title);
+      expect(after!.rev).toBe(before!.rev);
+      expect(after!.updatedAt).toBe(before!.updatedAt);
+      expect(JSON.stringify(after!.content)).toBe(JSON.stringify(before!.content));
+      await context.close();
     });
-    const before = await serverDoc(request, token, title);
-    expect(before).toBeTruthy();
-
-    const { context, page } = await open(browser, ADMIN);
-    await openProtocol(page, title);
-    await expect(editorOf(page)).toContainText('Siehe https://beispiel.de/seite');
-    await expect(editorOf(page).locator('a')).toHaveCount(0); // die Adresse wird beim Öffnen nicht still zum Link
-    await page.waitForTimeout(7_000); // mehrere Runden des Austauschs bei geöffnetem Editor
-    await page.getByRole('link', { name: /Protokolle/ }).first().click();
-    await syncNow(page);
-
-    const after = await serverDoc(request, token, title);
-    expect(after!.rev).toBe(before!.rev);
-    expect(after!.updatedAt).toBe(before!.updatedAt);
-    expect(JSON.stringify(after!.content)).toBe(JSON.stringify(before!.content));
-    await context.close();
-  });
+  }
 
   test('wird die Datenbank des Servers ersetzt, während jemand schreibt, bleibt dessen ungesendeter Text als Kopie erhalten', async ({ browser, request }) => {
     const title = 'Wiederherstellung live';
