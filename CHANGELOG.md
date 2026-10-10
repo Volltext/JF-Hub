@@ -39,7 +39,7 @@ Mehrere Betreuer können **gleichzeitig am selben Protokoll schreiben**, auch we
 - **Anhänge halten den Text nicht auf:** Ein langsamer Upload (großes Foto, schlechtes Netz) lässt den Text höchstens 3 Sekunden warten; danach geht er trotzdem zum Server, der Upload läuft weiter.
 - **Gesperrte Protokolle:** Ist ein Protokoll gelöscht oder zurückgezogen, verschwindet die Werkzeugleiste, statt Änderungen anzunehmen, die niemand mehr speichert. „Offline“ nimmt die Anzeige der Mitschreibenden mit weg. Im hellen Design sind die Hinweisfarben (grün, gelb) dunkler, damit sie als Text mindestens 4,5 : 1 Kontrast haben, und die Zeile mit den Mitschreibenden bleibt für Screenreader erhalten.
 - **Kopien aus dem Update sind privat:** Die Kopie „… (lokale Fassung)“, die das Update von 2.3.x für ungesendete Änderungen anlegt, ist privat, auch wenn das Original veröffentlicht ist; sonst hätte jedes Gerät beim Update ein Duplikat für alle Betreuer angelegt.
-- Neue Abhängigkeiten: `yjs` (Server und App), `y-protocols`, `@tiptap/y-tiptap` und `@tiptap/extension-collaboration` (App), alle MIT. Die Web-App wird dadurch um rund 45 kB (komprimiert) größer.
+- Neue Abhängigkeiten: `yjs` (Server und App), `y-protocols`, `@tiptap/y-tiptap` und `@tiptap/extension-collaboration` (App), alle MIT. Die Web-App wird dadurch um rund 48 kB (komprimiert) größer.
 - **Docker:** Die Startfrist des Healthchecks beträgt 120 Sekunden, weil die Umstellung beim ersten Start länger dauern kann.
 - **Demo:** Mehrere Besucher können gemeinsam am selben Protokoll schreiben. Die Beispielprotokolle werden beim Zurücksetzen mit umgestellt. Die Demo im Browser (ohne Server) bleibt rein lokal und zeigt keinen Offline-Hinweis.
 

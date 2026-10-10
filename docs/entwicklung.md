@@ -212,7 +212,7 @@ Die Fallstricke dieser Bauweise, und was sie auffängt:
 | 10000 | 2290 KB | 1931 KB | 125 | 66 | 243 | 53 | 559 |
 
   „Ein Schreibvorgang“ ist, was der Server bei einem Austausch mit Änderung tut: Zustand laden, anwenden, neu kodieren, JSON ableiten und schreiben. Ein Protokoll mit tausend Absätzen bleibt bei einem Austausch mit Änderung unter 50 ms. Größer als ein Text wird ein Protokoll vor allem durch Handschrift (große Objektattribute); dafür gelten die Grenzen oben. Auf der App-Seite baut jede fremde Änderung das ganze ProseMirror-Dokument aus dem Y-Baum neu (`_typeChanged`), der Aufwand wächst mit der Dokumentgröße.
-- **Bundle (S8):** Die Web-App wächst durch `yjs`, `y-protocols`, `@tiptap/y-tiptap` und `@tiptap/extension-collaboration` um rund 140 kB, komprimiert rund 45 kB (Hauptdatei vorher 323 kB, nachher 369 kB gzip).
+- **Bundle (S8):** Die Web-App wächst durch `yjs`, `y-protocols`, `@tiptap/y-tiptap` und `@tiptap/extension-collaboration` um rund 150 kB, komprimiert rund 48 kB (Hauptdatei vorher 323 kB, nachher 371 kB gzip; gemessen mit `npm run build:web`).
 - **Laden schreibt nichts (S17):** durch den Golden-Test (`updateYFragment` auf dem geladenen Baum schreibt nichts) und im Browser durch den e2e-Test belegt.
 - **Text in gelöschtem Absatz:** Schreibt ein Gerät ohne Netz in einen Absatz, den ein anderes inzwischen gelöscht hat, steckt der Zusatz im gelöschten Element und erscheint nicht wieder (Yjs-Semantik für verschachtelte Strukturen). Es entsteht keine Kopie.
 - **Ungeprüft:** Android (CapacitorHttp mit Austausch-Anfragen und -Antworten von mehreren MB, Abgleich im Hintergrund auf einem Gerät) und Safari/iOS (Kontingent von IndexedDB).
