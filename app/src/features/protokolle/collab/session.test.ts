@@ -341,6 +341,69 @@ describe('Schutz vor Inhalten, die der Editor nicht kennt', () => {
   });
 });
 
+describe('gleichzeitige Strukturänderungen', () => {
+  const LIST = 'liste-0001';
+  const li = (text: string) => ({ type: 'listItem', content: [para(text)] });
+
+  async function openList(store: HubDb, user: SyncUser): Promise<CollabSession> {
+    const r = await openProtocol(LIST, { store, transport: server.transport(user), hasServer: async () => true });
+    if (r.kind !== 'edit') throw new Error(`nicht zu öffnen: ${r.reason}`);
+    return r.session;
+  }
+  /** Streicht den Listenpunkt an dieser Stelle der Liste (zweiter Block des Dokuments). */
+  const strike = (s: CollabSession, index: number) => (s.doc.getXmlFragment('body').get(1) as Y.XmlElement).delete(index, 1);
+
+  it('streicht jeder einen von zwei Listenpunkten, ist die Liste leer: Sie wird mit einem leeren Punkt ergänzt statt das Protokoll zu sperren', async () => {
+    server.put({ id: LIST, title: 'Ablauf', ownerId: ANNA.id, shared: true, content: doc(para('Ablauf'), { type: 'bulletList', content: [li('Aufbau'), li('Abbau')] }) });
+    await server.syncOf(annaDb, ANNA);
+    await server.syncOf(benDb, BEN);
+    const anna = await openList(annaDb, ANNA);
+    const ben = await openList(benDb, BEN);
+    strike(anna, 0); // Anna streicht „Aufbau“ …
+    strike(ben, 1); //  … Ben „Abbau“
+    await sync(anna, ben, anna, ben);
+    for (const s of [anna, ben]) {
+      expect(s.getInfo().status).toBe('ok'); // nicht gesperrt
+      expect(s.getInfo().message).toBe('');
+      const list = s.doc.getXmlFragment('body').get(1) as Y.XmlElement;
+      expect(list.nodeName).toBe('bulletList');
+      expect(list.length).toBeGreaterThan(0); // mindestens ein (leerer) Punkt
+    }
+    expect(textOf(anna.doc)).toBe(textOf(ben.doc));
+    const json = JSON.parse(server.row(LIST)!.content) as { content: { type: string; content?: unknown[] }[] };
+    expect(json.content[1]!.content!.length).toBeGreaterThan(0); // auch beim Server ist die Liste nicht leer
+    await anna.destroy();
+    await ben.destroy();
+  });
+
+  it('die Ergänzung ist eine eigene Änderung: Sie wird gesichert und gesendet, und die anderen müssen nicht noch einmal reparieren', async () => {
+    server.put({ id: LIST, title: 'Ablauf', ownerId: ANNA.id, shared: true, content: doc(para('Ablauf'), { type: 'bulletList', content: [li('Aufbau'), li('Abbau')] }) });
+    await server.syncOf(annaDb, ANNA);
+    await server.syncOf(benDb, BEN);
+    const anna = await openList(annaDb, ANNA);
+    const ben = await openList(benDb, BEN);
+    strike(anna, 0);
+    strike(ben, 1);
+    await sync(anna); // Anna schickt ihre Streichung
+    await sync(ben); // Ben schickt seine und bekommt Annas: Die Liste wäre leer, er ergänzt sie
+    expect(ben.getInfo().status).toBe('ok');
+    expect(ben.getInfo().saved).toBe(false); // die Ergänzung ist eine ungesicherte Änderung dieses Geräts …
+    await ben.flush();
+    expect(await benDb.ydocs.get(LIST)).toMatchObject({ dirty: 1 });
+    await sync(ben); // … und geht an den Server
+    expect(await benDb.ydocs.get(LIST)).toMatchObject({ dirty: 0 });
+    expect(JSON.parse(server.row(LIST)!.content).content[1].content).toHaveLength(1);
+    // Anna bekommt Bens Streichung samt Ergänzung und braucht keine eigene
+    await sync(anna);
+    expect(anna.getInfo().status).toBe('ok');
+    expect((anna.doc.getXmlFragment('body').get(1) as Y.XmlElement).length).toBe(1);
+    expect(await annaDb.ydocs.get(LIST)).toMatchObject({ dirty: 0 });
+    expect(textOf(anna.doc)).toBe(textOf(ben.doc));
+    await anna.destroy();
+    await ben.destroy();
+  });
+});
+
 describe('Lebenslauf und Zeitsteuerung', () => {
   it('start meldet den Text als geöffnet (der Hintergrund lässt ihn aus), destroy gibt ihn frei', async () => {
     const s = await open(annaDb, ANNA);

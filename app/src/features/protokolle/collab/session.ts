@@ -6,6 +6,7 @@ import { ProtoError } from '../http';
 import { isEmptySnapshot } from './base';
 import { saveLocalCopy } from './localCopy';
 import { NoServer, answerOf, type ExchangeDocRequest, type ExchangeTransport } from './wire';
+import { repairDoc } from './repair';
 import { docProblem, yDocToJson } from './yJson';
 import { applyAnswer, compact, discard, forgetServerState, getYRow, isEmptyUpdate, markRejected, putLocal } from './yStore';
 
@@ -21,6 +22,8 @@ import { applyAnswer, compact, discard, forgetServerState, getYRow, isEmptyUpdat
 
 /** Herkunft von Änderungen, die vom Server kommen (nicht in Rückgängig, nicht erneut als eigene Änderung gesichert). */
 export const REMOTE = 'jfh-remote';
+/** Herkunft einer Ergänzung beim Empfangen (`applyRemote`): eine Änderung dieses Geräts, die gesichert und gesendet wird. */
+const REPAIR = 'jfh-repair';
 
 export type SessionStatus =
   /** Läuft (auch offline). */
@@ -430,18 +433,34 @@ export class CollabSession {
     }
   }
 
-  /** Prüft das Ergebnis auf einer Kopie, bevor das geöffnete Dokument sich ändert. Liefert den Grund, wenn der Editor es nicht bauen könnte. */
+  /**
+   * Prüft das Ergebnis auf einer Kopie, bevor das geöffnete Dokument sich ändert. Liefert den Grund, wenn der Editor es nicht bauen könnte.
+   * Verstößt das Ergebnis nur gegen die Inhaltsregeln (zwei Personen haben gleichzeitig die letzten Punkte einer Liste gestrichen), werden
+   * Update und Ergänzung (`repairDoc`) in *einer* Transaktion angewendet: Der Editor sieht nie den unzulässigen Zwischenstand, den er sonst
+   * aus dem geteilten Dokument löschen würde. Die Ergänzung zählt als eigene Änderung dieses Geräts und geht zum Server.
+   */
   private applyRemote(update: Uint8Array): string | null {
     const probe = new Y.Doc();
+    let repair = false;
     try {
       Y.applyUpdate(probe, Y.encodeStateAsUpdate(this.doc));
       Y.applyUpdate(probe, update);
       const problem = docProblem(probe);
-      if (problem) return problem;
+      if (problem) {
+        if (!repairDoc(probe) || docProblem(probe)) return problem;
+        repair = true;
+      }
     } finally {
       probe.destroy();
     }
-    Y.applyUpdate(this.doc, update, REMOTE);
+    if (repair) {
+      this.doc.transact(() => {
+        Y.applyUpdate(this.doc, update, REMOTE);
+        repairDoc(this.doc);
+      }, REPAIR);
+    } else {
+      Y.applyUpdate(this.doc, update, REMOTE);
+    }
     return null;
   }
 

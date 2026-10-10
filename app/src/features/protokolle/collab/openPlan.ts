@@ -2,10 +2,11 @@ import * as Y from 'yjs';
 import { db, type HubDb } from '@/core/db/db';
 import { baseProblem, buildBase, isEmptySnapshot } from './base';
 import type { Protokoll } from '../model';
+import { repairDoc } from './repair';
 import { CollabSession, type SessionOptions } from './session';
 import { answerOf, type ExchangeTransport } from './wire';
 import { docProblem } from './yJson';
-import { applyAnswer, compact, putBase } from './yStore';
+import { applyAnswer, compact, putBase, putLocal } from './yStore';
 
 /**
  * Was passiert, wenn ein Protokoll im Editor geöffnet wird? Der Editor bindet sich immer an ein Yjs-Dokument; die Frage ist, woher es
@@ -74,7 +75,7 @@ export async function openProtocol(id: string, deps: OpenDeps): Promise<Opened> 
       const problem = baseProblem(row!.content);
       if (problem) return readonly('unreadable', UNREADABLE(problem));
       const stored = await putBase(id, buildBase(row!.content), store);
-      return fromState(stored.update, undefined, session, readonly);
+      return fromState(id, stored.update, undefined, store, session, readonly);
     }
     case 'fetch': {
       let res;
@@ -89,23 +90,36 @@ export async function openProtocol(id: string, deps: OpenDeps): Promise<Opened> 
       if (r.status === 'legacy') return readonly('legacy', 'Der Server hat den Text dieses Protokolls noch nicht für das gemeinsame Bearbeiten umgestellt. Es wird nur gelesen.');
       if (r.status !== 'ok') return readonly('needs-server', 'Der Server konnte den Text gerade nicht liefern. Bitte später noch einmal öffnen.');
       const stored = await applyAnswer(id, answerOf(r), 0, store);
-      return fromState(stored.update, r.rev, session, readonly);
+      return fromState(id, stored.update, r.rev, store, session, readonly);
     }
     case 'bind': {
       await compact(id, store);
       const stored = (await store.ydocs.get(id))!;
-      return fromState(stored.update, row!.textRev, session, readonly);
+      return fromState(id, stored.update, row!.textRev, store, session, readonly);
     }
   }
 }
 
-function fromState(update: Uint8Array, rev: number | undefined, session: (doc: Y.Doc, rev: number | undefined, hadState?: boolean) => Opened, readonly: (reason: ReadonlyReason, message: string) => Opened): Opened {
+async function fromState(
+  id: string,
+  update: Uint8Array,
+  rev: number | undefined,
+  store: HubDb,
+  session: (doc: Y.Doc, rev: number | undefined, hadState?: boolean) => Opened,
+  readonly: (reason: ReadonlyReason, message: string) => Opened,
+): Promise<Opened> {
   const doc = new Y.Doc();
   Y.applyUpdate(doc, update);
   const problem = docProblem(doc);
-  if (problem) {
-    doc.destroy();
-    return readonly('unreadable', UNREADABLE(problem));
+  if (!problem) return session(doc, rev);
+  // Gleichzeitige Strukturänderungen können gegen die Inhaltsregeln verstoßen (eine Liste, aus der zwei Personen je einen Punkt gestrichen
+  // haben, ist leer). Das Ergänzen leerer Teile (`repairDoc`) löscht nichts; erst wenn das Ergebnis besteht, wird es gesichert (und geht als
+  // Änderung dieses Geräts zum Server) und gebunden. Sonst bleibt das Protokoll unberührt gesperrt.
+  const before = Y.encodeStateVector(doc);
+  if (repairDoc(doc) && !docProblem(doc)) {
+    await putLocal(id, Y.encodeStateAsUpdate(doc, before), store);
+    return session(doc, rev);
   }
-  return session(doc, rev);
+  doc.destroy();
+  return readonly('unreadable', UNREADABLE(problem));
 }

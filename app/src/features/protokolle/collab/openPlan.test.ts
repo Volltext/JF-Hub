@@ -4,7 +4,7 @@ import type { HubDb } from '@/core/db/db';
 import { newProtokoll, type Protokoll } from '../model';
 import { ANNA, TestServer, closeDevices, newDevice, textOf } from './harness';
 import { openProtocol, planOpen, type Opened } from './openPlan';
-import { canonicalJson } from '../../../../../server/src/collab/convert';
+import { canonicalJson, jsonToYDoc } from '../../../../../server/src/collab/convert';
 import { yDocToJson } from './yJson';
 import { ProtoError } from '../http';
 import type { ExchangeTransport } from './wire';
@@ -133,6 +133,34 @@ describe('openProtocol', () => {
     expect(o).toMatchObject({ kind: 'readonly', reason: 'unreadable' });
     expect((o as { message: string }).message).toContain('callout');
     expect(await store.ydocs.get(p.id)).toMatchObject({ seq: 0, dirty: 0 }); // unberührt
+  });
+
+  it('ein Zustand, der gegen die Inhaltsregeln verstößt (gleichzeitig leer gestrichene Liste), wird beim Öffnen repariert und für den Server vorgemerkt', async () => {
+    const p = row();
+    await store.protokolle.add(p);
+    const broken = jsonToYDoc({ type: 'doc', content: [para('davor'), { type: 'bulletList' }, para('danach')] } as never);
+    await store.ydocs.put({ id: p.id, update: Y.encodeStateAsUpdate(broken), dirty: 0, seq: 0 });
+    const s = edit(await openProtocol(p.id, deps()));
+    expect(yDocToJson(s.doc)).toEqual({
+      type: 'doc',
+      content: [para('davor'), { type: 'bulletList', content: [{ type: 'listItem', content: [{ type: 'paragraph' }] }] }, para('danach')],
+    });
+    // die Ergänzung ist eine Änderung dieses Geräts: gesichert und zum Server unterwegs
+    const saved = await store.ydocs.get(p.id);
+    expect(saved).toMatchObject({ dirty: 1 });
+    const again = new Y.Doc();
+    Y.applyUpdate(again, saved!.update);
+    expect(canonicalJson(yDocToJson(again))).toBe(canonicalJson(yDocToJson(s.doc)));
+    await s.destroy();
+  });
+
+  it('was sich durch Ergänzen nicht reparieren lässt, bleibt gesperrt und unberührt', async () => {
+    const p = row();
+    await store.protokolle.add(p);
+    const broken = jsonToYDoc({ type: 'doc', content: [{ type: 'bulletList', content: [{ type: 'listItem', content: [para('a')] }, para('lose')] }] } as never);
+    await store.ydocs.put({ id: p.id, update: Y.encodeStateAsUpdate(broken), dirty: 0, seq: 0 });
+    expect(await openProtocol(p.id, deps())).toMatchObject({ kind: 'readonly', reason: 'unreadable' });
+    expect(await store.ydocs.get(p.id)).toMatchObject({ seq: 0, dirty: 0 });
   });
 
   it('ein Schnappschuss, den der Editor nicht bauen würde, bekommt keine Basis', async () => {
