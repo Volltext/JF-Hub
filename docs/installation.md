@@ -167,6 +167,8 @@ Der Server legt **täglich** ein Backup in `/data/backups` an und behält die le
 
 Vor jeder Wiederherstellung sichert der Server den aktuellen Stand (Art „vor Wiederherstellung“, die letzten 3 bleiben). Danach gleichen sich alle Geräte neu ab und übernehmen den Stand des Backups; was seitdem geschrieben wurde, ist weg, ungesendeter Text einer App bleibt als Protokoll „… (lokale Fassung)“ erhalten. Benutzer und Anmeldungen stammen aus dem Backup, wer dort fehlt, meldet sich neu an. Auch Backups älterer Versionen lassen sich einspielen.
 
+**Neuer, leerer Server:** Startet der Server ohne Datenbank (zum Beispiel, weil das Volume nicht eingebunden war), ist das keine Wiederherstellung: Die Apps behalten ihre Protokolle und laden sie beim nächsten Abgleich wieder hoch; Texte, die mehrere Geräte hatten, laufen dabei zusammen. Das ersetzt kein Backup, denn was kein Gerät mehr hat, ist weg. Benutzer und Anmeldungen gibt es dann nicht mehr und müssen neu angelegt werden.
+
 <details>
 <summary><b>Über das Volume oder von Hand</b></summary>
 <br>
