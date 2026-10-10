@@ -358,15 +358,18 @@ export class CollabSession {
     this.schedule(this.delay());
   }
 
-  /** Eine Runde sofort; Runden laufen nie gleichzeitig. */
-  exchangeNow(): Promise<void> {
-    const next = this.running.then(() => this.round());
+  /**
+   * Eine Runde sofort; Runden laufen nie gleichzeitig. `retryRejected`: Auch ein Text, den der Server abgelehnt hat, geht noch einmal hin
+   * („Alles neu abgleichen“); sonst bleibt er liegen, bis er geändert wird.
+   */
+  exchangeNow(retryRejected = false): Promise<void> {
+    const next = this.running.then(() => this.round(retryRejected));
     this.running = next.catch(() => undefined);
     return next;
   }
 
   /** Eine Runde: eigene Änderungen senden, fremde holen. */
-  private async round(): Promise<void> {
+  private async round(retryRejected = false): Promise<void> {
     if (this.destroyed || this.stopped) return;
     await this.persist().catch(() => undefined);
     // Ein neues Protokoll, dessen Kopfdaten der Server noch nicht hat, kennt er nicht („gone“): erst abgleichen, dann tauschen wir den Text aus.
@@ -397,7 +400,7 @@ export class CollabSession {
       }
     }
     const sentSeq = row?.seq ?? 0;
-    const sending = (row?.dirty === 1 && !row.rejected) || this.pending.length > 0;
+    const sending = (row?.dirty === 1 && (!row.rejected || retryRejected)) || this.pending.length > 0;
     const req: ExchangeDocRequest = { id: this.id, live: true, sv: bytesToBase64(Y.encodeStateVector(this.doc)) };
     if (sending) {
       const diff = Y.encodeStateAsUpdate(this.doc, row?.serverSv);

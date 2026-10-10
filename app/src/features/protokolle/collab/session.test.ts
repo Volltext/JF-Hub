@@ -270,6 +270,27 @@ describe('wenn der Server etwas anderes sagt', () => {
     expect((await stored(benDb))!.rejected).toBeUndefined();
   });
 
+  it('„Alles neu abgleichen“ sendet abgelehnten Text auch in der offenen Sitzung noch einmal; gewöhnliche Runden lassen ihn liegen', async () => {
+    let refuse = true;
+    const flaky: ExchangeTransport = async (req) => {
+      if (refuse && req.docs[0]!.update) return { docs: [{ id: ID, status: 'rejected', reason: 'Serverfehler' }] };
+      return server.transport(BEN)(req);
+    };
+    const ben = await open(benDb, BEN, {}, flaky);
+    typeInto(ben.doc, ' viel');
+    await ben.flush();
+    await ben.exchangeNow();
+    expect(ben.getInfo().status).toBe('rejected');
+    refuse = false; // der Server wäre jetzt bereit
+    await ben.exchangeNow();
+    expect(await stored(benDb)).toMatchObject({ dirty: 1, rejected: 'Serverfehler' }); // gewöhnliche Runden senden nicht erneut
+    await ben.exchangeNow(true);
+    expect(await stored(benDb)).toMatchObject({ dirty: 0 });
+    expect(JSON.stringify(JSON.parse(server.row(ID)!.content))).toContain('viel');
+    expect(ben.getInfo().status).toBe('ok');
+    await ben.destroy();
+  });
+
   it('eine fremde Änderung oder eine ruhige Runde macht abgelehnten Text nicht „sauber“: Er bleibt ungesendet', async () => {
     const rejecting: ExchangeTransport = async (req) => {
       if (req.docs[0]!.update) return { docs: [{ id: ID, status: 'rejected', reason: 'Protokoll zu groß' }] };

@@ -415,7 +415,7 @@ export async function performSync(
   let text: BackgroundResult | null = null;
   try {
     // Ein offener Editor tauscht seinen Text selbst aus; wer „Abgleichen“ wählt, erwartet aber, dass auch er jetzt ankommt.
-    for (const open of openSessions()) await open.exchangeNow().catch(() => undefined);
+    for (const open of openSessions()) await open.exchangeNow(!!opts.full).catch(() => undefined);
     text = await exchangeInBackground({ store, transport: textTransport, retryRejected: !!opts.full });
   } catch (e) {
     // Kein Netz ist hier kein Fehler (die Kopfdaten sind angekommen). Alles andere, ein Speicherfehler auf dem Gerät ebenso wie ein Fehler
