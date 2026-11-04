@@ -4,6 +4,38 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/). Versionen 
 
 ## [Unreleased]
 
+### Neu
+
+- **Live-Stoppuhr:** Alle angemeldeten Betreuer sehen dieselbe Stoppuhr je Modus, mit laufender Zeit, Zwischenzeiten, Fehlern, Wertung und Notizen. Jeder kann starten, stoppen, eintragen und speichern. Die Geräte gleichen ihre Uhren mit dem Server ab, damit die Zeit überall gleich läuft. Gleichzeitige Eingaben werden zusammengeführt (zwei Fehler von zwei Geräten zählen beide, keiner doppelt), zweimal „Lauf speichern“ ergibt einen Lauf. Offline weiter nutzbar; Eingaben werden nachgereicht, auch nach einem Neustart. Läuft die Stoppuhr in einem anderen Modus, zeigt die App das an. Technisch: Long-Polling (`GET /api/live`, `PUT /api/live/:modus`), geht ohne Zusatz-Einstellungen durch Reverse-Proxy und Tunnel; Apps an einem älteren Server arbeiten wie bisher nur auf dem Gerät.
+
+### Geändert
+
+- **Design überarbeitet** (App, Web-Client und Server-Verwaltung): Schrift Inter, selbst ausgeliefert (kein Fremdserver, offline nutzbar); einheitliche Schrift- und Schattenstufen; Kartenüberschriften als Kleinschrift-Etiketten; sanfte Übergänge für Fenster, Seiten und Abhaken (bei „Bewegung reduzieren“ abgeschaltet).
+- **Aufgaben:** Titel nutzen die volle Breite, Hinweise („bald“, „hoch“, Sichtbarkeit) stehen darunter; überfällige Aufgaben sind rot. Auf „Heute“ steht das Datum in eigener Spalte.
+- **Dienste, Mitglieder:** Namensvorschau einzeilig mit „+N“, Anwesenheit farbig (ab 80 % grün, ab 50 % gelb, darunter rot). Leere Listen zeigen eine Schaltfläche für den ersten Eintrag.
+- **Protokolle überarbeitet, nach dem Vorbild von Bear:**
+  - **#Tags im Text:** „#Dienstabend“ wird farbig markiert, steht als Schild unter dem Titel und in der Liste. Über die Tag-Leiste filtert man ordnerübergreifend (Unterthemen: „#Dienst/Knoten“ gehört zu „Dienst“). Die Tags stehen als gewöhnlicher Text im Dokument: keine Änderung am Datenformat, Abgleich, Suche und PDF bleiben unberührt. „#3“ und „# Überschrift“ sind keine Tags.
+  - **Liste mit Vorschau:** Titel, die ersten Zeilen des Textes, Datum als „Heute“/„Gestern“, Tags; Sortierung nach Datum oder letzter Änderung; „/“ springt in die Suche.
+  - **Laptop: Liste und Editor nebeneinander** (ab 1240 px Breite), das geöffnete Protokoll ist in der Liste hervorgehoben.
+  - **Schreiben:** randloser Text mit größerer Schrift und angenehmer Zeilenlänge, Kopfdaten als leise Zeile unter dem Titel (nur bei neuen Protokollen offen), Wortzahl und Lesezeit unter dem Text, Leisten treten beim Schreiben zurück (Maus/Tastatur), schwebende Werkzeugleiste. Leere Liste mit Schaltfläche.
+
+- **PDF-Export (Protokolle, Kleidertabelle):** Schrift Inter statt Roboto, passend zur App (eingebettet, nur die verwendeten Zeichen: die PDFs bleiben klein; fehlt die Schriftdatei, nimmt der Server Roboto). Überschriften deutlich abgesetzt: größere Stufen, mehr Luft davor als danach, Überschrift 3 in Grau; größerer, enger gesetzter Titel. Die Schriftdateien liegen in `server/fonts/` (im Docker-Image `/app/fonts`).
+- **Wettkampf:** Bereiche als Reiter mit Unterstrich, damit die drei Ebenen (Wettbewerb, Bereich, Modus) unterscheidbar sind; die Kopfzeile bleibt beim Scrollen stehen.
+- **Navigation:** Unterseiten von „Mehr“ zeigen auf dem Handy einen Zurück-Link. In der Liste unter „Mehr“ stehen Zähler (offene bzw. überfällige Aufgaben, aktive Mitglieder, zu beschaffende Kleidung); überfällige Aufgaben zeigen zusätzlich einen roten Punkt an „Mehr“ in der unteren Leiste.
+- **Wettkampf:** Der Modus (A-Teil, B-Teil …) sitzt jetzt in der Uhr-Karte statt als eigene Zeile darüber; Regeln und Einstellungen sind als Symbole neben den Reitern erreichbar. Unter der Zeit steht die Bestzeit des Modus (beim A-Teil je Wasserentnahme); wer sie beim Speichern unterbietet, bekommt eine Rückmeldung „Neue Bestzeit“.
+- **Protokoll-Editor:** Die Symbolleiste läuft auf schmalen Handys nicht mehr aus dem Bild.
+- **Startseite am Laptop:** Karten ohne Lücken; Hinweis „Nur lokal“ statt „Nur im Browser“ mit Erklärung beim Antippen.
+- **Server-Verwaltung:** Statuskacheln und Aktionen füllen jede Zeile vollständig.
+
+### Sicherheit
+
+- **Zugriffsprüfung umgehbar über prozentkodierte Pfade:** Die API-Prüfung entschied anhand der rohen URL (`/api/…`), Fastify leitet aber auf dem dekodierten Pfad weiter – so traf z. B. `/%61pi/admin/users` denselben Admin-Handler, umging aber die Prüfung, und Admin-Endpunkte waren ohne Anmeldung erreichbar. Die Prüfung richtet sich jetzt nach dem gematchten Route-Muster (wie der Demo-Schutz).
+- **Serverseitige Anfragefälschung (SSRF) über Push-Adressen** stärker abgesichert: Push-Ziele müssen jetzt ein echter öffentlicher DNS-Name sein (IP-Adressen in jeder Schreibweise – auch „0x7f.1“ – und reservierte Namen werden abgewiesen), und der Versand prüft zusätzlich beim Verbinden die aufgelöste Adresse und bricht bei privaten/lokalen Zielen ab (fängt auch Resolver-Tricks wie `*.nip.io` und DNS-Rebinding).
+- **Rate-Limits** für teure bzw. nach außen wirkende Endpunkte ergänzt (Protokoll- und Kleidung-PDF, Protokoll-Export, Backups und Wiederherstellung, Ferien-Abruf, Test-Push), damit ein einzelner Client den Server nicht überlasten kann. Anmeldung/Einrichtung/Einladung waren bereits begrenzt.
+- **Sicherheits-Header verschärft:** Content-Security-Policy um `base-uri`, `form-action`, `object-src 'none'` und `frame-src 'none'` erweitert; HSTS wird nur noch über https gesendet.
+- Tests in `server/src/app.test.ts`, `server/src/push.test.ts` und `server/src/users.test.ts` sichern die Punkte ab.
+
+## [3.0.0] – 2026-10-09
 ## [3.0.0] – 2026-11-04
 
 Mehrere Betreuer können **gleichzeitig am selben Protokoll schreiben**, auch wenn eine Person dabei kein Netz hat. Die Texte laufen zusammen, statt dass eine Fassung als Kopie „… (Konflikt)“ beiseitegelegt wird.

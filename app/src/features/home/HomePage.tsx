@@ -2,7 +2,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { CalendarCheck, FileText, ListTodo, Shirt, Timer, type LucideIcon } from 'lucide-react';
 import { db } from '@/core/db/db';
-import { formatDate } from '@/core/domain/format';
+import { formatDate, formatDateShort } from '@/core/domain/format';
 import { todayIso } from '@/core/domain/id';
 import { sortOpen } from '@/core/domain/tasks';
 import { Card, Page } from '@/core/ui/components';
@@ -10,6 +10,7 @@ import { runTitle } from '@/features/wettkampf/run';
 import { protokolleRepo } from '@/features/protokolle/repo';
 import { upcomingServices } from '@/core/domain/serviceSchedule';
 import { useServiceConfig } from '@/core/holidays/useServiceConfig';
+import { clothingCounts } from './counts';
 
 const linkStyle = { textDecoration: 'none', color: 'inherit' } as const;
 
@@ -80,12 +81,12 @@ export function HomePage() {
             <p className="muted">Keine offenen Aufgaben.</p>
           ) : (
             <div className="stack">
-              {overdue > 0 && <span className="chip chip--warn">{overdue} überfällig</span>}
+              {overdue > 0 && <span className="chip chip--danger">{overdue} überfällig</span>}
               {openTasks.slice(0, 5).map((t) => (
-                <div key={t.id} className="item__title">
-                  {t.title}
-                  {t.dueDate && <span className="item__sub"> · {formatDate(t.dueDate)}</span>}
-                </div>
+                <Link key={t.id} to="/aufgaben" className="line" style={linkStyle}>
+                  <span className="line__title">{t.title}</span>
+                  {t.dueDate && <span className={`line__meta${t.dueDate < today ? ' line__meta--late' : ''}`}>{formatDateShort(t.dueDate)}</span>}
+                </Link>
               ))}
             </div>
           )}
@@ -154,21 +155,4 @@ export function HomePage() {
       )}
     </Page>
   );
-}
-
-/** Offene Kleidungswünsche aktiver Mitglieder (nur zu vorhandenen Kleidungsstücken); `fresh` = noch nicht weitergegeben. */
-async function clothingCounts(): Promise<{ open: number; fresh: number }> {
-  const active = new Set((await db.members.filter((m) => m.active).toArray()).map((m) => m.id));
-  const itemIds = new Set(await db.clothingItems.toCollection().primaryKeys());
-  let open = 0;
-  let fresh = 0;
-  for (const rec of await db.clothing.toArray()) {
-    if (!active.has(rec.id)) continue;
-    for (const [itemId, slot] of Object.entries(rec.items)) {
-      if (!slot.request || !itemIds.has(itemId)) continue;
-      open++;
-      if (!slot.request.passedOn) fresh++;
-    }
-  }
-  return { open, fresh };
 }

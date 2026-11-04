@@ -7,6 +7,7 @@ export function Page({
   title,
   sub,
   back,
+  fromMore,
   actions,
   children,
 }: {
@@ -14,16 +15,18 @@ export function Page({
   sub?: string;
   /** Übergeordnete Seite: zeigt oben einen Zurück-Link. */
   back?: { to: string; label: string };
+  /** Seite liegt unter „Mehr“: auf schmalen Bildschirmen führt ein Zurück-Link dorthin (die Seitenleiste zeigt den Pfad schon). */
+  fromMore?: boolean;
   /** Schaltflächen rechts neben dem Titel. */
   actions?: ReactNode;
   children?: ReactNode;
 }) {
   return (
     <div className="page">
-      {back && (
-        <Link to={back.to} className="back-link">
+      {(back || fromMore) && (
+        <Link to={(back ?? { to: '/mehr' }).to} className={`back-link${back ? '' : ' back-link--narrow'}`}>
           <ChevronLeft size={18} />
-          {back.label}
+          {back ? back.label : 'Mehr'}
         </Link>
       )}
       <header className="page__head">
@@ -55,6 +58,7 @@ export function MenuRow({
   icon: Icon,
   title,
   sub,
+  badge,
   onClick,
 }: {
   to?: string;
@@ -62,6 +66,8 @@ export function MenuRow({
   icon: LucideIcon;
   title: string;
   sub?: string;
+  /** Zähler rechts (z. B. offene Aufgaben); `tone="alert"` hebt Dringendes hervor. */
+  badge?: { text: string; tone?: 'alert' };
   onClick?: () => void;
 }) {
   const body = (
@@ -70,7 +76,10 @@ export function MenuRow({
         <Icon size={20} />
       </span>
       <span className="menu-row__text">
-        <span className="menu-row__title">{title}</span>
+        <span className="menu-row__head">
+          <span className="menu-row__title">{title}</span>
+          {badge && <span className={`menu-row__badge${badge.tone === 'alert' ? ' menu-row__badge--alert' : ''}`}>{badge.text}</span>}
+        </span>
         {sub && <span className="menu-row__sub">{sub}</span>}
       </span>
       <ChevronRight size={18} className="menu-row__chev" />
@@ -82,12 +91,15 @@ export function MenuRow({
 }
 
 /** Hinweis, wenn eine Liste leer ist – mit klarer nächster Aktion. */
-export function EmptyState({ icon: Icon, title, children }: { icon: LucideIcon; title: string; children?: ReactNode }) {
+export function EmptyState({ icon: Icon, title, children, action }: { icon: LucideIcon; title: string; children?: ReactNode; /** Nächster Schritt als Schaltfläche. */ action?: ReactNode }) {
   return (
     <div className="empty">
-      <Icon size={30} />
+      <span className="empty__icon">
+        <Icon size={28} />
+      </span>
       <strong>{title}</strong>
       {children && <p className="muted">{children}</p>}
+      {action}
     </div>
   );
 }
@@ -124,12 +136,14 @@ export function Segmented<T extends string>(props: {
   disabled?: boolean;
   /** Flache Bauform für Kopfzeilen mit mehreren Schaltern. */
   compact?: boolean;
+  /** Reiter mit Unterstrich statt Schalterleiste: für die Gliederung einer Seite in Bereiche. */
+  tabs?: boolean;
   value: T;
   options: { value: T; label: string }[];
   onChange: (v: T) => void;
 }) {
   return (
-    <div className={`segmented${props.compact ? ' segmented--compact' : ''}`} role="group">
+    <div className={`segmented${props.compact ? ' segmented--compact' : ''}${props.tabs ? ' segmented--tabs' : ''}`} role="group">
       {props.options.map((o) => (
         // type="button": Sonst schickt ein Segmented in einem Formular es beim Antippen ab.
         <button key={o.value} type="button" disabled={props.disabled} aria-pressed={props.value === o.value} onClick={() => props.onChange(o.value)}>

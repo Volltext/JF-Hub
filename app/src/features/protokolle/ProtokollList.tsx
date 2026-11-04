@@ -1,10 +1,11 @@
-import { useDeferredValue, useMemo, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { ChevronRight, Folder, FolderPlus, MoreHorizontal, Plus, Search, Trash2 } from 'lucide-react';
+import { ArrowDownUp, ChevronRight, FileText, Folder, FolderPlus, Hash, MoreHorizontal, Plus, Search, Trash2, X } from 'lucide-react';
 import { db } from '@/core/db/db';
-import { formatDate } from '@/core/domain/format';
-import { Button, Card, Sheet } from '@/core/ui/components';
+import { formatDate, formatDateRelative } from '@/core/domain/format';
+import { todayIso } from '@/core/domain/id';
+import { Button, Card, EmptyState, Sheet } from '@/core/ui/components';
 import { confirmDialog } from '@/core/ui/dialog';
 import { IS_WEB } from '@/core/env';
 import { isMine, useAccount, useDirectory, visibilityLabel } from '@/core/account/account';
@@ -13,18 +14,47 @@ import { NameSheet } from './NameSheet';
 import { SyncBadge } from './SyncBadge';
 import { dismissConflict, useConflicts } from './conflicts';
 import { ROOT, childFolders, folderAndDescendants, folderPath, folderPathLabel, folderRepo, liveFolders, shownFolder } from './folders';
-import type { Ordner } from './model';
+import type { Ordner, Protokoll } from './model';
 import { protokolleRepo } from './repo';
 import { extractText, searchProtocols } from './search';
+import { noteInfo } from './preview';
+import { tagMatches } from './tags';
 import { useSyncStatus } from './syncStatus';
 
 const folderUrl = (id: string) => (id ? `/protokolle/o/${id}` : '/protokolle');
 
+type Sort = 'datum' | 'bearbeitet';
+const SORT_KEY = 'jfhub.proto.sort';
+const loadSort = (): Sort => {
+  try {
+    return localStorage.getItem(SORT_KEY) === 'bearbeitet' ? 'bearbeitet' : 'datum';
+  } catch {
+    return 'datum';
+  }
+};
+
 type Dialog = { kind: 'new' } | { kind: 'rename'; folder: Ordner } | { kind: 'menu'; folder: Ordner } | { kind: 'move'; folder: Ordner } | null;
 
-export function ProtokollList() {
+/**
+ * Liste der Protokolle. Am Laptop steht sie als Spalte neben dem Editor (`split`): Dann ist `activeId` das geöffnete Protokoll,
+ * und der Ordner kommt von außen (`folder`), weil die Spalte außerhalb der Unterrouten liegt.
+ */
+export function ProtokollList({ split = false, folder, activeId }: { split?: boolean; folder?: string; activeId?: string } = {}) {
   const navigate = useNavigate();
-  const { folderId = ROOT } = useParams();
+  const params = useParams();
+  const folderId = (split ? folder : params.folderId) ?? ROOT;
+  const [search, setSearch] = useSearchParams();
+  const tag = search.get('tag') ?? '';
+  const setTag = (t: string) => setSearch(t ? { tag: t } : {}, { replace: true });
+  const [sort, setSortState] = useState<Sort>(loadSort);
+  const setSort = (v: Sort) => {
+    setSortState(v);
+    try {
+      localStorage.setItem(SORT_KEY, v);
+    } catch {
+      /* ohne Speicher gilt die Wahl nur für diese Sitzung */
+    }
+  };
   const rows = useLiveQuery(() => db.protokolle.filter((p) => p.deleted === 0).toArray(), []);
   // Texte, die der Server noch nicht bestätigt hat (der Text hat sein eigenes Merkmal), und der Grund, wenn er einen abgelehnt hat.
   const unsentText = useLiveQuery(async () => new Map((await db.ydocs.where('dirty').equals(1).toArray()).map((r) => [r.id, r.rejected ?? ''] as const)), []);
@@ -35,6 +65,19 @@ export function ProtokollList() {
   const account = useAccount();
   const users = useDirectory();
   const [q, setQ] = useState('');
+  const searchRef = useRef<HTMLInputElement>(null);
+  // „/“ springt in die Suche, wenn gerade nirgends getippt wird (wie in vielen Notiz-Apps).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      e.preventDefault();
+      searchRef.current?.focus();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, []);
   const [dialog, setDialog] = useState<Dialog>(null);
 
   // Die Suche läuft mit leicht verzögertem Suchwort, damit das Tippen flüssig bleibt (bei vielen Protokollen dauert sie spürbar).
@@ -47,16 +90,31 @@ export function ProtokollList() {
   );
   const hits = useMemo(() => (searching ? searchProtocols(index, query) : null), [index, query, searching]);
 
+  // Vorschau und Tags je Protokoll; nur neu, wenn sich die Zeilen ändern.
+  const infos = useMemo(() => new Map((rows ?? []).map((p) => [p.id, noteInfo(p.content)] as const)), [rows]);
+  const tagCounts = useMemo(() => {
+    const counts = new Map<string, { name: string; n: number }>();
+    for (const info of infos.values())
+      for (const t of info.tags) {
+        const k = t.toLowerCase();
+        counts.set(k, { name: counts.get(k)?.name ?? t, n: (counts.get(k)?.n ?? 0) + 1 });
+      }
+    return [...counts.values()].sort((a, b) => b.n - a.n || a.name.localeCompare(b.name, 'de'));
+  }, [infos]);
+
   if (!rows || !folders) return null;
+  const today = todayIso();
 
   const byId = new Map(rows.map((p) => [p.id, p]));
   const here = folders.find((f) => f.id === folderId);
   const inFolder = folderId && !here ? false : true; // Ordner wurde (auf einem anderen Gerät) gelöscht
   const path = folderPath(folders, folderId);
   const subfolders = childFolders(folders, folderId);
-  const protocols = rows
-    .filter((p) => shownFolder(folders, p.folderId) === folderId)
-    .sort((a, b) => (b.datum || '').localeCompare(a.datum || '') || b.updatedAt - a.updatedAt);
+  const byOrder = (a: Protokoll, b: Protokoll) =>
+    sort === 'bearbeitet' ? b.updatedAt - a.updatedAt : (b.datum || '').localeCompare(a.datum || '') || b.updatedAt - a.updatedAt;
+  // Mit gewähltem Tag zählen alle Ordner, sonst nur der aktuelle.
+  const tagged = tag ? rows.filter((p) => infos.get(p.id)?.tags.some((t) => tagMatches(t, tag))).sort(byOrder) : null;
+  const protocols = rows.filter((p) => shownFolder(folders, p.folderId) === folderId).sort(byOrder);
   const countIn = (id: string) => rows.filter((p) => shownFolder(folders, p.folderId) === id).length + folders.filter((f) => f.parentId === id).length;
 
   async function create() {
@@ -73,10 +131,24 @@ export function ProtokollList() {
   }
 
   return (
-    <div className="proto">
+    <div className={`proto${split ? ' proto--list' : ''}`}>
       <div className="proto-bar">
         <h1 className="page__title">Protokolle</h1>
         <span className="proto-bar__spacer" />
+        <button
+          type="button"
+          className="icon-btn"
+          aria-label={sort === 'datum' ? 'Sortiert nach Datum – nach letzter Änderung sortieren' : 'Sortiert nach letzter Änderung – nach Datum sortieren'}
+          title={sort === 'datum' ? 'Sortiert nach Datum' : 'Sortiert nach letzter Änderung'}
+          onClick={() => setSort(sort === 'datum' ? 'bearbeitet' : 'datum')}
+        >
+          <ArrowDownUp size={19} />
+        </button>
+        {split && (
+          <button type="button" className="icon-btn icon-btn--primary" aria-label="Neues Protokoll" title="Neues Protokoll" onClick={() => void create()}>
+            <Plus size={20} />
+          </button>
+        )}
         {syncState !== 'off' && (
           <Link to="/protokolle/papierkorb" className="icon-btn" aria-label="Papierkorb" title="Papierkorb">
             <Trash2 size={20} />
@@ -125,8 +197,23 @@ export function ProtokollList() {
 
       <label className="proto-search">
         <Search size={18} />
-        <input type="search" placeholder="Alle Protokolle durchsuchen" aria-label="Volltextsuche in allen Protokollen" value={q} onChange={(e) => setQ(e.target.value)} />
+        <input ref={searchRef} type="search" placeholder="Alle Protokolle durchsuchen   ( / )" aria-label="Volltextsuche in allen Protokollen" value={q} onChange={(e) => setQ(e.target.value)} />
       </label>
+
+      {tagCounts.length > 0 && (
+        <div className="tagbar" role="group" aria-label="Nach Tag filtern">
+          <button type="button" className="tagchip" aria-pressed={!tag} onClick={() => setTag('')}>
+            Alle
+          </button>
+          {tagCounts.map((t) => (
+            <button key={t.name} type="button" className="tagchip" aria-pressed={tag.toLowerCase() === t.name.toLowerCase()} onClick={() => setTag(tag.toLowerCase() === t.name.toLowerCase() ? '' : t.name)}>
+              <Hash size={13} />
+              {t.name}
+              <span className="tagchip__n">{t.n}</span>
+            </button>
+          ))}
+        </div>
+      )}
 
       {hits ? (
         <>
@@ -136,7 +223,7 @@ export function ProtokollList() {
               const p = byId.get(h.id)!;
               const where = p.folderId ? folderPathLabel(folders, p.folderId) : '';
               return (
-                <Link key={h.id} to={`/protokolle/${h.id}`} className="item proto-hit">
+                <Link key={h.id} to={`/protokolle/${h.id}`} className={`item proto-hit${h.id === activeId ? ' is-active' : ''}`}>
                   <div className="item__main">
                     <div className="item__title">{p.title || 'Ohne Titel'}</div>
                     <div className="item__sub">{[p.datum && formatDate(p.datum), where].filter(Boolean).join(' · ')}</div>
@@ -153,6 +240,16 @@ export function ProtokollList() {
         </>
       ) : (
         <>
+          {tagged ? (
+            <div className="proto-filter">
+              <span>
+                Tag <strong>#{tag}</strong> · {tagged.length === 1 ? '1 Protokoll' : `${tagged.length} Protokolle`} in allen Ordnern
+              </span>
+              <button type="button" className="icon-btn proto-crumbs__btn" aria-label="Filter aufheben" onClick={() => setTag('')}>
+                <X size={16} />
+              </button>
+            </div>
+          ) : (
           <nav className="proto-crumbs" aria-label="Ordnerpfad">
             <Link to="/protokolle" aria-current={folderId === ROOT ? 'page' : undefined}>
               Alle Protokolle
@@ -175,6 +272,7 @@ export function ProtokollList() {
               <FolderPlus size={18} />
             </button>
           </nav>
+          )}
 
           {!inFolder && (
             <Card>
@@ -185,14 +283,15 @@ export function ProtokollList() {
             </Card>
           )}
 
-          {inFolder && subfolders.length === 0 && protocols.length === 0 && (
-            <Card>
-              <p className="muted">{folderId ? 'Dieser Ordner ist leer.' : 'Noch keine Protokolle.'} Mit „+“ ein neues Protokoll beginnen.</p>
-            </Card>
+          {inFolder && !tagged && subfolders.length === 0 && protocols.length === 0 && (
+            <EmptyState icon={FileText} title={folderId ? 'Dieser Ordner ist leer' : 'Noch keine Protokolle'} action={<Button variant="primary" onClick={() => void create()}>Protokoll schreiben</Button>}>
+              Schreib einfach los. Mit #Tags im Text ordnest du Protokolle, ohne Ordner anzulegen.
+            </EmptyState>
           )}
+          {tagged && tagged.length === 0 && <p className="muted proto-count">Kein Protokoll mit diesem Tag.</p>}
 
           <div className="list">
-            {subfolders.map((f) => (
+            {!tagged && subfolders.map((f) => (
               <div key={f.id} className="item proto-folder">
                 <Link to={folderUrl(f.id)} className="proto-folder__link">
                   <Folder size={22} className="proto-folder__icon" />
@@ -206,23 +305,39 @@ export function ProtokollList() {
                 </button>
               </div>
             ))}
-            {protocols.map((p) => {
+            {(tagged ?? protocols).map((p) => {
               const text = unsentText?.get(p.id); // undefined: nichts offen · '': ungesendet · sonst: vom Server abgelehnt
               const rejected = p.rejected || text || undefined;
+              const info = infos.get(p.id);
+              const when = p.datum ? formatDateRelative(p.datum, today) : '';
+              const where = tagged && p.folderId ? folderPathLabel(folders, p.folderId) : '';
               return (
-                <Link key={p.id} to={`/protokolle/${p.id}`} className="item" style={{ textDecoration: 'none', color: 'inherit' }}>
+                <Link key={p.id} to={`/protokolle/${p.id}`} className={`item note${p.id === activeId ? ' is-active' : ''}`} style={{ textDecoration: 'none', color: 'inherit' }}>
                   <div className="item__main">
-                    <div className="item__title">{p.title || 'Ohne Titel'}</div>
-                    <div className="item__sub">{[p.datum && formatDate(p.datum), p.ort].filter(Boolean).join(' · ')}</div>
+                    <div className="note__head">
+                      <span className="item__title note__title">{p.title || 'Ohne Titel'}</span>
+                      {when && <span className="note__date">{when}</span>}
+                    </div>
+                    {info?.preview && <div className="note__preview">{info.preview}</div>}
+                    {(info?.tags.length || p.ort || where || p.shared || !isMine(p, account) || rejected || p.dirty === 1 || text !== undefined) && (
+                      <div className="note__meta">
+                        {[p.ort, where].filter(Boolean).length > 0 && <span className="note__place">{[p.ort, where].filter(Boolean).join(' · ')}</span>}
+                        {info?.tags.slice(0, 4).map((t) => (
+                          <span key={t} className="note__tag">
+                            #{t}
+                          </span>
+                        ))}
+                        {(p.shared || !isMine(p, account)) && <span className="chip">{visibilityLabel(p, account, users)}</span>}
+                        {rejected ? (
+                          <span className="chip chip--warn" title={rejected}>
+                            abgelehnt
+                          </span>
+                        ) : (
+                          (p.dirty === 1 || text !== undefined) && <span className="chip chip--warn">nicht gesendet</span>
+                        )}
+                      </div>
+                    )}
                   </div>
-                  {(p.shared || !isMine(p, account)) && <span className="chip">{visibilityLabel(p, account, users)}</span>}
-                  {rejected ? (
-                    <span className="chip chip--warn" title={rejected}>
-                      abgelehnt
-                    </span>
-                  ) : (
-                    (p.dirty === 1 || text !== undefined) && <span className="chip chip--warn">nicht gesendet</span>
-                  )}
                 </Link>
               );
             })}

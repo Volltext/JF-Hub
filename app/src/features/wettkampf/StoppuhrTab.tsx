@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { Pause, Play, RotateCcw, X } from 'lucide-react';
+import { Pause, Play, RotateCcw, Trophy, X } from 'lucide-react';
 import { db } from '@/core/db/db';
 import { newId } from '@/core/domain/id';
 import { Button, Card } from '@/core/ui/components';
@@ -9,6 +9,7 @@ import { BwPanel } from './BwPanel';
 import { LspPanel } from './LspPanel';
 import { live, useLiveStatus, type LiveStatus } from './live';
 import { canSave } from './run';
+import { bestMs, isNewBest } from './bestTime';
 import type { Draft, LspState } from './model';
 import type { Wasserentnahme } from './rules/bwScoring';
 import { getMode, getModesForCompetition, isKnownMode, markersFor } from './rules/modes';
@@ -56,7 +57,8 @@ export function StoppuhrTab({ competition, mode, onMode, onShow, lsp, defaultVar
   const { draft, dispatch, editor } = useDraft(mode);
   const liveStatus = useLiveStatus((s) => s.status);
   const running = useRunningModes();
-  const [toast, setToast] = useState('');
+  const [toast, setToast] = useState<{ text: string; best?: boolean } | null>(null);
+  const runs = useLiveQuery(() => db.runs.where('mode').equals(mode).toArray(), [mode]);
   const info = getMode(mode);
   const isLsp = info.competition === 'lsp';
   const variant: Wasserentnahme = draft?.wasserentnahme ?? defaultVariant;
@@ -95,6 +97,7 @@ export function StoppuhrTab({ competition, mode, onMode, onShow, lsp, defaultVar
   );
 
   if (!draft) return modeChips;
+  const best = runs ? bestMs(runs, mode, variant) : null;
 
   const now = Date.now();
   const elapsed = elapsedOf(draft, now);
@@ -104,22 +107,27 @@ export function StoppuhrTab({ competition, mode, onMode, onShow, lsp, defaultVar
     if (!draft) return;
     const saved = draft;
     try {
-      await runRepo.saveFromDraft(saved, lsp.variante);
+      const previous = best;
+      const run = await runRepo.saveFromDraft(saved, lsp.variante);
       // Genau diesen Lauf zurücksetzen: hat ein anderer Betreuer inzwischen schon gespeichert und neu gestartet, bleibt dessen Lauf.
       dispatch({ type: 'reset' }, saved.id);
-      setToast('Lauf gespeichert ✓');
+      if (isNewBest(previous, run.totalMs)) {
+        void tap('heavy');
+        setToast({ text: `Neue Bestzeit: ${formatClock(run.totalMs)}`, best: true });
+      } else setToast({ text: 'Lauf gespeichert ✓' });
     } catch (e) {
-      setToast(`Lauf konnte nicht gespeichert werden: ${e instanceof Error ? e.message : String(e)}`);
+      setToast({ text: `Lauf konnte nicht gespeichert werden: ${e instanceof Error ? e.message : String(e)}` });
     }
-    setTimeout(() => setToast(''), 4000);
+    setTimeout(() => setToast(null), 5000);
   }
 
   return (
     <>
-      {modeChips}
+      {!showClock && modeChips}
 
       {showClock && (
         <Card>
+          {modeChips}
           {liveStatus !== 'off' && (
             <div className="live-status">
               <span
@@ -136,6 +144,11 @@ export function StoppuhrTab({ competition, mode, onMode, onShow, lsp, defaultVar
           <div className="clock" aria-live="off">
             {formatClock(elapsed)}
           </div>
+          {best !== null && (
+            <div className="best" title="Schnellste gespeicherte Zeit in diesem Modus">
+              <Trophy size={15} /> Bestzeit {formatClock(best)}
+            </div>
+          )}
           <div className="row" style={{ gap: 'var(--s-3)' }}>
             {draft.isRunning ? (
               <Button
@@ -275,8 +288,8 @@ export function StoppuhrTab({ competition, mode, onMode, onShow, lsp, defaultVar
       </Button>
       {draft.isRunning && <p className="muted">Zum Speichern zuerst stoppen.</p>}
       {toast && (
-        <p role="status" className="muted">
-          {toast}
+        <p role="status" className={`toast${toast.best ? ' toast--best' : ''}`}>
+          {toast.best && <Trophy size={18} />} {toast.text}
         </p>
       )}
     </>

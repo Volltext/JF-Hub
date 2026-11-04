@@ -1,3 +1,12 @@
+/* Inter (SIL OFL 1.1, siehe fonts/Inter-OFL.txt), selbst ausgeliefert: kein Fremdserver, läuft offline. Nur der lateinische Block (inkl. Umlaute). */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('./fonts/inter-latin-wght-normal.woff2') format('woff2-variations');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
 :root {
   --bg: #0e0f12;
   --surface: #16181d;
@@ -17,9 +26,16 @@
   --r-lg: 20px;
   --s-1: 4px; --s-2: 8px; --s-3: 12px; --s-4: 16px; --s-5: 24px; --s-6: 32px;
   --nav-h: 64px;
+  /* Schriftgrößen (Skala) */
+  --t-xs: 0.75rem; --t-sm: 0.85rem; --t-md: 1rem; --t-lg: 1.15rem; --t-xl: 1.6rem; --t-2xl: 2.2rem;
+  /* Tiefe */
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-2: 0 8px 28px rgba(0, 0, 0, 0.5);
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --dur: 160ms;
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
-  --font: system-ui, 'Segoe UI', Roboto, sans-serif;
+  --font: 'Inter', system-ui, 'Segoe UI', Roboto, sans-serif;
   --font-mono: ui-monospace, 'SF Mono', 'Roboto Mono', monospace;
   color-scheme: dark;
 }
@@ -36,5 +52,7 @@
   --success: #177a47; /* mindestens 4,5 : 1 als Text auf --bg und --surface (WCAG AA) */
   --warning: #8a5f00;
   --danger: #c93028;
+  --shadow-1: 0 1px 2px rgba(20, 22, 28, 0.06), 0 1px 3px rgba(20, 22, 28, 0.05);
+  --shadow-2: 0 10px 30px rgba(20, 22, 28, 0.16);
   color-scheme: light;
 }

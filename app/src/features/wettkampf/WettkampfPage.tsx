@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { Settings } from 'lucide-react';
+import { BookOpen, Settings } from 'lucide-react';
 import { Segmented } from '@/core/ui/components';
 import { db } from '@/core/db/db';
 import { AnalyseTab } from './AnalyseTab';
@@ -35,32 +35,35 @@ export function WettkampfPage() {
     <div className="page page--tight">
       {/* Kopfzeile bewusst flach: Wettbewerb und Bereich auf möglichst wenig Höhe. */}
       <div className="head-compact">
-        <div className="row" style={{ gap: 'var(--s-2)' }}>
-          <div style={{ flex: 1 }}>
-            <Segmented
-              compact
-              value={competition.id}
-              onChange={(id) => void db.kv.put({ key: COMPETITION_KEY, value: id })}
-              options={COMPETITIONS.map((c) => ({ value: c.id, label: c.label }))}
+        <Segmented
+          compact
+          value={competition.id}
+          onChange={(id) => void db.kv.put({ key: COMPETITION_KEY, value: id })}
+          options={COMPETITIONS.map((c) => ({ value: c.id, label: c.label }))}
+        />
+
+        <div className="row head-tabs">
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <Segmented<Tab>
+              tabs
+              value={tab}
+              onChange={setTab}
+              options={[
+                { value: 'aufstellung', label: 'Aufstellung' },
+                { value: 'stoppuhr', label: 'Stoppuhr' },
+                { value: 'analyse', label: 'Analyse' },
+              ]}
             />
           </div>
+          <Link to="/wissen" className="icon-btn" aria-label="Regeln und Knoten nachschlagen" title="Regeln und Knoten nachschlagen">
+            <BookOpen size={18} />
+          </Link>
           {competition.id === 'bw' && (
             <Link to="/einstellungen/wettkampf" className="icon-btn" aria-label={variantLabel} title={variantLabel}>
               <Settings size={18} />
             </Link>
           )}
         </div>
-
-        <Segmented<Tab>
-          compact
-          value={tab}
-          onChange={setTab}
-          options={[
-            { value: 'aufstellung', label: 'Aufstellung' },
-            { value: 'stoppuhr', label: 'Stoppuhr' },
-            { value: 'analyse', label: 'Analyse' },
-          ]}
-        />
       </div>
 
       {tab === 'aufstellung' && <AufstellungTab competition={competition.id} lsp={lsp} />}

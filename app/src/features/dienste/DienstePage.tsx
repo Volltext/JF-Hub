@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { Check, Plus } from 'lucide-react';
+import { CalendarCheck, Check, Plus } from 'lucide-react';
 import { db } from '@/core/db/db';
 import { sessionRepo } from '@/core/db/repos';
 import { todayIso } from '@/core/domain/id';
 import { formatDate } from '@/core/domain/format';
 import type { ID, Member, Session } from '@/core/domain/types';
-import { Button, Card, Page, Sheet } from '@/core/ui/components';
+import { Button, EmptyState, Page, Sheet } from '@/core/ui/components';
 import { DateField } from '@/core/ui/pickers';
 import { confirmDialog } from '@/core/ui/dialog';
 
@@ -42,9 +42,9 @@ export function DienstePage() {
   return (
     <Page title="Dienste" sub={`${sessions.length} erfasst`}>
       {sessions.length === 0 && (
-        <Card>
-          <p className="muted">Noch kein Dienst erfasst. Mit „+“ den ersten Dienst anlegen.</p>
-        </Card>
+        <EmptyState icon={CalendarCheck} title="Noch kein Dienst erfasst" action={<Button variant="primary" onClick={() => open(todayIso())}>Ersten Dienst erfassen</Button>}>
+          Halte fest, wer da war – so entsteht die Anwesenheitsübersicht.
+        </EmptyState>
       )}
       <div className="list">
         {sessions.map((s) => {
@@ -53,9 +53,9 @@ export function DienstePage() {
             <button key={s.id} className="item" onClick={() => open(s.date)}>
               <div className="item__main">
                 <div className="item__title">{formatDate(s.date)}</div>
-                <div className="item__sub">
-                  {s.present.map((id) => nameOf.get(id)).filter(Boolean).slice(0, 3).join(', ')}
-                  {s.present.length > 3 ? ' …' : ''}
+                <div className="item__sub item__sub--line">
+                  {s.present.map((id) => nameOf.get(id)).filter(Boolean).slice(0, 2).join(', ')}
+                  {s.present.length > 2 ? ` +${s.present.length - 2}` : ''}
                 </div>
               </div>
               <span className="chip">

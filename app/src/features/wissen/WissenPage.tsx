@@ -40,7 +40,7 @@ export function WissenPage() {
   const current = sections.some((s) => s.value === section) ? section : 'regeln';
 
   return (
-    <Page title="Wissen" sub="Regeln, Positionen und Knoten zum Nachschlagen">
+    <Page fromMore title="Wissen" sub="Regeln, Positionen und Knoten zum Nachschlagen">
       <Segmented
         value={competition}
         onChange={(id) => void db.kv.put({ key: 'wettkampf.competition', value: id })}

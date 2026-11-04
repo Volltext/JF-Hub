@@ -1,3 +1,5 @@
+/* Inter (SIL OFL 1.1, siehe fonts/Inter-OFL.txt), selbst ausgeliefert wie in der App. */
+@font-face { font-family: 'Inter'; font-style: normal; font-weight: 100 900; font-display: swap; src: url('fonts/inter-latin-wght-normal.woff2') format('woff2-variations'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
 /* Gleiche Farben, Radien und Schrift wie die App – damit sich Web-App und Verwaltung wie eine Anwendung anfühlen. */
 :root {
   --bg: #f5f5f7;
@@ -33,8 +35,8 @@
   }
 }
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, 'Segoe UI', Roboto, sans-serif; }
-h1 { font-size: 1.6rem; margin: 0; line-height: 1.2; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 'Inter', system-ui, 'Segoe UI', Roboto, sans-serif; -webkit-font-smoothing: antialiased; font-feature-settings: 'cv11', 'ss03'; }
+h1 { font-size: 1.6rem; margin: 0; line-height: 1.2; font-weight: 750; letter-spacing: -0.025em; }
 h2 { font-size: 1rem; margin: 0 0 12px; }
 a { color: var(--primary); }
 .muted { color: var(--muted); }
@@ -62,7 +64,7 @@ a { color: var(--primary); }
 .nav button[aria-current='page'] svg { color: var(--primary); }
 .side__foot { display: none; }
 .content { flex: 1; min-width: 0; padding: 20px 16px 60px; }
-.page { max-width: 860px; margin: 0 auto; display: grid; gap: 16px; }
+.page { max-width: 980px; margin: 0 auto; display: grid; gap: 16px; }
 .page__head p { margin: 4px 0 0; color: var(--muted); }
 
 @media (min-width: 900px) {
@@ -101,13 +103,14 @@ input[type='color'] { height: 44px; width: 64px; border: 1px solid var(--border)
 .btn.small { min-height: 36px; padding: 0 12px; font-size: 14px; }
 .btn:disabled { opacity: 0.5; cursor: default; }
 .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
-.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
-.stat { background: var(--surface-2); border-radius: var(--r-md); padding: 14px 16px; }
-.stat b { display: block; font-size: 1.5rem; line-height: 1.2; }
+.grid { display: flex; flex-wrap: wrap; gap: 12px; }
+.stat { flex: 1 1 150px; background: var(--surface-2); border-radius: var(--r-md); padding: 14px 16px; }
+.stat b { display: block; font-size: 1.5rem; line-height: 1.2; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
 .stat span { color: var(--muted); font-size: 13px; }
-.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
-.tile { display: flex; flex-direction: column; gap: 4px; padding: 16px; border-radius: var(--r-md); background: var(--surface); border: 1px solid var(--border); color: var(--text); text-decoration: none; font: inherit; text-align: left; cursor: pointer; }
-.tile:hover { border-color: var(--muted); }
+.tiles { display: flex; flex-wrap: wrap; gap: 12px; }
+.tile { flex: 1 1 260px; box-shadow: 0 1px 3px rgba(20,22,28,.06); transition: transform .16s ease, border-color .16s; display: flex; flex-direction: column; gap: 4px; padding: 16px; border-radius: var(--r-md); background: var(--surface); border: 1px solid var(--border); color: var(--text); text-decoration: none; font: inherit; text-align: left; cursor: pointer; }
+.tile:hover { border-color: var(--muted); transform: translateY(-1px); }
+@media (prefers-reduced-motion: reduce) { .tile { transition: none; } .tile:hover { transform: none; } }
 .tile b { display: flex; align-items: center; gap: 8px; }
 .tile b svg { width: 19px; height: 19px; color: var(--primary); }
 .tile span { color: var(--muted); font-size: 13px; }

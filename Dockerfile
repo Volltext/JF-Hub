@@ -38,6 +38,7 @@ ENV NODE_ENV=production DATA_DIR=/data PORT=8080 \
 COPY --from=server /build/server/node_modules ./node_modules
 COPY --from=server /build/server/dist ./dist
 COPY server/package.json ./
+COPY server/fonts ./fonts
 COPY server/public/admin ./public/admin
 COPY --from=web /out/web ./public/web
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
