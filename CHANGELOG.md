@@ -4,19 +4,7 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/). Versionen 
 
 ## [Unreleased]
 
-### Neu
-
-- **Live-Stoppuhr:** Alle angemeldeten Betreuer sehen dieselbe Stoppuhr je Modus, mit laufender Zeit, Zwischenzeiten, Fehlern, Wertung und Notizen. Jeder kann starten, stoppen, eintragen und speichern. Die Geräte gleichen ihre Uhren mit dem Server ab, damit die Zeit überall gleich läuft. Gleichzeitige Eingaben werden zusammengeführt (zwei Fehler von zwei Geräten zählen beide, keiner doppelt), zweimal „Lauf speichern“ ergibt einen Lauf. Offline weiter nutzbar; Eingaben werden nachgereicht, auch nach einem Neustart. Läuft die Stoppuhr in einem anderen Modus, zeigt die App das an. Technisch: Long-Polling (`GET /api/live`, `PUT /api/live/:modus`), geht ohne Zusatz-Einstellungen durch Reverse-Proxy und Tunnel; Apps an einem älteren Server arbeiten wie bisher nur auf dem Gerät.
-
-### Sicherheit
-
-- **Zugriffsprüfung umgehbar über prozentkodierte Pfade:** Die API-Prüfung entschied anhand der rohen URL (`/api/…`), Fastify leitet aber auf dem dekodierten Pfad weiter – so traf z. B. `/%61pi/admin/users` denselben Admin-Handler, umging aber die Prüfung, und Admin-Endpunkte waren ohne Anmeldung erreichbar. Die Prüfung richtet sich jetzt nach dem gematchten Route-Muster (wie der Demo-Schutz).
-- **Serverseitige Anfragefälschung (SSRF) über Push-Adressen** stärker abgesichert: Push-Ziele müssen jetzt ein echter öffentlicher DNS-Name sein (IP-Adressen in jeder Schreibweise – auch „0x7f.1“ – und reservierte Namen werden abgewiesen), und der Versand prüft zusätzlich beim Verbinden die aufgelöste Adresse und bricht bei privaten/lokalen Zielen ab (fängt auch Resolver-Tricks wie `*.nip.io` und DNS-Rebinding).
-- **Rate-Limits** für teure bzw. nach außen wirkende Endpunkte ergänzt (Protokoll- und Kleidung-PDF, Protokoll-Export, Backups und Wiederherstellung, Ferien-Abruf, Test-Push), damit ein einzelner Client den Server nicht überlasten kann. Anmeldung/Einrichtung/Einladung waren bereits begrenzt.
-- **Sicherheits-Header verschärft:** Content-Security-Policy um `base-uri`, `form-action`, `object-src 'none'` und `frame-src 'none'` erweitert; HSTS wird nur noch über https gesendet.
-- Tests in `server/src/app.test.ts`, `server/src/push.test.ts` und `server/src/users.test.ts` sichern die Punkte ab.
-
-## [3.0.0] – 2026-10-09
+## [3.0.0] – 2026-11-04
 
 Mehrere Betreuer können **gleichzeitig am selben Protokoll schreiben**, auch wenn eine Person dabei kein Netz hat. Die Texte laufen zusammen, statt dass eine Fassung als Kopie „… (Konflikt)“ beiseitegelegt wird.
 
@@ -41,6 +29,7 @@ Mehrere Betreuer können **gleichzeitig am selben Protokoll schreiben**, auch we
 - **Reparatur nach gleichzeitigem Umbauen:** Streichen zwei Personen gleichzeitig je einen von zwei Listenpunkten, wäre die Liste danach leer und das Protokoll für alle gesperrt. Die App ergänzt in solchen Fällen leere Teile (einen leeren Listenpunkt, Absatz oder eine leere Zelle) und löscht dabei nichts. Dasselbe gilt für Markierungen, die sich ausschließen: Formatieren zwei Personen dasselbe Wort gleichzeitig, die eine fett und die andere als Code, bleibt Code.
 - **Schutz vor unbekannten Inhalten:** Enthält ein Text Elemente, die diese App-Version nicht kennt, wird das Protokoll nur gelesen und nie gebunden, denn ein Editor würde sie im gemeinsamen Dokument für alle löschen. Zusätzlich baut die App jeden Text vor dem Öffnen auf einer Kopie auf und prüft, dass dabei nichts verschwindet. Der Server weist Updates mit ungültiger Form, zu großem Zustand (über 12 MiB) oder zu tiefer Verschachtelung ab; nimmt er einen Text nicht an, meldet der Editor „Der Server nimmt den Text nicht an“ und der Abgleich-Hinweis nennt es; der Text bleibt auf dem Gerät, die übrigen Protokolle sind davon nicht betroffen.
 - **Server:** `POST /api/collab/exchange` tauscht den Text per Zustandsvektor aus (zustandslos, wiederholbar, bis zu 20 Protokolle je Anfrage, Antworten bis rund 8 MiB). `/api/status` meldet `features: ['blobs', 'collab']`. Die Verwaltung zeigt, wie viele Protokolle noch nicht umgestellt sind. Scheitert das Speichern eines Textes aus einem Grund, der nicht am Text liegt (Platte voll, Datenbank gesperrt), gilt er nicht als abgelehnt: Der Server rollt zurück, schreibt es ins Log, und die App sendet ihn später noch einmal.
+- **Live-Stoppuhr:** Alle angemeldeten Betreuer sehen dieselbe Stoppuhr je Modus, mit laufender Zeit, Zwischenzeiten, Fehlern, Wertung und Notizen. Jeder kann starten, stoppen, eintragen und speichern. Die Geräte gleichen ihre Uhren mit dem Server ab, damit die Zeit überall gleich läuft. Gleichzeitige Eingaben werden zusammengeführt (zwei Fehler von zwei Geräten zählen beide, keiner doppelt), zweimal „Lauf speichern“ ergibt einen Lauf. Offline weiter nutzbar; Eingaben werden nachgereicht, auch nach einem Neustart. Läuft die Stoppuhr in einem anderen Modus, zeigt die App das an. Technisch: Long-Polling (`GET /api/live`, `PUT /api/live/:modus`), geht ohne Zusatz-Einstellungen durch Reverse-Proxy und Tunnel; Apps an einem älteren Server arbeiten wie bisher nur auf dem Gerät.
 
 ### Geändert
 
@@ -54,6 +43,14 @@ Mehrere Betreuer können **gleichzeitig am selben Protokoll schreiben**, auch we
 - Neue Abhängigkeiten: `yjs` (Server und App), `y-protocols`, `@tiptap/y-tiptap` und `@tiptap/extension-collaboration` (App), alle MIT. Die Web-App wird dadurch um rund 48 kB (komprimiert) größer.
 - **Docker:** Die Startfrist des Healthchecks beträgt 120 Sekunden, weil die Umstellung beim ersten Start länger dauern kann.
 - **Demo:** Mehrere Besucher können gemeinsam am selben Protokoll schreiben. Die Beispielprotokolle werden beim Zurücksetzen mit umgestellt. Die Demo im Browser (ohne Server) bleibt rein lokal und zeigt keinen Offline-Hinweis.
+
+### Sicherheit
+
+- **Zugriffsprüfung umgehbar über prozentkodierte Pfade:** Die API-Prüfung entschied anhand der rohen URL (`/api/…`), Fastify leitet aber auf dem dekodierten Pfad weiter – so traf z. B. `/%61pi/admin/users` denselben Admin-Handler, umging aber die Prüfung, und Admin-Endpunkte waren ohne Anmeldung erreichbar. Die Prüfung richtet sich jetzt nach dem gematchten Route-Muster (wie der Demo-Schutz).
+- **Serverseitige Anfragefälschung (SSRF) über Push-Adressen** stärker abgesichert: Push-Ziele müssen jetzt ein echter öffentlicher DNS-Name sein (IP-Adressen in jeder Schreibweise – auch „0x7f.1“ – und reservierte Namen werden abgewiesen), und der Versand prüft zusätzlich beim Verbinden die aufgelöste Adresse und bricht bei privaten/lokalen Zielen ab (fängt auch Resolver-Tricks wie `*.nip.io` und DNS-Rebinding).
+- **Rate-Limits** für teure bzw. nach außen wirkende Endpunkte ergänzt (Protokoll- und Kleidung-PDF, Protokoll-Export, Backups und Wiederherstellung, Ferien-Abruf, Test-Push), damit ein einzelner Client den Server nicht überlasten kann. Anmeldung/Einrichtung/Einladung waren bereits begrenzt.
+- **Sicherheits-Header verschärft:** Content-Security-Policy um `base-uri`, `form-action`, `object-src 'none'` und `frame-src 'none'` erweitert; HSTS wird nur noch über https gesendet.
+- Tests in `server/src/app.test.ts`, `server/src/push.test.ts` und `server/src/users.test.ts` sichern die Punkte ab.
 
 ### Bekannte Grenzen
 
