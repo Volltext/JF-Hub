@@ -2,6 +2,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildApp, parseTrustProxy, VERSION } from './app.js';
 import { openDb } from './db.js';
+import { loadMailKey } from './mail/crypto.js';
 import { DEMO_ACCOUNTS, formatResetAt, parseResetAt } from './demo.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -11,6 +12,8 @@ const port = Number(process.env.PORT ?? 8080);
 const demo = ['1', 'true', 'yes', 'ja'].includes((process.env.DEMO ?? '').trim().toLowerCase());
 
 const db = openDb(join(dataDir, 'jf-hub.sqlite'));
+const mailOn = !['0', 'false', 'no', 'nein'].includes((process.env.MAIL_ENABLED ?? '').trim().toLowerCase());
+const mailPoll = Number(process.env.MAIL_POLL_SECONDS);
 const app = await buildApp({
   db,
   logger: true,
@@ -23,6 +26,13 @@ const app = await buildApp({
   pushSubject: process.env.PUSH_SUBJECT,
   backupDir: process.env.BACKUP_DIR ?? join(dataDir, 'backups'),
   demo: demo ? { resetAt: process.env.DEMO_RESET_AT } : undefined,
+  mail: {
+    enabled: mailOn && !demo,
+    // Der Schlüssel entsteht nur, wenn E-Mail an ist (sonst bliebe bei jedem Start eine unnötige Datei zurück).
+    key: mailOn && !demo ? loadMailKey({ env: process.env.MAIL_KEY, file: join(dataDir, 'mail.key') }) : undefined,
+    allowPrivate: ['1', 'true', 'yes', 'ja'].includes((process.env.MAIL_ALLOW_PRIVATE ?? '').trim().toLowerCase()),
+    pollMs: Number.isFinite(mailPoll) && mailPoll > 0 ? mailPoll * 1000 : undefined,
+  },
 });
 
 if (demo) {

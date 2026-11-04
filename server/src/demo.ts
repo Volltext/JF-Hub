@@ -85,6 +85,8 @@ export function demoBlock(db: DatabaseSync, method: string, route: string | unde
   if (!route) return null;
   // HEAD führt die GET-Route aus (nur ohne Antworttext) und ist deshalb genauso gesperrt.
   const key = `${method === 'HEAD' ? 'GET' : method} ${route}`;
+  // Die öffentliche Demo hat keine Postfächer: Fremde Zugangsdaten gehören nicht auf einen Server, der täglich zurückgesetzt wird.
+  if (route.startsWith('/api/mail/')) return DEMO_LOCKED;
   if (LOCKED.has(key)) return DEMO_LOCKED;
   if (LOCKED_FOR_DEMO_ACCOUNTS.has(key)) {
     const id = (params as { id?: unknown } | null)?.id;

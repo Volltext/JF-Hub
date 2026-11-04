@@ -210,6 +210,27 @@ export function openDb(path: string): DatabaseSync {
       PRIMARY KEY (blobId, protocolId)
     );
     CREATE INDEX IF NOT EXISTS blob_refs_protocol ON blob_refs(protocolId);
+    -- Postfach je Betreuer (optional, ab 3.1.0). Das Passwort liegt verschlüsselt hier; der Schlüssel steht nie in der Datenbank (siehe mail/crypto.ts).
+    CREATE TABLE IF NOT EXISTS mail_accounts (
+      userId TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      email TEXT NOT NULL,
+      displayName TEXT NOT NULL DEFAULT '',
+      username TEXT NOT NULL,
+      passEnc TEXT NOT NULL,
+      imapHost TEXT NOT NULL,
+      imapPort INTEGER NOT NULL,
+      imapSecure INTEGER NOT NULL DEFAULT 1,
+      smtpHost TEXT NOT NULL,
+      smtpPort INTEGER NOT NULL,
+      smtpSecure INTEGER NOT NULL DEFAULT 0,
+      notify INTEGER NOT NULL DEFAULT 1,
+      uidValidity INTEGER,
+      lastUid INTEGER,
+      checkedAt INTEGER,
+      failures INTEGER NOT NULL DEFAULT 0,
+      lastError TEXT NOT NULL DEFAULT '',
+      createdAt INTEGER NOT NULL
+    );
     -- Der Text eines Protokolls als Yjs-Dokument (ab 3.0.0): vollständiger Zustand und dessen Zustandsvektor. Der Inhalt in protocols.content wird daraus abgeleitet.
     CREATE TABLE IF NOT EXISTS ydocs (
       id TEXT PRIMARY KEY REFERENCES protocols(id) ON DELETE CASCADE,
