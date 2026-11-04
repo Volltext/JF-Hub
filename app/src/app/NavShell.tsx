@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { type LucideIcon } from 'lucide-react';
+import { useAttention } from '@/features/home/useAttention';
 
 export interface NavEntry {
   id: string;
@@ -40,6 +41,8 @@ export function NavShell({
   children: ReactNode;
 }) {
   const { pathname } = useLocation();
+  // Überfällige Aufgaben liegen unter „Mehr“: ein Punkt an der unteren Leiste macht sie sichtbar.
+  const { overdueTasks } = useAttention();
   const inBottom = bottom.some((e) => e.id !== moreId && e.to && (isRoot(e.to) ? pathname === '/' : pathname.startsWith(e.to)));
 
   return (
@@ -80,6 +83,7 @@ export function NavShell({
           >
             <span className="nav__pill">
               <Icon size={22} />
+              {id === moreId && overdueTasks > 0 && <span className="nav__dot" role="img" aria-label={`${overdueTasks} überfällige ${overdueTasks === 1 ? 'Aufgabe' : 'Aufgaben'}`} />}
             </span>
             {label}
           </NavLink>

@@ -14,7 +14,8 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/). Versionen 
 - **Aufgaben:** Titel nutzen die volle Breite, Hinweise („bald“, „hoch“, Sichtbarkeit) stehen darunter; überfällige Aufgaben sind rot. Auf „Heute“ steht das Datum in eigener Spalte.
 - **Dienste, Mitglieder:** Namensvorschau einzeilig mit „+N“, Anwesenheit farbig (ab 80 % grün, ab 50 % gelb, darunter rot). Leere Listen zeigen eine Schaltfläche für den ersten Eintrag.
 - **Wettkampf:** Bereiche als Reiter mit Unterstrich, damit die drei Ebenen (Wettbewerb, Bereich, Modus) unterscheidbar sind; die Kopfzeile bleibt beim Scrollen stehen.
-- **Navigation:** Unterseiten von „Mehr“ zeigen auf dem Handy einen Zurück-Link.
+- **Navigation:** Unterseiten von „Mehr“ zeigen auf dem Handy einen Zurück-Link. In der Liste unter „Mehr“ stehen Zähler (offene bzw. überfällige Aufgaben, aktive Mitglieder, zu beschaffende Kleidung); überfällige Aufgaben zeigen zusätzlich einen roten Punkt an „Mehr“ in der unteren Leiste.
+- **Wettkampf:** Der Modus (A-Teil, B-Teil …) sitzt jetzt in der Uhr-Karte statt als eigene Zeile darüber; Regeln und Einstellungen sind als Symbole neben den Reitern erreichbar. Unter der Zeit steht die Bestzeit des Modus (beim A-Teil je Wasserentnahme); wer sie beim Speichern unterbietet, bekommt eine Rückmeldung „Neue Bestzeit“.
 - **Protokoll-Editor:** Die Symbolleiste läuft auf schmalen Handys nicht mehr aus dem Bild.
 - **Startseite am Laptop:** Karten ohne Lücken; Hinweis „Nur lokal“ statt „Nur im Browser“ mit Erklärung beim Antippen.
 - **Server-Verwaltung:** Statuskacheln und Aktionen füllen jede Zeile vollständig.

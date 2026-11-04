@@ -58,6 +58,7 @@ export function MenuRow({
   icon: Icon,
   title,
   sub,
+  badge,
   onClick,
 }: {
   to?: string;
@@ -65,6 +66,8 @@ export function MenuRow({
   icon: LucideIcon;
   title: string;
   sub?: string;
+  /** Zähler rechts (z. B. offene Aufgaben); `tone="alert"` hebt Dringendes hervor. */
+  badge?: { text: string; tone?: 'alert' };
   onClick?: () => void;
 }) {
   const body = (
@@ -73,7 +76,10 @@ export function MenuRow({
         <Icon size={20} />
       </span>
       <span className="menu-row__text">
-        <span className="menu-row__title">{title}</span>
+        <span className="menu-row__head">
+          <span className="menu-row__title">{title}</span>
+          {badge && <span className={`menu-row__badge${badge.tone === 'alert' ? ' menu-row__badge--alert' : ''}`}>{badge.text}</span>}
+        </span>
         {sub && <span className="menu-row__sub">{sub}</span>}
       </span>
       <ChevronRight size={18} className="menu-row__chev" />
