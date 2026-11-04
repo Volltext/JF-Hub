@@ -40,7 +40,8 @@ export function HomePage() {
     memberCount: await db.members.filter((m) => m.active).count(),
     openTasks: sortOpen(await db.tasks.filter((t) => !t.completed).toArray()),
     lastRun: (await db.runs.orderBy('createdAt').reverse().first()) ?? null,
-    protocols: (await db.protokolle.filter((p) => p.deleted === 0).toArray()).sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 3),
+    // Nur die drei jüngsten lesen (nach Änderungszeit absteigend), nicht alle Protokolle samt Fotos in den Speicher holen.
+    protocols: await db.protokolle.orderBy('updatedAt').reverse().filter((p) => p.deleted === 0).limit(3).toArray(),
     clothing: await clothingCounts(),
   }), []);
   if (!data) return null;

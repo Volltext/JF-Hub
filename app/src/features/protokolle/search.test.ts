@@ -18,6 +18,48 @@ describe('extractText', () => {
   });
 });
 
+describe('extractText: Tabellen, Links, Markierungen', () => {
+  const p = (t: string) => ({ type: 'paragraph', content: [{ type: 'text', text: t }] });
+  const cell = (t: string, type = 'tableCell') => ({ type, content: [p(t)] });
+  const row = (...cells: object[]) => ({ type: 'tableRow', content: cells });
+
+  it('eine Zeile je Tabellenzeile, die Zellen mit „ · “ getrennt', () => {
+    const d = {
+      type: 'doc',
+      content: [{ type: 'table', content: [row(cell('Name', 'tableHeader'), cell('Gruppe', 'tableHeader')), row(cell('Anna'), cell('Gruppe 1'))] }, p('Danach')],
+    };
+    expect(extractText(d)).toBe('Name · Gruppe\nAnna · Gruppe 1\nDanach');
+  });
+
+  it('mehrere Absätze oder Listenpunkte in einer Zelle bleiben in derselben Zeile', () => {
+    const multi = { type: 'tableCell', content: [p('Schläuche'), { type: 'bulletList', content: [{ type: 'listItem', content: [p('B-Rohr')] }] }] };
+    const d = { type: 'doc', content: [{ type: 'table', content: [row(cell('Material'), multi)] }] };
+    expect(extractText(d)).toBe('Material · Schläuche B-Rohr');
+  });
+
+  it('leere Zellen und leere Zeilen erzeugen keine Lücken', () => {
+    const d = { type: 'doc', content: [{ type: 'table', content: [row(cell('a'), cell(''), cell('c')), row(cell(''), cell('')), row(cell('d'))] }] };
+    expect(extractText(d)).toBe('a · c\nd');
+  });
+
+  it('Link- und Markierungstext zählt als gewöhnlicher Text', () => {
+    const d = {
+      type: 'doc',
+      content: [
+        {
+          type: 'paragraph',
+          content: [
+            { type: 'text', text: 'Mehr unter ' },
+            { type: 'text', text: 'example.de', marks: [{ type: 'link', attrs: { href: 'https://example.de' } }] },
+            { type: 'text', text: ' wichtig', marks: [{ type: 'highlight', attrs: { color: null } }] },
+          ],
+        },
+      ],
+    };
+    expect(extractText(d)).toBe('Mehr unter example.de wichtig');
+  });
+});
+
 describe('fold', () => {
   it('ignoriert Groß-/Kleinschreibung und Umlaute, ohne die Länge zu ändern', () => {
     expect(fold('ÜBUNG Schläuche')).toBe('ubung schlauche');

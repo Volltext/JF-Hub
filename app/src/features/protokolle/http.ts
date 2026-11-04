@@ -2,6 +2,7 @@ import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import { loadSettings } from '@/core/settings/settings';
 import { secure } from '@/core/native/secure';
 import { DEMO_NEEDS_SERVER, IS_DEMO, IS_WEB } from '@/core/env';
+import { SCHEMA_VERSION } from './schemaVersion';
 
 export const PROTO_TOKEN_KEY = 'protokolle.token';
 
@@ -16,9 +17,19 @@ export class ProtoError extends Error {
     message: string,
     /** HTTP-Status; 0 = keine Verbindung. */
     readonly status = 0,
+    /** Bei Status 0: Die Anfrage hat zu lange gedauert (eine Verbindung gibt es, sie ist aber zu langsam oder bricht ab), das Gerät ist nicht offline. */
+    readonly timedOut = false,
+    /** Antwortinhalt bei einem Fehlerstatus (zum Beispiel `{ reset: true }` beim Austausch des Textes). */
+    readonly body?: unknown,
   ) {
     super(message);
   }
+}
+
+/** Hat die Anfrage das Zeitlimit überschritten? (Browser: `TimeoutError`; die native HTTP-Schicht meldet es im Text.) */
+function isTimeout(e: unknown): boolean {
+  if ((e as { name?: unknown } | null)?.name === 'TimeoutError') return true;
+  return /time(d)?[ -]?out/i.test(String((e as { message?: unknown } | null)?.message ?? e));
 }
 
 export interface ProtoConn {
@@ -33,7 +44,10 @@ export async function loadConn(): Promise<ProtoConn> {
   return { url, token: await secure.get(PROTO_TOKEN_KEY) };
 }
 
-async function nativeRequest(method: string, url: string, headers: Record<string, string>, body: unknown, binary: boolean) {
+/** Wie lange eine Anfrage höchstens dauern darf (Millisekunden). Anhänge brauchen mehr. */
+const DEFAULT_TIMEOUT = 60_000;
+
+async function nativeRequest(method: string, url: string, headers: Record<string, string>, body: unknown, binary: boolean, timeoutMs: number) {
   const res = await CapacitorHttp.request({
     method,
     url,
@@ -42,17 +56,17 @@ async function nativeRequest(method: string, url: string, headers: Record<string
     data: body,
     responseType: binary ? 'blob' : 'json',
     connectTimeout: 15000,
-    readTimeout: 60000,
+    readTimeout: timeoutMs,
   });
   return { status: res.status, data: res.data as unknown };
 }
 
-async function webRequest(method: string, url: string, headers: Record<string, string>, body: unknown, binary: boolean) {
+async function webRequest(method: string, url: string, headers: Record<string, string>, body: unknown, binary: boolean, timeoutMs: number) {
   const res = await fetch(url, {
     method,
     headers: body !== undefined ? { ...headers, 'Content-Type': 'application/json' } : headers,
     body: body !== undefined ? JSON.stringify(body) : undefined,
-    signal: AbortSignal.timeout(60000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   if (binary && res.ok) {
     const buf = new Uint8Array(await res.arrayBuffer());
@@ -71,21 +85,23 @@ async function webRequest(method: string, url: string, headers: Record<string, s
 }
 
 /** Eine Anfrage an den Server. Binärantworten kommen als Base64-String zurück. */
-export async function request<T>(conn: ProtoConn, method: string, path: string, body?: unknown, binary = false): Promise<T> {
+export async function request<T>(conn: ProtoConn, method: string, path: string, body?: unknown, binary = false, opts: { timeoutMs?: number } = {}): Promise<T> {
   if (!conn.url) throw new ProtoError(IS_DEMO ? DEMO_NEEDS_SERVER : 'Kein Server eingerichtet.', 0);
-  const headers: Record<string, string> = {};
+  // Der Server erfährt, welche App-Version und welches Dokumentformat hier laufen, und kann zu alte Apps abweisen.
+  const headers: Record<string, string> = { 'X-JFH-Client': __APP_VERSION__, 'X-JFH-Schema': String(SCHEMA_VERSION) };
   if (conn.token && conn.token !== COOKIE_SESSION) headers.Authorization = `Bearer ${conn.token}`;
   if (IS_WEB) headers['X-JFH'] = '1'; // verlangt der Server bei Cookie-Sitzungen (CSRF-Schutz)
   let res: { status: number; data: unknown };
   try {
     const send = Capacitor.isNativePlatform() ? nativeRequest : webRequest;
-    res = await send(method, conn.url + path, headers, body, binary);
-  } catch {
-    throw new ProtoError('Keine Verbindung zum Server.', 0);
+    res = await send(method, conn.url + path, headers, body, binary, opts.timeoutMs ?? DEFAULT_TIMEOUT);
+  } catch (e) {
+    const timedOut = isTimeout(e);
+    throw new ProtoError(timedOut ? 'Zeitüberschreitung: Die Verbindung ist zu langsam oder wurde unterbrochen.' : 'Keine Verbindung zum Server.', 0, timedOut);
   }
   if (res.status >= 200 && res.status < 300) return res.data as T;
   const msg = (res.data as { error?: string } | null)?.error;
   if (res.status === 401) throw new ProtoError(msg ?? 'Nicht angemeldet.', 401);
   if (res.status === 429) throw new ProtoError('Zu viele Versuche. Bitte später erneut probieren.', 429);
-  throw new ProtoError(msg ?? `Serverfehler ${res.status}.`, res.status);
+  throw new ProtoError(msg ?? `Serverfehler ${res.status}.`, res.status, false, res.data);
 }

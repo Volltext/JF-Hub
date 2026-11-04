@@ -25,6 +25,17 @@ test.describe('Demo im Browser (ohne Server)', () => {
     await page.goto(`${DEMO}#/protokolle`);
     await page.getByText('Dienstabende').click();
     await page.getByText('Dienst: Knoten und Stiche').click();
+    // Der Text ist bearbeitbar, auch ohne Server, und es erscheint kein Hinweis auf fehlende Verbindung.
+    const editor = page.getByLabel('Protokolltext', { exact: true });
+    await expect(editor).toContainText('Knoten');
+    await editor.click();
+    await page.keyboard.press('Control+End');
+    await page.keyboard.type(' Ergänzung in der Demo.');
+    await expect(page.getByText('Gespeichert')).toBeVisible();
+    await expect(editor).toContainText('Ergänzung in der Demo.');
+    await expect(page.getByText(/^Offline:/)).toHaveCount(0);
+    await page.waitForTimeout(3500); // so lange tauscht ein offener Editor sonst aus
+    await expect(page.getByText(/^Offline:/)).toHaveCount(0);
     await page.getByRole('button', { name: 'Als PDF exportieren' }).click();
     await expect(page.getByText('in der Demo im Browser gibt es keinen')).toBeVisible();
 

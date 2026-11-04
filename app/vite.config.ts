@@ -58,7 +58,8 @@ export default defineConfig(({ mode }) => ({
   base: mode === 'demo' ? './' : '/',
   plugins: [react(), ...(mode === 'web' ? [serviceWorker()] : []), ...(mode === 'demo' ? [noManifest()] : [])],
   define: { __APP_VERSION__: JSON.stringify(version) },
-  resolve: { alias: { '@demo-data': demoDataOrStub, '@': fileURLToPath(new URL('./src', import.meta.url)) } },
+  // `dedupe`: Die Tests importieren Code aus server/src (eigene Kopie von Yjs in server/node_modules). Zwei Kopien würden sich nicht erkennen.
+  resolve: { alias: { '@demo-data': demoDataOrStub, '@': fileURLToPath(new URL('./src', import.meta.url)) }, dedupe: ['yjs'] },
   // `npm run dev:web`: Web-Variante mit Hot-Reload, API und Admin-Oberfläche vom lokalen Server (server/ → npm run dev).
   // `npm run dev:demo`: Browser-Demo; sie liest die Beispieldaten aus server/src.
   server:

@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useDeferredValue, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { ChevronRight, Folder, FolderPlus, MoreHorizontal, Plus, Search } from 'lucide-react';
+import { ChevronRight, Folder, FolderPlus, MoreHorizontal, Plus, Search, Trash2 } from 'lucide-react';
 import { db } from '@/core/db/db';
 import { formatDate } from '@/core/domain/format';
 import { Button, Card, Sheet } from '@/core/ui/components';
@@ -11,7 +11,8 @@ import { isMine, useAccount, useDirectory, visibilityLabel } from '@/core/accoun
 import { FolderPicker } from './FolderPicker';
 import { NameSheet } from './NameSheet';
 import { SyncBadge } from './SyncBadge';
-import { ROOT, childFolders, folderAndDescendants, folderPath, folderPathLabel, folderRepo, liveFolders } from './folders';
+import { dismissConflict, useConflicts } from './conflicts';
+import { ROOT, childFolders, folderAndDescendants, folderPath, folderPathLabel, folderRepo, liveFolders, shownFolder } from './folders';
 import type { Ordner } from './model';
 import { protokolleRepo } from './repo';
 import { extractText, searchProtocols } from './search';
@@ -25,19 +26,26 @@ export function ProtokollList() {
   const navigate = useNavigate();
   const { folderId = ROOT } = useParams();
   const rows = useLiveQuery(() => db.protokolle.filter((p) => p.deleted === 0).toArray(), []);
+  // Texte, die der Server noch nicht bestätigt hat (der Text hat sein eigenes Merkmal), und der Grund, wenn er einen abgelehnt hat.
+  const unsentText = useLiveQuery(async () => new Map((await db.ydocs.where('dirty').equals(1).toArray()).map((r) => [r.id, r.rejected ?? ''] as const)), []);
   const folders = useLiveQuery(liveFolders, []);
   const syncState = useSyncStatus((s) => s.state);
+  const syncMessage = useSyncStatus((s) => s.message);
+  const conflicts = useConflicts();
   const account = useAccount();
   const users = useDirectory();
   const [q, setQ] = useState('');
   const [dialog, setDialog] = useState<Dialog>(null);
 
-  // Volltextindex: Reintext je Protokoll, nur neu berechnet, wenn sich die Daten ändern.
+  // Die Suche läuft mit leicht verzögertem Suchwort, damit das Tippen flüssig bleibt (bei vielen Protokollen dauert sie spürbar).
+  const query = useDeferredValue(q).trim();
+  const searching = query !== '';
+  // Volltextindex: Reintext je Protokoll. Er wird nur gebaut, wenn gesucht wird, und nur neu, wenn sich die Daten ändern.
   const index = useMemo(
-    () => (rows ?? []).map((p) => ({ id: p.id, title: p.title, ort: p.ort, leitung: p.leitung, text: extractText(p.content) })),
-    [rows],
+    () => (searching ? (rows ?? []).map((p) => ({ id: p.id, title: p.title, ort: p.ort, leitung: p.leitung, text: extractText(p.content) })) : []),
+    [rows, searching],
   );
-  const hits = useMemo(() => (q.trim() ? searchProtocols(index, q) : null), [index, q]);
+  const hits = useMemo(() => (searching ? searchProtocols(index, query) : null), [index, query, searching]);
 
   if (!rows || !folders) return null;
 
@@ -47,9 +55,9 @@ export function ProtokollList() {
   const path = folderPath(folders, folderId);
   const subfolders = childFolders(folders, folderId);
   const protocols = rows
-    .filter((p) => (p.folderId ?? ROOT) === folderId)
+    .filter((p) => shownFolder(folders, p.folderId) === folderId)
     .sort((a, b) => (b.datum || '').localeCompare(a.datum || '') || b.updatedAt - a.updatedAt);
-  const countIn = (id: string) => rows.filter((p) => (p.folderId ?? ROOT) === id).length + folders.filter((f) => f.parentId === id).length;
+  const countIn = (id: string) => rows.filter((p) => shownFolder(folders, p.folderId) === id).length + folders.filter((f) => f.parentId === id).length;
 
   async function create() {
     const p = await protokolleRepo.create(folderId);
@@ -69,6 +77,11 @@ export function ProtokollList() {
       <div className="proto-bar">
         <h1 className="page__title">Protokolle</h1>
         <span className="proto-bar__spacer" />
+        {syncState !== 'off' && (
+          <Link to="/protokolle/papierkorb" className="icon-btn" aria-label="Papierkorb" title="Papierkorb">
+            <Trash2 size={20} />
+          </Link>
+        )}
         <SyncBadge />
       </div>
 
@@ -90,6 +103,25 @@ export function ProtokollList() {
           )}
         </Card>
       )}
+
+      {syncState === 'error' && syncMessage && (
+        <Card title="Abgleich fehlgeschlagen">
+          <p className="muted">{syncMessage}</p>
+        </Card>
+      )}
+      {(conflicts ?? [])
+        .filter((n) => byId.has(n.copyId))
+        .map((n) => (
+          <Card key={n.copyId} title="Gleichzeitig bearbeitet">
+            <p>„{byId.get(n.id)?.title || 'Ohne Titel'}“ wurde zur selben Zeit von jemand anderem geändert. Deine Fassung liegt als Kopie vor – schau nach, ob etwas übernommen werden soll.</p>
+            <p className="row" style={{ marginTop: 'var(--s-3)' }}>
+              <Link to={`/protokolle/${n.copyId}`} className="btn btn--primary">
+                Kopie öffnen
+              </Link>
+              <Button onClick={() => void dismissConflict(n.copyId)}>Verstanden</Button>
+            </p>
+          </Card>
+        ))}
 
       <label className="proto-search">
         <Search size={18} />
@@ -174,16 +206,26 @@ export function ProtokollList() {
                 </button>
               </div>
             ))}
-            {protocols.map((p) => (
-              <Link key={p.id} to={`/protokolle/${p.id}`} className="item" style={{ textDecoration: 'none', color: 'inherit' }}>
-                <div className="item__main">
-                  <div className="item__title">{p.title || 'Ohne Titel'}</div>
-                  <div className="item__sub">{[p.datum && formatDate(p.datum), p.ort].filter(Boolean).join(' · ')}</div>
-                </div>
-                {(p.shared || !isMine(p, account)) && <span className="chip">{visibilityLabel(p, account, users)}</span>}
-                {p.dirty === 1 && <span className="chip chip--warn">nicht gesendet</span>}
-              </Link>
-            ))}
+            {protocols.map((p) => {
+              const text = unsentText?.get(p.id); // undefined: nichts offen · '': ungesendet · sonst: vom Server abgelehnt
+              const rejected = p.rejected || text || undefined;
+              return (
+                <Link key={p.id} to={`/protokolle/${p.id}`} className="item" style={{ textDecoration: 'none', color: 'inherit' }}>
+                  <div className="item__main">
+                    <div className="item__title">{p.title || 'Ohne Titel'}</div>
+                    <div className="item__sub">{[p.datum && formatDate(p.datum), p.ort].filter(Boolean).join(' · ')}</div>
+                  </div>
+                  {(p.shared || !isMine(p, account)) && <span className="chip">{visibilityLabel(p, account, users)}</span>}
+                  {rejected ? (
+                    <span className="chip chip--warn" title={rejected}>
+                      abgelehnt
+                    </span>
+                  ) : (
+                    (p.dirty === 1 || text !== undefined) && <span className="chip chip--warn">nicht gesendet</span>
+                  )}
+                </Link>
+              );
+            })}
           </div>
         </>
       )}

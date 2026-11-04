@@ -37,7 +37,7 @@ Nginx Proxy Manager, Traefik, Caddy, nginx, HAProxy … Leite die Adresse an `ht
 - **`Host`, `X-Forwarded-For` und `X-Forwarded-Proto` weiterreichen.** Die meisten Proxys tun das von selbst. `X-Forwarded-Proto: https` sorgt dafür, dass das Anmelde-Cookie als `Secure` gesetzt wird.
 - **`TRUST_PROXY`:** Steht der Proxy im selben Docker-Netz oder in deinem Heimnetz, passt der Standard. Kommt er aus einem anderen Netz, trage dessen Adresse ein (`TRUST_PROXY=203.0.113.7` oder ein Netz wie `10.0.0.0/8`). `true` nur, wenn der Server **nie** direkt erreichbar ist.
 - **Keine Pfad-Präfixe:** JF Hub muss unter dem Hauptpfad `/` einer (Sub-)Domain laufen.
-- **Maximale Anfragegröße** mindestens **64 MB** erlauben (Abgleich mit Fotos).
+- **Maximale Anfragegröße** mindestens **64 MB** erlauben. Ein Foto oder eine Datei geht als eigene Anfrage hoch (bis gut 13 MB); die 64 MB brauchen nur ältere Apps, die Fotos noch im Protokoll mitschicken.
 
 <details>
 <summary><b>Beispiel nginx</b></summary>

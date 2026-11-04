@@ -1,10 +1,16 @@
 import { db } from '@/core/db/db';
 import { newId } from '@/core/domain/id';
-import type { Ordner } from './model';
+import { stampMeta, type Ordner } from './model';
 import { scheduleSync } from './sync';
 
 /** Oberste Ebene. */
 export const ROOT = '';
+
+/**
+ * Ordner, in dem ein Protokoll angezeigt wird. Kennt dieses Gerät den eingetragenen Ordner nicht (zum Beispiel, weil ein anderer
+ * Betreuer ihn gelöscht hat, während das Protokoll privat war), liegt es auf der obersten Ebene, statt unauffindbar zu sein.
+ */
+export const shownFolder = (all: Ordner[], folderId: string | undefined): string => (folderId && all.some((f) => f.id === folderId) ? folderId : ROOT);
 
 const byName = (a: Ordner, b: Ordner) => a.name.localeCompare(b.name, 'de', { numeric: true, sensitivity: 'base' });
 
@@ -73,7 +79,13 @@ export const folderRepo = {
       if (!f) return;
       const now = Date.now();
       await db.folders.where('parentId').equals(id).modify({ parentId: f.parentId, updatedAt: now, dirty: 1 });
-      await db.protokolle.filter((p) => p.folderId === id).modify({ folderId: f.parentId, updatedAt: now, dirty: 1 });
+      // Auch hier bekommt das Feld eine eigene Änderungszeit: Der Server führt die Kopfdaten Feld für Feld zusammen.
+      await db.protokolle.filter((p) => p.folderId === id && p.deleted === 0).modify((p) => {
+        p.metaAt = stampMeta(p.metaAt, ['folderId'], now);
+        p.folderId = f.parentId;
+        p.updatedAt = now;
+        p.dirty = 1;
+      });
       if (f.rev === 0) await db.folders.delete(id);
       else await db.folders.update(id, { deleted: 1, dirty: 1, updatedAt: now });
     });
