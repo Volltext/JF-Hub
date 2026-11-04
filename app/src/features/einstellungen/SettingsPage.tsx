@@ -264,7 +264,7 @@ function Data() {
     <Page title="Daten & Backup" back={BACK}>
       <Card title="Backup">
         <div className="stack">
-          <p className="muted">Die Sicherung enthält alle Daten dieses Geräts als Datei.</p>
+          <p className="muted">Die Sicherung enthält alle Daten dieses Geräts als Datei. Fotos und Dateien von Protokollen sind dabei, soweit sie noch nicht auf dem Server liegen; was der Server hat, holt die App von dort.</p>
           <Button
             onClick={() =>
               run(async () => {

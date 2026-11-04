@@ -70,3 +70,5 @@ jobs:
         with:
           files: app/apk/*.apk
           generate_release_notes: true
+          # Release-Kandidaten (v2.2.0-rc.1) sind Vorabversionen und werden nicht zum „Latest“-Release.
+          prerelease: ${{ contains(github.ref_name, '-') }}

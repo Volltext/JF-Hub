@@ -24,6 +24,19 @@ export interface ProtocolRow {
   rev: number;
   updatedAt: number;
   deletedAt: number | null;
+  /** Nur bei Konfliktkopien: die Revision, mit der die Kopie geschrieben wurde. Stimmt sie noch, hat niemand die Kopie geändert und sie darf fortgeschrieben werden. */
+  conflictRev: number | null;
+  /** Gesetzt, wenn der Papierkorb geleert wurde: die Zeile bleibt als leerer Grabstein, damit auch lange offline gewesene Geräte die Löschung erfahren. */
+  purgedAt: number | null;
+  /**
+   * Nur nach der Migration der Anhänge in Blobs: die Revision davor. Eine Bearbeitung, die darauf aufbaut, ist kein Konflikt
+   * (der Inhalt ist derselbe, nur anders abgelegt). Jede Änderung des Protokolls setzt den Wert zurück.
+   */
+  migratedFrom: number | null;
+  /** 1 = der Text liegt als Yjs-Dokument in `ydocs` (ab 3.0.0), `content` ist daraus abgeleitet. 0 = noch nicht umgestellt. */
+  ymode: number;
+  /** JSON: Zeitpunkt der letzten Änderung je Kopffeld (ms), für „letzte Änderung gewinnt“ Feld für Feld. */
+  metaAt: string;
 }
 
 /** Einstellungen, die in der Admin-GUI änderbar sind (key/value in `config`). */
@@ -175,6 +188,35 @@ export function openDb(path: string): DatabaseSync {
       updatedAt INTEGER NOT NULL,
       userId TEXT NOT NULL DEFAULT ''
     );
+    -- Anhänge (Fotos, Dateien) liegen binär hier und nicht im Inhalt der Protokolle. Die Kennung vergibt der Client (bzw. der Server
+    -- aus dem Inhalt, wenn er Anhänge aus älteren Protokollen auslagert), uploadedAt ist der Zeitpunkt des letzten Hochladens.
+    CREATE TABLE IF NOT EXISTS blobs (
+      id TEXT PRIMARY KEY,
+      sha256 TEXT NOT NULL,
+      size INTEGER NOT NULL,
+      mime TEXT NOT NULL,
+      name TEXT NOT NULL DEFAULT '',
+      kind TEXT NOT NULL,
+      uploaderId TEXT NOT NULL DEFAULT '',
+      uploadedAt INTEGER NOT NULL,
+      -- Seit wann ohne Verweis (von der Müllsammlung gemerkt); leer, solange ein Protokoll darauf verweist.
+      orphanedAt INTEGER,
+      data BLOB NOT NULL
+    );
+    -- Welches Protokoll auf welchen Blob verweist. Der Blob darf fehlen (noch nicht hochgeladen), deshalb kein Fremdschlüssel darauf.
+    CREATE TABLE IF NOT EXISTS blob_refs (
+      blobId TEXT NOT NULL,
+      protocolId TEXT NOT NULL REFERENCES protocols(id) ON DELETE CASCADE,
+      PRIMARY KEY (blobId, protocolId)
+    );
+    CREATE INDEX IF NOT EXISTS blob_refs_protocol ON blob_refs(protocolId);
+    -- Der Text eines Protokolls als Yjs-Dokument (ab 3.0.0): vollständiger Zustand und dessen Zustandsvektor. Der Inhalt in protocols.content wird daraus abgeleitet.
+    CREATE TABLE IF NOT EXISTS ydocs (
+      id TEXT PRIMARY KEY REFERENCES protocols(id) ON DELETE CASCADE,
+      state BLOB NOT NULL,
+      sv BLOB NOT NULL,
+      updatedAt INTEGER NOT NULL
+    );
   `);
   // Migration: Ordner-Zuordnung (ab 1.1.0 des Servers).
   addColumn(db, 'protocols', 'folderId', "TEXT NOT NULL DEFAULT ''");
@@ -182,6 +224,16 @@ export function openDb(path: string): DatabaseSync {
   addColumn(db, 'protocols', 'ownerId', "TEXT NOT NULL DEFAULT ''");
   addColumn(db, 'protocols', 'shared', 'INTEGER NOT NULL DEFAULT 1');
   addColumn(db, 'protocols', 'hiddenRev', 'INTEGER');
+  // Migration: Konfliktkopien werden bei Wiederholung fortgeschrieben statt vervielfacht (ab 2.1.0).
+  addColumn(db, 'protocols', 'conflictRev', 'INTEGER');
+  // Migration: Papierkorb leeren hinterlässt einen Grabstein statt die Zeile zu löschen (ab 2.1.0).
+  addColumn(db, 'protocols', 'purgedAt', 'INTEGER');
+  // Migration: Anhänge ausgelagert; Bearbeitungen auf dem Stand davor bleiben gültig (ab 2.2.0).
+  addColumn(db, 'protocols', 'migratedFrom', 'INTEGER');
+  // Migration: Der Text liegt als Yjs-Dokument vor, die Kopfdaten tragen Änderungszeiten je Feld (ab 3.0.0).
+  addColumn(db, 'protocols', 'ymode', 'INTEGER NOT NULL DEFAULT 0');
+  addColumn(db, 'protocols', 'metaAt', "TEXT NOT NULL DEFAULT '{}'");
+  addColumn(db, 'blobs', 'orphanedAt', 'INTEGER');
   addColumn(db, 'records', 'ownerId', "TEXT NOT NULL DEFAULT ''");
   addColumn(db, 'records', 'shared', 'INTEGER NOT NULL DEFAULT 1');
   addColumn(db, 'records', 'hiddenRev', 'INTEGER');
@@ -233,6 +285,19 @@ export function getEpoch(db: DatabaseSync): string {
     setConfig(db, 'epoch', e);
   }
   return e;
+}
+
+/**
+ * Markiert die aktuelle Epoche als gewollt gesetzt (Wiederherstellung einer Sicherung, Zurücksetzen der Demo): Der Stand dieses Servers
+ * gilt, auch gegen neuere Stände auf den Geräten. Eine neue, leere Datenbank hat diese Marke nicht; dort haben die Geräte die einzigen
+ * Kopien und bringen sie wieder hoch.
+ */
+export function markEpochRestored(db: DatabaseSync): void {
+  setConfig(db, 'restoredEpoch', getEpoch(db));
+}
+
+export function epochRestored(db: DatabaseSync): boolean {
+  return getConfig(db, 'restoredEpoch') === getEpoch(db);
 }
 
 export function currentRev(db: DatabaseSync): number {

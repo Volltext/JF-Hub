@@ -136,6 +136,13 @@ docker compose up -d --build                      # aus dem Quellcode gebaut (na
 
 Die Datenbank wird beim Start automatisch auf den neuen Stand gebracht. Mach vor größeren Versionssprüngen ein [Backup](#backup-und-wiederherstellung). Was sich ändert, steht im [CHANGELOG](../CHANGELOG.md).
 
+> [!IMPORTANT]
+> **Update auf 3.0.0:** Ab dieser Version schreiben mehrere Betreuer gleichzeitig am selben Protokoll. Beim ersten Start stellt der Server dafür alle vorhandenen Protokolle um. Bei vielen Protokollen dauert das einen Moment (der Healthcheck des Images wartet bis zu zwei Minuten). Vorher legt er ein Backup der Art **„vor Update“** an (im Docker-Image ist der Backup-Ordner eingerichtet); wenn alles läuft, kannst du es löschen, der Server behält die letzten zwei. Was sich nicht verlustfrei umstellen lässt, bleibt unverändert und ist nur lesbar; die Übersicht der Server-Verwaltung nennt diese Protokolle, und der Server versucht es bei jedem Start erneut. Ein Rückschritt auf 2.3.x geht danach nur mit dem Backup „vor Update“ (Texte, die seitdem geschrieben wurden, gingen verloren). Das alte Image einfach auf dem neuen Datenordner zu starten und danach wieder das neue, ist nicht vorgesehen: Was in der Zwischenzeit geschrieben wurde, würde beim erneuten Update nicht übernommen.
+>
+> **Erst den Server aktualisieren, dann die Apps.** **Auch Apps der Version 2.3.x** melden danach „Bitte die App aktualisieren“, bis sie neu installiert sind (die Web-App lädt sich selbst, die Android-App braucht die neue APK). Eine neue App an einem alten Server meldet „Bitte den Server aktualisieren“. Ungesendete Änderungen in der alten App gehen nicht verloren: Die neue App legt daraus beim ersten Start ein Protokoll „… (lokale Fassung)“ an.
+>
+> **Probelauf:** Wer sichergehen will, startet das neue Image vorher mit einer **Kopie** des Datenordners (zweiter Container, anderer Port) und sieht sich die Protokolle an, bevor er die echte Installation aktualisiert.
+
 Die App im Browser aktualisiert sich selbst: Beim nächsten Öffnen mit Netz wird die neue Version geladen. Die Android-App bekommt Updates über eine neue APK.
 
 ## Backup und Wiederherstellung
@@ -158,7 +165,9 @@ Der Server legt **täglich** ein Backup in `/data/backups` an und behält die le
 - **Alle Protokolle als ZIP** liefert eine lesbare Kopie mit PDFs
 - **Wiederherstellen** bei einem Backup, oder eine heruntergeladene Datei unter *Aus Datei wiederherstellen* hochladen
 
-Vor jeder Wiederherstellung sichert der Server den aktuellen Stand (Art „vor Wiederherstellung“, die letzten 3 bleiben). Danach gleichen sich alle Geräte neu ab. Benutzer und Anmeldungen stammen aus dem Backup, wer dort fehlt, meldet sich neu an. Auch Backups älterer Versionen lassen sich einspielen.
+Vor jeder Wiederherstellung sichert der Server den aktuellen Stand (Art „vor Wiederherstellung“, die letzten 3 bleiben). Danach gleichen sich alle Geräte neu ab und übernehmen den Stand des Backups; was seitdem geschrieben wurde, ist weg, ungesendeter Text einer App bleibt als Protokoll „… (lokale Fassung)“ erhalten. Benutzer und Anmeldungen stammen aus dem Backup, wer dort fehlt, meldet sich neu an. Auch Backups älterer Versionen lassen sich einspielen.
+
+**Neuer, leerer Server:** Startet der Server ohne Datenbank (zum Beispiel, weil das Volume nicht eingebunden war), ist das keine Wiederherstellung: Die Apps behalten ihre Protokolle und laden sie beim nächsten Abgleich wieder hoch; Texte, die mehrere Geräte hatten, laufen dabei zusammen. Das ersetzt kein Backup, denn was kein Gerät mehr hat, ist weg. Benutzer und Anmeldungen gibt es dann nicht mehr und müssen neu angelegt werden.
 
 <details>
 <summary><b>Über das Volume oder von Hand</b></summary>

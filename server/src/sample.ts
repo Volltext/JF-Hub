@@ -31,5 +31,10 @@ export function sampleProtocol() {
     rev: 0,
     updatedAt: Date.now(),
     deletedAt: null,
+    conflictRev: null,
+    purgedAt: null,
+    migratedFrom: null,
+    ymode: 1,
+    metaAt: '{}',
   });
 }

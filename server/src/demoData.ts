@@ -120,13 +120,24 @@ const CLOTHING_ITEMS = [
 ];
 
 type Node = Record<string, unknown>;
-const text = (t: string, marks?: string[]): Node => ({ type: 'text', text: t, ...(marks ? { marks: marks.map((type) => ({ type })) } : {}) });
+type Mark = string | { type: string; attrs?: Record<string, unknown> };
+const text = (t: string, marks?: Mark[]): Node => ({ type: 'text', text: t, ...(marks ? { marks: marks.map((m) => (typeof m === 'string' ? { type: m } : m)) } : {}) });
+const marker = (t: string): Node => text(t, ['highlight']);
+const link = (t: string, href: string): Node => text(t, [{ type: 'link', attrs: { href } }]);
 const p = (...parts: (string | Node)[]): Node => ({ type: 'paragraph', content: parts.map((x) => (typeof x === 'string' ? text(x) : x)) });
 const h2 = (t: string): Node => ({ type: 'heading', attrs: { level: 2 }, content: [text(t)] });
 const ul = (...items: string[]): Node => ({ type: 'bulletList', content: items.map((t) => ({ type: 'listItem', content: [p(t)] })) });
 const ol = (...items: string[]): Node => ({ type: 'orderedList', attrs: { start: 1 }, content: items.map((t) => ({ type: 'listItem', content: [p(t)] })) });
 const todo = (...items: [string, boolean][]): Node => ({ type: 'taskList', content: items.map(([t, checked]) => ({ type: 'taskItem', attrs: { checked }, content: [p(t)] })) });
 const quote = (t: string): Node => ({ type: 'blockquote', content: [p(t)] });
+/** Tabelle mit Kopfzeile. */
+const table = (head: string[], ...rows: string[][]): Node => ({
+  type: 'table',
+  content: [
+    { type: 'tableRow', content: head.map((t) => ({ type: 'tableHeader', content: [p(t)] })) },
+    ...rows.map((cells) => ({ type: 'tableRow', content: cells.map((t) => ({ type: 'tableCell', content: [p(t)] })) })),
+  ],
+});
 const doc = (...content: Node[]): Node => ({ type: 'doc', content });
 
 /**
@@ -251,7 +262,7 @@ export function demoData(now: Date, users: DemoUsers): DemoData {
     h2('Ablauf'),
     ul('Begrüßung, Anwesenheit per App erfasst', 'Wiederholung Mastwurf, Schotenstich, Kreuzknoten', 'Stationen in drei Gruppen, je 15 Minuten', 'Abschlussspiel: Knoten-Staffel'),
     h2('Beobachtungen'),
-    p('Der Mastwurf sitzt bei fast allen. Beim ', text('Schotenstich', ['bold']), ' brauchen die Neuen noch Übung – nächste Woche zu Beginn fünf Minuten wiederholen.'),
+    p('Der Mastwurf sitzt bei fast allen. Beim ', text('Schotenstich', ['bold']), ' brauchen die Neuen noch Übung – ', marker('nächste Woche zu Beginn fünf Minuten wiederholen'), '.'),
     quote('Lob an die Älteren: Sie haben die Station mit den Neuen selbstständig betreut.'),
     h2('Nächste Schritte'),
     todo(['Zwei Knotenbretter reparieren', false], ['Übungsleinen zählen und beschriften', true]),
@@ -262,6 +273,8 @@ export function demoData(now: Date, users: DemoUsers): DemoData {
     ol('Rückblick auf die letzten Dienste', 'Kreiszeltlager im Sommer', 'Training für die Leistungsspange', 'Neue Kleidung'),
     h2('Beschlüsse'),
     ul('Wir melden 12 Jugendliche und 3 Betreuer für das Kreiszeltlager an.', 'Ab sofort jeden zweiten Dienst 30 Minuten Training für die Leistungsspange.', 'Kleiderbestellung geht gesammelt Ende des Monats an den Kleiderwart.'),
+    h2('Zuständigkeiten Zeltlager'),
+    table(['Wer', 'Aufgabe', 'Bis'], ['Jana', 'Anmeldung beim Kreisverband', 'Ende des Monats'], ['Tobias', 'Fahrgemeinschaften mit den Eltern klären', 'Elternabend'], ['Lena', 'Packliste erstellen', 'in zwei Wochen']),
     h2('Aufgaben'),
     todo(['Anmeldung Zeltlager (Jana)', false], ['Getränke Elternabend (Tobias)', false], ['Kleiderliste als PDF an den Kleiderwart (Lena)', true]),
   ));
@@ -279,7 +292,7 @@ export function demoData(now: Date, users: DemoUsers): DemoData {
     h2('Wichtigste Punkte'),
     ul('Dienst ist montags um 18:00 Uhr, im Sommerhalbjahr schon um 17:30 Uhr. In den Schulferien ist frei.', 'Die Kleidung bleibt Eigentum der Feuerwehr, Größenwechsel bitte bei den Betreuern melden.', 'Zum Zeltlager kommt ein eigener Elternbrief.'),
     h2('Fragen'),
-    p('Mehrere Eltern fragten nach Fahrgemeinschaften zum Kreiszeltlager. Lena sammelt Angebote.'),
+    p('Mehrere Eltern fragten nach Fahrgemeinschaften zum Kreiszeltlager. Lena sammelt Angebote. Der Elternbrief steht unter ', link('jf-musterstadt.example/zeltlager', 'https://jf-musterstadt.example/zeltlager'), '.'),
   ));
   protocol('demo-p-privat-jana', '', 'Notizen Jahresplanung (privat)', addDays(now, -2), ['20:00', ''], 'Jana Becker', jana, false, doc(
     p('Nur für mich, bis es mit dem Team abgestimmt ist. Mit „Veröffentlichen“ wird es für alle Betreuer sichtbar.'),

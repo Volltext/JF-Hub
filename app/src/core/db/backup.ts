@@ -1,9 +1,32 @@
-import { db } from './db';
+import { base64ToBytes, bytesToBase64 } from '@/core/domain/base64';
+import { preserveUnsent } from '@/features/protokolle/legacyUnsent';
+import type { Protokoll } from '@/features/protokolle/model';
+import { db, type YDocRow } from './db';
 
-export const BACKUP_VERSION = 6;
+export const BACKUP_VERSION = 8;
 
 /** kv-Einträge, die zur Sicherung gehören (alles andere sind Zwischenspeicher wie die Server-Auswahllisten). */
 const isBackedUpKv = (key: string) => key === 'lineup.current' || key === 'lsp.state' || key.startsWith('draft.');
+
+/** Ein Anhang, der nur auf diesem Gerät liegt, samt Bytes (Base64). Was der Server hat, steht nicht in der Sicherung. */
+export interface BackupBlob {
+  id: string;
+  kind: 'photo' | 'file';
+  mime: string;
+  name: string;
+  size: number;
+  createdAt: number;
+  data: string;
+}
+
+/** Ein Text mit ungesendeten Änderungen (Yjs-Zustand als Base64). Was der Server hat, steht nicht in der Sicherung, das Gerät holt es wieder. */
+export interface BackupText {
+  id: string;
+  update: string;
+  serverSv?: string;
+  seq: number;
+  created?: boolean;
+}
 
 export interface Backup {
   app: 'jf-hub';
@@ -21,8 +44,31 @@ export interface Backup {
   /** Ab Version 6. */
   clothing?: unknown[];
   clothingItems?: unknown[];
+  /** Ab Version 7: Fotos und Dateien, die noch nicht auf dem Server sind. */
+  blobs?: BackupBlob[];
+  /** Ab Version 8: Texte von Protokollen mit ungesendeten Änderungen. */
+  texts?: BackupText[];
   kv?: { key: string; value: unknown }[];
   settings: unknown;
+}
+
+async function localBlobs(): Promise<BackupBlob[]> {
+  const out: BackupBlob[] = [];
+  for (const meta of await db.blobs.where('state').equals('local').toArray()) {
+    const row = await db.blobData.get(meta.id);
+    if (row) out.push({ id: meta.id, kind: meta.kind, mime: meta.mime, name: meta.name, size: meta.size, createdAt: meta.createdAt, data: bytesToBase64(row.data) });
+  }
+  return out;
+}
+
+async function unsentTexts(): Promise<BackupText[]> {
+  return (await db.ydocs.where('dirty').equals(1).toArray()).map((t) => ({
+    id: t.id,
+    update: bytesToBase64(t.update),
+    ...(t.serverSv ? { serverSv: bytesToBase64(t.serverSv) } : {}),
+    seq: t.seq,
+    ...(t.created ? { created: true } : {}),
+  }));
 }
 
 export async function exportBackup(): Promise<Backup> {
@@ -39,6 +85,8 @@ export async function exportBackup(): Promise<Backup> {
     folders: await db.folders.toArray(),
     clothing: await db.clothing.toArray(),
     clothingItems: await db.clothingItems.toArray(),
+    blobs: await localBlobs(),
+    texts: await unsentTexts(),
     kv: (await db.kv.toArray()).filter((r) => isBackedUpKv(r.key)),
     settings: (await db.kv.get('settings'))?.value ?? {},
   };
@@ -51,7 +99,7 @@ export function validateBackup(raw: unknown): Backup {
     throw new Error('Sicherung stammt aus einer neueren App-Version.');
   for (const k of ['members', 'sessions', 'tasks'] as const)
     if (!Array.isArray(b[k])) throw new Error(`Sicherung unvollständig: ${k}`);
-  for (const k of ['runs', 'lineupTemplates', 'protokolle', 'folders', 'clothing', 'clothingItems', 'kv'] as const)
+  for (const k of ['runs', 'lineupTemplates', 'protokolle', 'folders', 'clothing', 'clothingItems', 'blobs', 'texts', 'kv'] as const)
     if (b[k] !== undefined && !Array.isArray(b[k])) throw new Error(`Sicherung unvollständig: ${k}`);
   return b as Backup;
 }
@@ -61,7 +109,26 @@ export async function importBackup(raw: unknown): Promise<void> {
   const b = validateBackup(raw);
   // Konto, Benutzerverzeichnis und Push-Anmeldung gehören zu diesem Gerät, nicht zur Sicherung.
   const keep = (await db.kv.bulkGet(['account', 'directory', 'push.endpoint'])).filter((r): r is NonNullable<typeof r> => !!r);
-  const tables = [db.members, db.sessions, db.tasks, db.runs, db.lineupTemplates, db.protokolle, db.folders, db.clothing, db.clothingItems, db.kv];
+  // Beschädigte Anhänge fallen auf, bevor irgendetwas ersetzt wird.
+  const now = Date.now();
+  const blobs = (b.blobs ?? []).map((x) => ({
+    meta: { id: x.id, kind: x.kind, mime: x.mime, name: x.name, size: x.size, state: 'local' as const, createdAt: x.createdAt, lastUsedAt: now },
+    data: { id: x.id, data: base64ToBytes(x.data) },
+  }));
+  // Texte mit ungesendeten Änderungen kommen zurück. Eine Sicherung aus der Zeit vor Version 8 hat Protokolle mit ungesendeten Änderungen im
+  // Schnappschuss: Sie bleiben als „(lokale Fassung)“ erhalten (der Text wird jetzt zusammengeführt, nicht ersetzt).
+  const texts: YDocRow[] = (b.texts ?? []).map((t) => ({
+    id: t.id,
+    update: base64ToBytes(t.update),
+    ...(t.serverSv ? { serverSv: base64ToBytes(t.serverSv) } : {}),
+    dirty: 1 as const,
+    seq: t.seq,
+    ...(t.created ? { created: true } : {}),
+  }));
+  const rows = (b.protokolle ?? []) as Protokoll[];
+  const old = b.version < 8 ? preserveUnsent(rows) : { copies: [], cleaned: [] as string[] };
+  const protokolle = [...rows.map((p) => (old.cleaned.includes(p.id) ? { ...p, dirty: 0 as const } : p)), ...old.copies];
+  const tables = [db.members, db.sessions, db.tasks, db.runs, db.lineupTemplates, db.protokolle, db.ydocs, db.folders, db.clothing, db.clothingItems, db.blobs, db.blobData, db.kv];
   await db.transaction('rw', tables, async () => {
     await Promise.all(tables.map((t) => t.clear()));
     await db.members.bulkAdd(b.members as never[]);
@@ -69,10 +136,13 @@ export async function importBackup(raw: unknown): Promise<void> {
     await db.tasks.bulkAdd(b.tasks as never[]);
     await db.runs.bulkAdd((b.runs ?? []) as never[]);
     await db.lineupTemplates.bulkAdd((b.lineupTemplates ?? []) as never[]);
-    await db.protokolle.bulkAdd((b.protokolle ?? []) as never[]);
+    await db.protokolle.bulkAdd(protokolle as never[]);
+    await db.ydocs.bulkAdd(texts);
     await db.folders.bulkAdd((b.folders ?? []) as never[]);
     await db.clothing.bulkAdd((b.clothing ?? []) as never[]);
     await db.clothingItems.bulkAdd((b.clothingItems ?? []) as never[]);
+    await db.blobs.bulkAdd(blobs.map((x) => x.meta));
+    await db.blobData.bulkAdd(blobs.map((x) => x.data));
     await db.kv.bulkAdd((b.kv ?? []) as never[]);
     await db.kv.bulkPut(keep);
     await db.kv.put({ key: 'settings', value: b.settings });

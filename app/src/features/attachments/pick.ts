@@ -1,4 +1,4 @@
-import { JPEG_QUALITY, MAX_PHOTO_EDGE, fitWithin } from './limits';
+import { JPEG_QUALITY, MAX_PHOTO_BYTES, MAX_PHOTO_EDGE, fitWithin, formatBytes } from './limits';
 
 /** Öffnet die Dateiauswahl (bzw. mit `capture` die Kamera) und liefert die gewählten Dateien. */
 export function pickFiles(opts: { accept: string; multiple?: boolean; capture?: boolean }): Promise<File[]> {
@@ -27,8 +27,8 @@ async function decode(file: Blob): Promise<{ source: CanvasImageSource; w: numbe
   return { source: img, w: img.naturalWidth, h: img.naturalHeight, free: () => URL.revokeObjectURL(url) };
 }
 
-/** Verkleinert ein Foto auf höchstens `MAX_PHOTO_EDGE` Pixel und liefert es als JPEG-Data-URL. */
-export async function photoToDataUrl(file: Blob): Promise<{ src: string; w: number; h: number }> {
+/** Verkleinert ein Foto auf höchstens `MAX_PHOTO_EDGE` Pixel und liefert es als JPEG (Bytes). */
+export async function photoToJpeg(file: Blob): Promise<{ data: Uint8Array; w: number; h: number }> {
   let img;
   try {
     img = await decode(file);
@@ -43,18 +43,11 @@ export async function photoToDataUrl(file: Blob): Promise<{ src: string; w: numb
     ctx.fillStyle = '#fff'; // transparente PNGs sonst schwarz im JPEG
     ctx.fillRect(0, 0, w, h);
     ctx.drawImage(img.source, 0, 0, w, h);
-    return { src: canvas.toDataURL('image/jpeg', JPEG_QUALITY), w, h };
+    const jpeg = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', JPEG_QUALITY));
+    if (!jpeg) throw new Error('Bild konnte nicht verarbeitet werden.');
+    if (jpeg.size > MAX_PHOTO_BYTES) throw new Error(`Das Foto ist auch verkleinert größer als ${formatBytes(MAX_PHOTO_BYTES)}.`);
+    return { data: new Uint8Array(await jpeg.arrayBuffer()), w, h };
   } finally {
     img.free();
   }
-}
-
-/** Dateiinhalt als reines Base64 (ohne Data-URL-Vorspann). */
-export function fileToBase64(file: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const r = new FileReader();
-    r.onload = () => resolve(String(r.result).replace(/^data:[^,]*,/, ''));
-    r.onerror = () => reject(new Error('Datei konnte nicht gelesen werden.'));
-    r.readAsDataURL(file);
-  });
 }

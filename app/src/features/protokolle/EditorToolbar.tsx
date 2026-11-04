@@ -7,20 +7,28 @@ import {
   Heading1,
   Heading2,
   Heading3,
+  Highlighter,
   Italic,
+  Link2,
   List,
   ListChecks,
   ListOrdered,
-  Minus,
-  NotebookPen,
   Paperclip,
-  PenLine,
-  Quote,
+  Plus,
   Redo2,
   Underline,
   Undo2,
   type LucideIcon,
 } from 'lucide-react';
+import { EditorContext } from './EditorContext';
+import { InsertSheet } from './InsertSheet';
+import { LinkSheet } from './LinkSheet';
+
+interface Ui {
+  openAttach: () => void;
+  openInsert: () => void;
+  openLink: () => void;
+}
 
 interface Tool {
   id: string;
@@ -28,38 +36,49 @@ interface Tool {
   /** Tastenkürzel für den Tooltip (am Rechner). */
   keys?: string;
   icon: LucideIcon;
-  run: (e: Editor, ui: { openAttach: () => void }) => void;
+  run: (e: Editor, ui: Ui) => void;
   active?: (e: Editor) => boolean;
   disabled?: (e: Editor) => boolean;
+  /** Öffnet ein Fenster (für Screenreader). */
+  dialog?: boolean;
 }
 
+/** Überschriften gibt es in Tabellenzellen nicht (Zellen nehmen Absätze und Listen auf); der Knopf würde dort nichts tun oder eine Liste auflösen. */
+const notInTable = (e: Editor) => e.isActive('table');
+
+/**
+ * Die Reihenfolge richtet sich nach dem Handy, wo nur etwa sieben Knöpfe ohne Wischen sichtbar sind: Vorn stehen, was beim Notieren
+ * am häufigsten gebraucht wird (Fett, Kursiv, Listen, Anhang, Einfügen), dahinter die Feinheiten, am Ende Rückgängig.
+ */
 const TOOLS: (Tool | 'sep')[] = [
-  { id: 'h1', label: 'Überschrift 1', keys: 'Strg+Alt+1', icon: Heading1, run: (e) => e.chain().focus().toggleHeading({ level: 1 }).run(), active: (e) => e.isActive('heading', { level: 1 }) },
-  { id: 'h2', label: 'Überschrift 2', keys: 'Strg+Alt+2', icon: Heading2, run: (e) => e.chain().focus().toggleHeading({ level: 2 }).run(), active: (e) => e.isActive('heading', { level: 2 }) },
-  { id: 'h3', label: 'Überschrift 3', keys: 'Strg+Alt+3', icon: Heading3, run: (e) => e.chain().focus().toggleHeading({ level: 3 }).run(), active: (e) => e.isActive('heading', { level: 3 }) },
-  'sep',
   { id: 'bold', label: 'Fett', keys: 'Strg+B', icon: Bold, run: (e) => e.chain().focus().toggleBold().run(), active: (e) => e.isActive('bold') },
   { id: 'italic', label: 'Kursiv', keys: 'Strg+I', icon: Italic, run: (e) => e.chain().focus().toggleItalic().run(), active: (e) => e.isActive('italic') },
-  { id: 'underline', label: 'Unterstrichen', keys: 'Strg+U', icon: Underline, run: (e) => e.chain().focus().toggleUnderline().run(), active: (e) => e.isActive('underline') },
   'sep',
   { id: 'ul', label: 'Aufzählung', keys: 'Strg+Umschalt+8', icon: List, run: (e) => e.chain().focus().toggleBulletList().run(), active: (e) => e.isActive('bulletList') },
   { id: 'ol', label: 'Nummerierung', keys: 'Strg+Umschalt+7', icon: ListOrdered, run: (e) => e.chain().focus().toggleOrderedList().run(), active: (e) => e.isActive('orderedList') },
   { id: 'task', label: 'Checkliste', keys: 'Strg+Umschalt+9', icon: ListChecks, run: (e) => e.chain().focus().toggleTaskList().run(), active: (e) => e.isActive('taskList') },
   'sep',
-  { id: 'quote', label: 'Zitat / Hinweis', icon: Quote, run: (e) => e.chain().focus().toggleBlockquote().run(), active: (e) => e.isActive('blockquote') },
-  { id: 'hr', label: 'Trennlinie', icon: Minus, run: (e) => e.chain().focus().setHorizontalRule().run() },
+  { id: 'attach', label: 'Foto oder Datei anhängen', icon: Paperclip, run: (_e, ui) => ui.openAttach(), dialog: true },
+  { id: 'insert', label: 'Einfügen', icon: Plus, run: (_e, ui) => ui.openInsert(), dialog: true },
   'sep',
-  { id: 'ink', label: 'Handschrift einfügen', icon: PenLine, run: (e) => e.commands.insertInk('block') },
-  { id: 'inkpage', label: 'Handschrift-Seite einfügen', icon: NotebookPen, run: (e) => e.commands.insertInk('page') },
-  { id: 'attach', label: 'Foto oder Datei anhängen', icon: Paperclip, run: (_e, ui) => ui.openAttach() },
+  { id: 'underline', label: 'Unterstrichen', keys: 'Strg+U', icon: Underline, run: (e) => e.chain().focus().toggleUnderline().run(), active: (e) => e.isActive('underline') },
+  { id: 'marker', label: 'Hervorheben', keys: 'Strg+Umschalt+H', icon: Highlighter, run: (e) => e.chain().focus().toggleHighlight().run(), active: (e) => e.isActive('highlight') },
+  { id: 'link', label: 'Link', icon: Link2, run: (_e, ui) => ui.openLink(), active: (e) => e.isActive('link'), dialog: true },
+  'sep',
+  { id: 'h1', label: 'Überschrift 1', keys: 'Strg+Alt+1', icon: Heading1, run: (e) => e.chain().focus().toggleHeading({ level: 1 }).run(), active: (e) => e.isActive('heading', { level: 1 }), disabled: notInTable },
+  { id: 'h2', label: 'Überschrift 2', keys: 'Strg+Alt+2', icon: Heading2, run: (e) => e.chain().focus().toggleHeading({ level: 2 }).run(), active: (e) => e.isActive('heading', { level: 2 }), disabled: notInTable },
+  { id: 'h3', label: 'Überschrift 3', keys: 'Strg+Alt+3', icon: Heading3, run: (e) => e.chain().focus().toggleHeading({ level: 3 }).run(), active: (e) => e.isActive('heading', { level: 3 }), disabled: notInTable },
   'sep',
   { id: 'undo', label: 'Rückgängig', keys: 'Strg+Z', icon: Undo2, run: (e) => e.chain().focus().undo().run(), disabled: (e) => !e.can().undo() },
   { id: 'redo', label: 'Wiederholen', keys: 'Strg+Y', icon: Redo2, run: (e) => e.chain().focus().redo().run(), disabled: (e) => !e.can().redo() },
 ];
 
-/** Formatierungsleiste: am Rechner oben am Rand haftend, auf dem Handy über der Tastatur. */
+/**
+ * Formatierungsleiste: am Rechner oben am Rand haftend, auf dem Handy über der Tastatur. Darüber (Handy) oder darunter (Rechner)
+ * steht die Kontextzeile für Links und Tabellen.
+ */
 export function EditorToolbar({ editor }: { editor: Editor }) {
-  const [attachOpen, setAttachOpen] = useState(false);
+  const [sheet, setSheet] = useState<'attach' | 'insert' | 'link' | null>(null);
   const state = useEditorState({
     editor,
     selector: ({ editor: e }) => {
@@ -72,31 +91,40 @@ export function EditorToolbar({ editor }: { editor: Editor }) {
     },
     equalityFn: (a, b) => !!a && !!b && Object.keys(a).every((k) => a[k]!.active === b[k]!.active && a[k]!.disabled === b[k]!.disabled),
   });
+  const ui: Ui = { openAttach: () => setSheet('attach'), openInsert: () => setSheet('insert'), openLink: () => setSheet('link') };
 
   return (
-    <div className="ed-toolbar" role="toolbar" aria-label="Formatierung">
-      {TOOLS.map((t, i) => {
-        if (t === 'sep') return <span key={`s${i}`} className="ed-toolbar__sep" aria-hidden />;
-        const Icon = t.icon;
-        const s = state[t.id];
-        return (
-          <button
-            key={t.id}
-            type="button"
-            className="ed-tool"
-            title={t.keys ? `${t.label} (${t.keys})` : t.label}
-            aria-label={t.label}
-            aria-pressed={t.active ? s?.active : undefined}
-            disabled={s?.disabled}
-            // Fokus im Editor halten, damit die Bildschirmtastatur offen bleibt.
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => t.run(editor, { openAttach: () => setAttachOpen(true) })}
-          >
-            <Icon size={20} />
-          </button>
-        );
-      })}
-      {attachOpen && <AttachSheet editor={editor} onClose={() => setAttachOpen(false)} />}
-    </div>
+    <>
+      <div className="ed-dock">
+        <div className="ed-toolbar" role="toolbar" aria-label="Formatierung">
+          {TOOLS.map((t, i) => {
+            if (t === 'sep') return <span key={`s${i}`} className="ed-toolbar__sep" aria-hidden />;
+            const Icon = t.icon;
+            const s = state[t.id];
+            return (
+              <button
+                key={t.id}
+                type="button"
+                className="ed-tool"
+                title={t.keys ? `${t.label} (${t.keys})` : t.label}
+                aria-label={t.label}
+                aria-pressed={t.active ? s?.active : undefined}
+                aria-haspopup={t.dialog ? 'dialog' : undefined}
+                disabled={s?.disabled}
+                // Fokus im Editor halten, damit die Bildschirmtastatur offen bleibt.
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => t.run(editor, ui)}
+              >
+                <Icon size={20} />
+              </button>
+            );
+          })}
+        </div>
+        <EditorContext editor={editor} onEditLink={ui.openLink} />
+      </div>
+      {sheet === 'attach' && <AttachSheet editor={editor} onClose={() => setSheet(null)} />}
+      {sheet === 'insert' && <InsertSheet editor={editor} onClose={() => setSheet(null)} />}
+      {sheet === 'link' && <LinkSheet editor={editor} onClose={() => setSheet(null)} />}
+    </>
   );
 }

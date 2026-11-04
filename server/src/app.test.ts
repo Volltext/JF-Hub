@@ -1,15 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
+import type { DatabaseSync } from 'node:sqlite';
 import { buildApp } from './app.js';
+import { putProtocol } from './collab/testing.js';
 import { openDb } from './db.js';
 import { buildDocDefinition, renderPdf } from './pdf.js';
 import type { ClientChange, SyncResponse } from './sync.js';
 
 const PW = 'ein-sicheres-passwort';
 let app: FastifyInstance & { setupCode?: string };
+let db: DatabaseSync;
 
 beforeEach(async () => {
-  app = await buildApp({ db: openDb(':memory:'), adminPassword: PW, pushTimer: false });
+  db = openDb(':memory:');
+  app = await buildApp({ db, adminPassword: PW, pushTimer: false });
 });
 afterEach(async () => {
   await app.close();
@@ -21,8 +25,9 @@ async function login(): Promise<string> {
   return r.json().token as string;
 }
 
-const auth = (token: string) => ({ authorization: `Bearer ${token}` });
+const auth = (token: string) => ({ authorization: `Bearer ${token}`, 'x-jfh-schema': '5' });
 
+const T0 = Date.now() - 3_600_000;
 const change = (id: string, over: Partial<ClientChange> = {}): ClientChange => ({
   id,
   baseRev: 0,
@@ -32,16 +37,22 @@ const change = (id: string, over: Partial<ClientChange> = {}): ClientChange => (
   ende: '19:00',
   ort: 'Gerätehaus',
   leitung: 'Anna',
-  content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Hallo' }] }] },
-  updatedAt: Date.now(),
+  updatedAt: T0,
   deleted: false,
+  metaAt: { title: T0, datum: T0, beginn: T0, ende: T0, ort: T0, leitung: T0, folderId: T0, shared: T0 },
   ...over,
 });
 
-async function sync(token: string, since: number, changes: ClientChange[]): Promise<SyncResponse> {
-  const r = await app.inject({ method: 'POST', url: '/api/sync', headers: auth(token), payload: { since, changes } });
+async function sync(token: string, since: number, protocols: ClientChange[]): Promise<SyncResponse> {
+  const r = await app.inject({ method: 'POST', url: '/api/sync', headers: auth(token), payload: { since, protocols } });
   expect(r.statusCode).toBe(200);
   return r.json() as SyncResponse;
+}
+
+/** Ein Protokoll mit Text, wie der Server es nach dem Austausch hält. */
+function withText(id: string, text = 'Hallo', over: Parameters<typeof putProtocol>[1] = {}): string {
+  const owner = (db.prepare("SELECT id FROM users WHERE username = 'admin'").get() as { id: string }).id;
+  return putProtocol(db, { id, ownerId: owner, title: 'Sitzung', content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text }] }] }, ...over });
 }
 
 describe('Auth', () => {
@@ -75,24 +86,25 @@ describe('Auth', () => {
   });
 
   it('prozentkodierte Pfade umgehen die Prüfung nicht (/%61pi/admin/…)', async () => {
-    // Gleiche Route, andere Schreibweise: muss ebenso eine Anmeldung verlangen.
-    expect((await app.inject({ method: 'GET', url: '/%61pi/admin/users' })).statusCode).toBe(401);
-    expect((await app.inject({ method: 'GET', url: '/%61pi/admin/info' })).statusCode).toBe(401);
+    // Gleiche Route, andere Schreibweise: Pfade mit kodierten Buchstaben weist der Server schon vor der Anmeldung ab (400);
+    // zusätzlich prüft die Zugriffsregel das gematchte Routenmuster (zweite Verteidigungslinie).
+    expect((await app.inject({ method: 'GET', url: '/%61pi/admin/users' })).statusCode).toBe(400);
+    expect((await app.inject({ method: 'GET', url: '/%61pi/admin/info' })).statusCode).toBe(400);
     // Ein Betreuer (kein Admin) darf auch über eine kodierte Admin-URL nicht hinein.
     const t = await login();
     const inv = await app.inject({ method: 'POST', url: '/api/admin/users', headers: auth(t), payload: { username: 'max', displayName: 'Max' } });
     const acc = await app.inject({ method: 'POST', url: '/api/invite/accept', payload: { username: 'max', code: inv.json().invite.code, password: 'max-passwort-123' } });
     const max = acc.json().token as string;
-    expect((await app.inject({ method: 'GET', url: '/%61pi/admin/users', headers: auth(max) })).statusCode).toBe(403);
+    expect((await app.inject({ method: 'GET', url: '/%61pi/admin/users', headers: auth(max) })).statusCode).toBe(400);
   });
 
   it('Cookie-Sitzung braucht bei Schreibzugriffen den CSRF-Header', async () => {
     const r = await app.inject({ method: 'POST', url: '/api/login', payload: { username: 'admin', password: PW } });
     const cookie = r.headers['set-cookie'] as string;
     const c = cookie.split(';')[0]!;
-    const bad = await app.inject({ method: 'POST', url: '/api/sync', headers: { cookie: c }, payload: { since: 0, changes: [] } });
+    const bad = await app.inject({ method: 'POST', url: '/api/sync', headers: { cookie: c }, payload: { since: 0, protocols: [] } });
     expect(bad.statusCode).toBe(403);
-    const ok = await app.inject({ method: 'POST', url: '/api/sync', headers: { cookie: c, 'x-jfh': '1' }, payload: { since: 0, changes: [] } });
+    const ok = await app.inject({ method: 'POST', url: '/api/sync', headers: { cookie: c, 'x-jfh': '1', 'x-jfh-schema': '5' }, payload: { since: 0, protocols: [] } });
     expect(ok.statusCode).toBe(200);
   });
 
@@ -150,37 +162,47 @@ describe('Sync', () => {
     const t = await login();
     const r1 = await sync(t, 0, [change('doc-0001')]);
     expect(r1.changes).toHaveLength(1);
-    expect(r1.changes[0]!.rev).toBe(1);
+    expect(r1.changes[0]!.rev).toBeGreaterThan(0);
     const r2 = await sync(t, r1.rev, []);
     expect(r2.changes).toHaveLength(0);
   });
 
-  it('übernimmt Änderungen auf aktuellem Stand', async () => {
+  it('übernimmt neuere Änderungen der Kopfdaten', async () => {
     const t = await login();
     const r1 = await sync(t, 0, [change('doc-0001')]);
-    const r2 = await sync(t, r1.rev, [change('doc-0001', { baseRev: r1.changes[0]!.rev, title: 'Neu' })]);
+    const r2 = await sync(t, r1.rev, [change('doc-0001', { baseRev: r1.changes[0]!.rev, title: 'Neu', metaAt: { title: T0 + 1000 } })]);
     expect(r2.conflicts).toHaveLength(0);
     expect(r2.changes[0]!.title).toBe('Neu');
   });
 
-  it('sichert veraltete Änderungen als Konfliktkopie', async () => {
+  it('gleichzeitige Änderungen derselben Felder: die jüngere gewinnt, es entsteht keine Kopie', async () => {
     const t = await login();
     const r1 = await sync(t, 0, [change('doc-0001')]);
     const base = r1.changes[0]!.rev;
-    await sync(t, r1.rev, [change('doc-0001', { baseRev: base, title: 'Gerät A' })]);
-    const r3 = await sync(t, r1.rev, [change('doc-0001', { baseRev: base, title: 'Gerät B' })]);
-    expect(r3.conflicts).toHaveLength(1);
-    const titles = r3.changes.map((c) => c.title).sort();
-    expect(titles).toContain('Gerät A');
-    expect(titles).toContain('Gerät B (Konflikt)');
+    await sync(t, r1.rev, [change('doc-0001', { baseRev: base, title: 'Gerät A', metaAt: { title: T0 + 2000 } })]);
+    const r3 = await sync(t, r1.rev, [change('doc-0001', { baseRev: base, title: 'Gerät B', metaAt: { title: T0 + 1000 } })]);
+    expect(r3.conflicts).toHaveLength(0);
+    expect(r3.changes.map((c) => c.title)).toEqual(['Gerät A']); // Gerät B bekommt den Stand des Servers
+    expect((await sync(t, 0, [])).changes).toHaveLength(1);
   });
 
-  it('Löschen erzeugt Tombstone, Bearbeitung weckt ihn wieder auf', async () => {
+  it('dieselbe Änderung noch einmal (verlorene Antwort) ändert nichts, das Protokoll geht zum Aufholen mit zurück', async () => {
+    const t = await login();
+    const r1 = await sync(t, 0, [change('doc-0001')]);
+    const base = r1.changes[0]!.rev;
+    const edit = change('doc-0001', { baseRev: base, title: 'Neu', metaAt: { title: T0 + 1000 } });
+    const r2 = await sync(t, r1.rev, [edit]);
+    const r3 = await sync(t, r2.rev, [edit]);
+    expect(r3.changes).toEqual([]); // nichts Neues, die Revision blieb
+    expect(r3.rev).toBe(r2.rev);
+  });
+
+  it('Löschen erzeugt Tombstone, eine jüngere Änderung weckt ihn wieder auf', async () => {
     const t = await login();
     const r1 = await sync(t, 0, [change('doc-0001')]);
     const r2 = await sync(t, r1.rev, [change('doc-0001', { baseRev: r1.changes[0]!.rev, deleted: true })]);
     expect(r2.changes[0]!.deleted).toBe(true);
-    const r3 = await sync(t, r2.rev, [change('doc-0001', { baseRev: 0, title: 'Zurück' })]);
+    const r3 = await sync(t, r2.rev, [change('doc-0001', { baseRev: 0, title: 'Zurück', metaAt: { title: Date.now() + 1000 } })]);
     expect(r3.changes[0]!.deleted).toBe(false);
     expect(r3.changes[0]!.title).toBe('Zurück');
   });
@@ -188,11 +210,11 @@ describe('Sync', () => {
   it('synchronisiert Ordner und die Zuordnung der Protokolle', async () => {
     const t = await login();
     const folder = { id: 'ordner-0001', name: 'Dienstbesprechungen', parentId: '', updatedAt: 1, deleted: false };
-    const r = await app.inject({ method: 'POST', url: '/api/sync', headers: auth(t), payload: { since: 0, folders: [folder], changes: [change('doc-0001', { folderId: 'ordner-0001' })] } });
+    const r = await app.inject({ method: 'POST', url: '/api/sync', headers: auth(t), payload: { since: 0, folders: [folder], protocols: [change('doc-0001', { folderId: 'ordner-0001' })] } });
     const res = r.json() as SyncResponse & { folders: { id: string; name: string }[] };
     expect(res.folders.map((f) => f.name)).toEqual(['Dienstbesprechungen']);
     expect(res.changes[0]!.folderId).toBe('ordner-0001');
-    const again = await app.inject({ method: 'POST', url: '/api/sync', headers: auth(t), payload: { since: res.rev, changes: [] } });
+    const again = await app.inject({ method: 'POST', url: '/api/sync', headers: auth(t), payload: { since: res.rev, protocols: [] } });
     expect((again.json() as { folders: unknown[] }).folders).toHaveLength(0);
     const zip = await app.inject({ method: 'GET', url: '/api/export.zip', headers: auth(t) });
     expect(zip.rawPayload.toString('latin1')).toContain('Dienstbesprechungen/');
@@ -202,7 +224,7 @@ describe('Sync', () => {
     const t = await login();
     const rec = (title: string, updatedAt: number, deleted = false) => ({ collection: 'tasks', id: 'task-000001', data: { id: 'task-000001', title }, updatedAt, deleted });
     const post = async (since: number, records: unknown[]) =>
-      (await app.inject({ method: 'POST', url: '/api/sync', headers: auth(t), payload: { since, changes: [], records } })).json() as SyncResponse & { records: { data: { title: string }; deleted: boolean }[]; counts: { records: number } };
+      (await app.inject({ method: 'POST', url: '/api/sync', headers: auth(t), payload: { since, protocols: [], records } })).json() as SyncResponse & { records: { data: { title: string }; deleted: boolean }[]; counts: { records: number } };
     const r1 = await post(0, [rec('neu', 100)]);
     expect(r1.records[0]!.data.title).toBe('neu');
     expect(r1.counts.records).toBe(1);
@@ -212,8 +234,10 @@ describe('Sync', () => {
     expect(r3.records[0]!.data.title).toBe('neuer');
     const r4 = await post(r3.rev, [rec('', 300, true)]);
     expect(r4.records[0]!.deleted).toBe(true);
-    const bad = await app.inject({ method: 'POST', url: '/api/sync', headers: auth(t), payload: { since: 0, changes: [], records: [{ collection: 'users', id: 'abcdef', data: {}, updatedAt: 1, deleted: false }] } });
-    expect(bad.statusCode).toBe(400);
+    // Eine unbekannte Sammlung wird einzeln abgelehnt; der Abgleich selbst gelingt.
+    const bad = await app.inject({ method: 'POST', url: '/api/sync', headers: auth(t), payload: { since: 0, protocols: [], records: [{ collection: 'users', id: 'abcdef', data: {}, updatedAt: 1, deleted: false }] } });
+    expect(bad.statusCode).toBe(200);
+    expect(bad.json().rejected).toEqual([{ kind: 'record', id: 'abcdef', collection: 'users', reason: 'ungültiger Datensatz' }]);
   });
 
   it('nimmt Kleidergrößen an und meldet die erlaubten Sammlungen', async () => {
@@ -224,7 +248,7 @@ describe('Sync', () => {
       headers: auth(t),
       payload: {
         since: 0,
-        changes: [],
+        protocols: [],
         records: [
           { collection: 'clothing', id: '6b1f0c1e-1d6a-4f7e-9a51-0c1f2e3d4a5b', data: { id: '6b1f0c1e-1d6a-4f7e-9a51-0c1f2e3d4a5b', items: { 'kombi-jacke': { current: '52', request: null } } }, updatedAt: 5, deleted: false },
           { collection: 'clothingItems', id: 'kombi-jacke', data: { id: 'kombi-jacke', name: 'Kombi-Jacke', sizes: ['50', '52'], order: 0 }, updatedAt: 1, deleted: false },
@@ -243,7 +267,7 @@ describe('Sync', () => {
     const acc = await app.inject({ method: 'POST', url: '/api/invite/accept', payload: { username: 'anna', code: inv.json().invite.code, password: 'anna-passwort-123' } });
     const anna = acc.json().token as string;
     const post = async (token: string, since: number, records: unknown[]) =>
-      (await app.inject({ method: 'POST', url: '/api/sync', headers: auth(token), payload: { since, changes: [], records } })).json() as SyncResponse & { records: { collection: string; id: string; data: { notes?: string }; deleted: boolean }[] };
+      (await app.inject({ method: 'POST', url: '/api/sync', headers: auth(token), payload: { since, protocols: [], records } })).json() as SyncResponse & { records: { collection: string; id: string; data: { notes?: string }; deleted: boolean }[] };
 
     const run = { id: 'run-0001', mode: 'a', totalMs: 90_000, notes: 'gut' };
     const up = await post(t, 0, [
@@ -269,29 +293,71 @@ describe('Sync', () => {
     await sync(t, 0, [change('doc-0001')]);
     const post = async (body: object) => (await app.inject({ method: 'POST', url: '/api/sync', headers: auth(t), payload: body })).json() as SyncResponse;
     // Client ohne Kennung, aber mit Stand weit über dem Server
-    const a = await post({ since: 99, changes: [] });
+    const a = await post({ since: 99, protocols: [] });
     expect(a.reset).toBe(true);
     expect(a.changes).toHaveLength(1);
     // Client mit falscher Kennung
-    const b = await post({ since: 1, epoch: 'andere-db', changes: [] });
+    const b = await post({ since: 1, epoch: 'andere-db', protocols: [] });
     expect(b.reset).toBe(true);
     // Passende Kennung: normaler Abgleich
-    const c = await post({ since: a.rev, epoch: a.epoch, changes: [] });
+    const c = await post({ since: a.rev, epoch: a.epoch, protocols: [] });
     expect(c.reset).toBe(false);
     expect(c.changes).toHaveLength(0);
   });
 
-  it('lehnt ungültige IDs ab', async () => {
+  it('lehnt ungültige IDs einzeln ab, ohne den Abgleich zu sperren', async () => {
     const t = await login();
-    const r = await app.inject({ method: 'POST', url: '/api/sync', headers: auth(t), payload: { since: 0, changes: [change('../x')] } });
-    expect(r.statusCode).toBe(400);
+    const r = await app.inject({ method: 'POST', url: '/api/sync', headers: auth(t), payload: { since: 0, protocols: [change('../x'), change('gut-0001')] } });
+    expect(r.statusCode).toBe(200);
+    expect(r.json().rejected).toEqual([{ kind: 'protocol', id: '../x', reason: 'ungültige ID' }]);
+    expect((r.json() as SyncResponse).changes.map((c) => c.id)).toEqual(['gut-0001']); // das gültige Protokoll wurde gespeichert
+  });
+
+  it('ein unbrauchbarer Eintrag sperrt den Abgleich nicht: nur er wird abgelehnt', async () => {
+    const t = await login();
+    const r = await app.inject({
+      method: 'POST',
+      url: '/api/sync',
+      headers: auth(t),
+      payload: {
+        since: 0,
+        protocols: [change('../x'), null, 'kaputt', change('gut-0001')],
+        folders: [{ id: '../kaputt', name: 'x', parentId: '', updatedAt: 1, deleted: false }, { id: 'ordner-0001', name: 'Gut', parentId: '', updatedAt: 1, deleted: false }],
+        records: [{ collection: 'users', id: 'abcdef', data: {}, updatedAt: 1, deleted: false }],
+      },
+    });
+    expect(r.statusCode).toBe(200);
+    const res = r.json() as SyncResponse & { rejected: { kind: string; id: string; reason: string }[]; folders: { id: string }[] };
+    expect(res.changes.map((c) => c.id)).toEqual(['gut-0001']);
+    expect(res.folders.map((f) => f.id)).toEqual(['ordner-0001']);
+    expect(res.rejected.map((x) => [x.kind, x.id, x.reason])).toEqual([
+      ['protocol', '../x', 'ungültige ID'],
+      ['protocol', '', 'ungültige Änderung'],
+      ['protocol', '', 'ungültige Änderung'],
+      ['folder', '../kaputt', 'ungültige Ordner-ID'],
+      ['record', 'abcdef', 'ungültiger Datensatz'],
+    ]);
+    // Abgelehntes hinterlässt nichts: Revisionen laufen weiter, und ein zweiter Abgleich liefert nur das Gespeicherte.
+    expect((await sync(t, 0, [])).changes.map((c) => c.id)).toEqual(['gut-0001']);
+  });
+
+  it('Löschen gewinnt auch gegen eine Bearbeitung auf veraltetem Stand (der Papierkorb macht es umkehrbar)', async () => {
+    const t = await login();
+    const r1 = await sync(t, 0, [change('doc-0001')]);
+    const base = r1.changes[0]!.rev;
+    await sync(t, r1.rev, [change('doc-0001', { baseRev: base, title: 'Von einem anderen Gerät bearbeitet', metaAt: { title: T0 + 1000 } })]);
+    const r3 = await sync(t, r1.rev, [change('doc-0001', { baseRev: base, deleted: true })]);
+    expect(r3.changes.find((c) => c.id === 'doc-0001')!.deleted).toBe(true);
+    // Die Bearbeitung ist nicht verloren, sondern liegt im Papierkorb.
+    expect((await app.inject({ method: 'POST', url: '/api/admin/protocols/doc-0001/restore', headers: auth(t) })).statusCode).toBe(200);
+    expect((await sync(t, 0, [])).changes.find((c) => c.id === 'doc-0001')).toMatchObject({ deleted: false, title: 'Von einem anderen Gerät bearbeitet' });
   });
 });
 
 describe('PDF und Admin', () => {
   it('erzeugt ein gültiges PDF', async () => {
     const t = await login();
-    await sync(t, 0, [change('doc-0001')]);
+    withText('doc-0001');
     const r = await app.inject({ method: 'GET', url: '/api/protocols/doc-0001/pdf', headers: auth(t) });
     expect(r.statusCode).toBe(200);
     expect(r.rawPayload.subarray(0, 5).toString()).toBe('%PDF-');
@@ -299,7 +365,7 @@ describe('PDF und Admin', () => {
 
   it('Vorschau-PDF und Export funktionieren', async () => {
     const t = await login();
-    await sync(t, 0, [change('doc-0001')]);
+    withText('doc-0001');
     const p = await app.inject({ method: 'GET', url: '/api/admin/preview.pdf', headers: auth(t) });
     expect(p.rawPayload.subarray(0, 5).toString()).toBe('%PDF-');
     const z = await app.inject({ method: 'GET', url: '/api/export.zip', headers: auth(t) });

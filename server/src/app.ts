@@ -2,7 +2,7 @@ import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest }
 import cookie from '@fastify/cookie';
 import rateLimit from '@fastify/rate-limit';
 import fastifyStatic from '@fastify/static';
-import { zipSync, strToU8 } from 'fflate';
+import { zipSync, strToU8, type Zippable } from 'fflate';
 import { existsSync, readFileSync, rmSync, mkdtempSync, createReadStream } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -34,18 +34,27 @@ import {
   verifyPassword,
   type SessionUser,
 } from './auth.js';
+import { BLOB_ID_RE, BlobError, blobNodesOf, blobStats, checkUpload, findBlob, readBlobData, reindexBlobRefs, storeBlob, sweepBlobs, type BlobNode, type UploadRequest } from './blobs.js';
 import { CONFIG_DEFAULTS, getSettings, nextRev, setConfig, type ConfigKey, type FolderRow, type ProtocolRow, type UserRow } from './db.js';
-import { pdfFileName, renderPdf, type PdfStyle } from './pdf.js';
+import { migrateBlobs } from './migrate.js';
+import { pdfFileName, renderPdf, safeFileName, type PdfStyle } from './pdf.js';
 import { parseClothingPdf, renderClothingPdf } from './clothingPdf.js';
-import { applySync, canSee, toServerDoc, VISIBLE_SQL, type SyncRequest } from './sync.js';
+import { applySync, canSee, purgeProtocol, sweepTrash, toServerDoc, VISIBLE_SQL, type SyncRequest } from './sync.js';
 import { ensureVapid, PushError, replaceReminders, sendDue, subscribe, unsubscribe, webPushSender, type PushSender } from './push.js';
 import { HolidayCache, type FetchLike } from './holidays.js';
 import { sampleProtocol } from './sample.js';
 import { autoKeep, backupPath, createBackup, deleteBackup, isBackupName, listBackups, pruneBackups, restoreFromFile, RestoreError, runAutoBackup, writeUpload } from './backup.js';
 import { DEMO_ACCOUNTS, demoBlock, formatResetAt, isDemoAccount, msUntilReset, parseResetAt, resetDemo } from './demo.js';
 import { LiveHub } from './live.js';
+import { API_VERSION, MIN_SCHEMA } from './versions.js';
+import { exchange, type ExchangeRequest } from './collab/exchange.js';
+import { createPeers } from './collab/peers.js';
+import { collabStats, migrateYjs } from './collab/migrate.js';
 
-export const VERSION = '2.0.1';
+export const VERSION = '3.0.0';
+/** Höchste Zahl von Einträgen in einer Austausch-Anfrage, die noch beantwortet wird. */
+const MAX_EXCHANGE_ENTRIES = 200;
+export { API_VERSION, MIN_SCHEMA };
 const COOKIE = 'jfh_session';
 
 declare module 'fastify' {
@@ -85,6 +94,10 @@ export interface AppOptions {
   liveWaitMs?: number;
   fetchImpl?: FetchLike;
   logger?: boolean;
+  /** Kleinstes Dokumentformat (`X-JFH-Schema`), das der Server annimmt; ältere Apps bekommen 426 (Standard: `MIN_SCHEMA`). */
+  minSchema?: number;
+  /** Tests: wird für jede registrierte Route aufgerufen (Grundlage des Sicherheitstests, der alle geschützten Routen durchgeht). */
+  onRoute?: (route: { method: string; url: string }) => void;
 }
 
 /** Liest `TRUST_PROXY`: true/false, eine Liste (Komma) oder ein Name wie `loopback`. Standard: private Netze (Docker, Tunnel, Reverse-Proxy im Heimnetz). */
@@ -98,9 +111,17 @@ export function parseTrustProxy(v: string | undefined): boolean | string | strin
 
 export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { setupCode?: string }> {
   const { db } = opts;
+  const minSchema = opts.minSchema ?? MIN_SCHEMA;
   const app = Fastify({ logger: opts.logger ?? false, trustProxy: opts.trustProxy ?? parseTrustProxy(undefined), bodyLimit: 64 * 1024 * 1024 }) as FastifyInstance & {
     setupCode?: string;
   };
+
+  if (opts.onRoute) {
+    const report = opts.onRoute;
+    app.addHook('onRoute', (route) => {
+      for (const method of [route.method].flat()) report({ method: String(method), url: route.url });
+    });
+  }
 
   // Clients, die den Content-Type weglassen (z. B. native HTTP-Schichten), werden als JSON gelesen.
   app.addContentTypeParser('*', { parseAs: 'string' }, (_req, body, done) => {
@@ -113,6 +134,34 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
   });
 
   migrateLegacy(db);
+  // Fotos und Dateien lagen bis 2.1.x im Inhalt der Protokolle. Hier ziehen sie in Blobs um (mit Backup davor, wiederholbar).
+  if (!opts.demo) {
+    let backedUp = false;
+    try {
+      backedUp = migrateBlobs(db, { backupDir: opts.backupDir, log: (message) => app.log.info(message) }).backup !== undefined;
+    } catch (e) {
+      // Nichts ist verloren (die Änderung läuft in einer Transaktion, vorher gab es ein Backup), und alte Protokolle bleiben les- und ausgebbar.
+      // Der Server soll deshalb laufen; der nächste Start versucht es noch einmal.
+      app.log.error({ err: e }, 'Fotos und Dateien konnten nicht aus den Protokollen ausgelagert werden');
+    }
+    // Seit 3.0.0 wird der Text zusammen bearbeitet (Yjs). Der Bestand zieht hier um (mit Backup davor, wiederholbar). Was sich nicht
+    // verlustfrei umwandeln lässt, bleibt unverändert und nur lesbar; die Verwaltung zeigt es an.
+    try {
+      const done = migrateYjs(db, { backupDir: opts.backupDir, backedUp, log: (message) => app.log.info(message) });
+      if (done.error) app.log.error(done.error);
+      if (done.failed.length) app.log.warn(`${done.failed.length} Protokoll(e) konnten nicht für das gemeinsame Bearbeiten umgestellt werden und bleiben nur lesbar`);
+    } catch (e) {
+      // Nichts ist verloren (je Protokoll eine Transaktion, vorher gab es ein Backup). Der Server läuft, der nächste Start versucht es erneut.
+      app.log.error({ err: e }, 'Der Text der Protokolle konnte nicht für das gemeinsame Bearbeiten umgestellt werden');
+    }
+    // Die Verweise (wer braucht welchen Anhang) sind abgeleitet; hier werden sie gegen den Inhalt geprüft, bevor aufgeräumt wird.
+    try {
+      const fixed = reindexBlobRefs(db);
+      if (fixed) app.log.warn(`Anhang-Verweise von ${fixed} Protokoll(en) neu aufgebaut`);
+    } catch (e) {
+      app.log.error({ err: e }, 'Anhang-Verweise konnten nicht geprüft werden');
+    }
+  }
   const demoAt = opts.demo ? parseResetAt(opts.demo.resetAt) : undefined;
   if (opts.demo) {
     await resetDemo(db);
@@ -145,6 +194,15 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
       'Content-Security-Policy',
       "default-src 'self'; base-uri 'self'; form-action 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; worker-src 'self'; manifest-src 'self'; object-src 'none'; frame-src 'none'; frame-ancestors 'none'",
     );
+    // API-Antworten (Export, Backup, PDF) gehören nie in einen Zwischenspeicher, auch nicht in den eines CDN, das nach der Dateiendung cacht.
+    if (!reply.hasHeader('cache-control') && (req.routeOptions.url ?? req.url).startsWith('/api/')) reply.header('Cache-Control', 'no-store');
+  });
+
+  // Der Router dekodiert den Pfad, `req.url` bleibt roh: Zugriffsregeln gehören deshalb ans Routenmuster (siehe unten). Zusätzlich
+  // weisen wir Pfade ab, in denen Zeichen kodiert sind, die kein Client kodiert (Buchstaben, Ziffern, `-._~`).
+  const ENCODED_UNRESERVED = /%(?:3[0-9]|4[1-9a-f]|5[0-9af]|6[1-9a-f]|7[0-9ae]|2[de])/i;
+  app.addHook('onRequest', async (req, reply) => {
+    if (ENCODED_UNRESERVED.test(req.url.split('?')[0]!)) return reply.code(400).send({ error: 'Ungültiger Pfad' });
   });
 
   const tokenOf = (req: FastifyRequest): { token?: string; viaCookie: boolean } => {
@@ -162,12 +220,11 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
       if (blocked) return reply.code(403).send({ error: blocked });
     });
   }
-  app.addHook('preHandler', async (req, reply) => {
-    // Auf dem gematchten Route-Muster prüfen, nicht auf der rohen URL: Fastify routet auf dem dekodierten
-    // Pfad, deshalb träfe z. B. „/%61pi/admin/…“ dieselbe Admin-Route, begänne aber nicht mit „/api/“ und
-    // umginge so die Prüfung. Das Muster ist bereits normalisiert (wie beim Demo-Schutz oben).
-    const route = req.routeOptions?.url;
-    if (!route || !route.startsWith('/api/') || PUBLIC.has(route)) return;
+  // Vor dem Lesen des Bodys. Maßgeblich ist das Muster der Route, die der Router gefunden hat – nicht die rohe URL.
+  // Ohne Muster (404, statische Dateien) gibt es nichts zu schützen.
+  app.addHook('onRequest', async (req, reply) => {
+    const route = req.routeOptions.url;
+    if (!route?.startsWith('/api/') || PUBLIC.has(route)) return;
     const { token, viaCookie } = tokenOf(req);
     const user = validateSession(db, token);
     if (!user) return reply.code(401).send({ error: 'Nicht angemeldet' });
@@ -210,7 +267,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
     resetAt: formatResetAt(demoAt),
     accounts: DEMO_ACCOUNTS.map(({ username, password, displayName, role, hint }) => ({ username, password, displayName, role, hint })),
   };
-  app.get('/api/status', async () => ({ setupRequired: countUsers(db) === 0, version: VERSION, orgName: getSettings(db).orgName, ...(demoInfo ? { demo: demoInfo } : {}) }));
+  app.get('/api/status', async () => ({ setupRequired: countUsers(db) === 0, version: VERSION, api: API_VERSION, minSchema, features: ['blobs', 'collab'], orgName: getSettings(db).orgName, ...(demoInfo ? { demo: demoInfo } : {}) }));
 
   app.post<{ Body: { code?: string; username?: string; displayName?: string; password?: string; device?: string } }>(
     '/api/setup',
@@ -305,9 +362,15 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
     return { ok: true };
   });
 
+  /** Eine App, die das aktuelle Dokumentformat nicht kennt, würde Inhalte, die sie nicht versteht, beim Speichern verwerfen (bei Yjs: im geteilten Dokument löschen). */
+  const clientTooOld = (req: FastifyRequest): boolean => !(Number(req.headers['x-jfh-schema'] ?? 1) >= minSchema);
+  const tooOld = (reply: FastifyReply) =>
+    reply.code(426).send({ error: 'Diese App-Version ist zu alt für den Server. Bitte die App aktualisieren.', code: 'client_too_old', minSchema });
+
   app.post<{ Body: SyncRequest }>('/api/sync', async (req, reply) => {
+    if (clientTooOld(req)) return tooOld(reply);
     try {
-      return applySync(db, req.body, me(req));
+      return { ...applySync(db, req.body, me(req)), api: API_VERSION, minSchema };
     } catch (e) {
       return reply.code(400).send({ error: (e as Error).message });
     }
@@ -345,20 +408,107 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
     }
   });
 
+  // ---------- Text der Protokolle (Yjs) ----------
+  // Wer ein Protokoll geöffnet hat, merkt sich der Server nur kurz im Speicher.
+  const peers = createPeers();
+  app.post<{ Body: ExchangeRequest }>(
+    '/api/collab/exchange',
+    { bodyLimit: 24 * 1024 * 1024, config: { rateLimit: { max: opts.demo ? 3000 : 1800, timeWindow: '1 minute' } } },
+    async (req, reply) => {
+      if (clientTooOld(req)) return tooOld(reply);
+      const body = req.body;
+      if (!body || typeof body !== 'object' || !Array.isArray(body.docs)) return reply.code(400).send({ error: 'Ungültige Anfrage' });
+      // Eine App fragt nach höchstens 20 Dokumenten (mehr kommen als „deferred“ zurück); Millionen leere Einträge wären nur Last.
+      if (body.docs.length > MAX_EXCHANGE_ENTRIES) return reply.code(400).send({ error: 'Zu viele Dokumente in einer Anfrage' });
+      const res = exchange(db, body, me(req), peers, Date.now(), undefined, (id, e) => req.log.error({ err: e, protocol: id }, 'Austausch des Protokolltextes verschoben'));
+      if (res.reset) return reply.code(409).send({ error: 'Die Datenbank des Servers wurde ersetzt. Bitte neu abgleichen.', reset: true, epoch: res.epoch });
+      return { ...res, api: API_VERSION };
+    },
+  );
+
   const style = (): PdfStyle => {
     const s = getSettings(db);
     return { orgName: s.orgName, footer: s.footer, accent: s.accent, logo: s.logo };
   };
 
+  /** Foto aus einem Blob als Data-URL für das PDF. Der Aufrufer hat das Protokoll schon geprüft, auf das das Foto verweist. */
+  const imageOf = (blobId: string): string | null => {
+    const row = db.prepare("SELECT data FROM blobs WHERE id = ? AND kind = 'photo'").get(blobId) as { data: Uint8Array } | undefined;
+    return row ? `data:image/jpeg;base64,${Buffer.from(row.data.buffer, row.data.byteOffset, row.data.byteLength).toString('base64')}` : null;
+  };
+
+  // ---------- Anhänge (Fotos, Dateien) ----------
+  // Die App legt den Anhang lokal ab und lädt ihn hoch, bevor sie das Protokoll sendet, das auf ihn verweist. Die Kennung vergibt sie selbst.
+  app.put<{ Params: { id: string }; Body: unknown }>(
+    '/api/blobs/:id',
+    { bodyLimit: 16 * 1024 * 1024, config: { rateLimit: { max: 240, timeWindow: '1 minute' } } },
+    async (req, reply) => {
+      const body = req.body;
+      if (!body || typeof body !== 'object' || Array.isArray(body)) return reply.code(400).send({ error: 'Ungültige Anfrage' });
+      const id = req.params.id;
+      try {
+        const upload = checkUpload({ id, ...(body as Omit<UploadRequest, 'id'>) }, { demo: !!opts.demo });
+        const stored = storeBlob(db, { id, ...upload, uploaderId: me(req).id });
+        return { ok: true, id, size: upload.data.length, sha256: stored.sha256, created: stored.created };
+      } catch (e) {
+        if (e instanceof BlobError) return reply.code(e.status).send({ error: e.message });
+        throw e;
+      }
+    },
+  );
+
+  /** Auslieferung: Fotos als Bild, alles andere nur als Download (nie inline, damit hochgeladene Seiten nicht laufen). */
+  app.get<{ Params: { id: string } }>('/api/blobs/:id', async (req, reply) => {
+    const meta = BLOB_ID_RE.test(req.params.id) ? findBlob(db, req.params.id, me(req).id) : undefined;
+    if (!meta) return reply.code(404).send({ error: 'Nicht gefunden' });
+    const photo = meta.kind === 'photo';
+    reply.header('Content-Type', photo ? 'image/jpeg' : 'application/octet-stream');
+    reply.header('Content-Disposition', photo ? 'inline' : `attachment; filename*=UTF-8''${encodeURIComponent(safeFileName(meta.name, 'Datei', 120))}`);
+    return reply.send(readBlobData(db, meta.id)); // bei HEAD lässt Fastify den Inhalt weg, die Länge stimmt
+  });
+
   app.get<{ Params: { id: string } }>('/api/protocols/:id/pdf', limited(60), async (req, reply) => {
     const row = db.prepare('SELECT * FROM protocols WHERE id = ?').get(req.params.id) as ProtocolRow | undefined;
-    if (!row || !canSee(row, me(req))) return reply.code(404).send({ error: 'Nicht gefunden' });
+    if (!row || row.deletedAt !== null || !canSee(row, me(req))) return reply.code(404).send({ error: 'Nicht gefunden' });
     const doc = toServerDoc(row);
-    const pdf = await renderPdf(doc, style());
+    let pdf: Buffer;
+    try {
+      pdf = await renderPdf(doc, style(), { image: imageOf });
+    } catch (e) {
+      // Der Inhalt kommt von Clients und wird nicht geprüft: ein unbrauchbares Protokoll darf nur sein eigenes PDF verhindern.
+      app.log.warn({ err: e, protocol: row.id }, 'PDF konnte nicht erzeugt werden');
+      return reply.code(422).send({ error: 'Dieses Protokoll kann nicht als PDF ausgegeben werden.' });
+    }
     return reply
       .header('Content-Type', 'application/pdf')
       .header('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(pdfFileName(doc))}.pdf`)
       .send(pdf);
+  });
+
+  /** Papierkorb: die eigenen gelöschten Protokolle (Admin: zusätzlich veröffentlichte anderer), neueste zuerst. */
+  app.get('/api/protocols/trash', async (req) => {
+    const user = me(req);
+    const items = db
+      .prepare(
+        `SELECT p.id, p.title, p.datum, p.ort, p.deletedAt, p.shared, p.ownerId, COALESCE(u.displayName, u.username, '') AS owner
+         FROM protocols p LEFT JOIN users u ON u.id = p.ownerId
+         WHERE p.deletedAt IS NOT NULL AND p.purgedAt IS NULL AND (p.ownerId = ? OR (? = 1 AND p.shared = 1))
+         ORDER BY p.deletedAt DESC`,
+      )
+      .all(user.id, user.role === 'admin' ? 1 : 0);
+    return { items, trashDays: Number(getSettings(db).trashDays) || 30 };
+  });
+
+  /** Holt ein Protokoll aus dem Papierkorb zurück (Besitzer oder Admin). Die Geräte bekommen es beim nächsten Abgleich. */
+  app.post<{ Params: { id: string } }>('/api/protocols/:id/restore', async (req, reply) => {
+    const user = me(req);
+    const who = [user.id, user.role === 'admin' ? 1 : 0] as const;
+    const row = db
+      .prepare('SELECT id FROM protocols WHERE id = ? AND deletedAt IS NOT NULL AND purgedAt IS NULL AND (ownerId = ? OR (? = 1 AND shared = 1))')
+      .get(req.params.id, ...who);
+    if (!row) return reply.code(404).send({ error: 'Nicht im Papierkorb' });
+    db.prepare('UPDATE protocols SET deletedAt = NULL, rev = ?, updatedAt = ? WHERE id = ?').run(nextRev(db), Date.now(), req.params.id);
+    return { ok: true };
   });
 
   /** Kleidertabelle als PDF: die App schickt die Zeilen, der Server setzt sie im Stil der Protokoll-PDFs. */
@@ -379,24 +529,42 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
   /** Alle für den Nutzer sichtbaren Protokolle als ZIP (PDF + JSON), Ordnerstruktur wie in der App. */
   app.get('/api/export.zip', limited(10), async (req, reply) => {
     const rows = db.prepare(`SELECT * FROM protocols WHERE deletedAt IS NULL AND ${VISIBLE_SQL} ORDER BY datum`).all(me(req).id) as unknown as ProtocolRow[];
-    const files: Record<string, Uint8Array> = {};
+    const files: Zippable = {};
+    /** Fotos und Dateien der exportierten Protokolle, unter ihrer Kennung (das JSON verweist darauf). Bilder sind schon komprimiert. */
+    const addAttachment = (node: BlobNode) => {
+      const blob = db.prepare('SELECT kind, data FROM blobs WHERE id = ?').get(node.blobId) as { kind: string; data: Uint8Array } | undefined;
+      if (!blob) return;
+      const path = blob.kind === 'photo' ? `attachments/${node.blobId}.jpg` : `attachments/${node.blobId}-${safeFileName(node.name, 'Datei', 120)}`;
+      files[path] ??= [new Uint8Array(blob.data), { level: 0 }];
+    };
     const st = style();
     const used = new Set<string>();
     const folders = new Map((db.prepare('SELECT * FROM folders WHERE deletedAt IS NULL').all() as unknown as FolderRow[]).map((f) => [f.id, f]));
     const dirOf = (id: string): string => {
       const parts: string[] = [];
-      for (let f = folders.get(id), n = 0; f && n < 50; f = folders.get(f.parentId), n++) parts.unshift(f.name.replace(/[^\p{L}\p{N} ._-]+/gu, '').trim() || 'Ordner');
+      for (let f = folders.get(id), n = 0; f && n < 50; f = folders.get(f.parentId), n++) parts.unshift(safeFileName(f.name, 'Ordner', 120));
       return parts.length ? `${parts.join('/')}/` : '';
     };
+    const problems: string[] = [];
     for (const r of rows) {
       const doc = toServerDoc(r);
       const dir = dirOf(doc.folderId);
       let base = pdfFileName(doc);
       while (used.has(dir + base)) base += '_';
       used.add(dir + base);
-      files[`${dir}${base}.pdf`] = new Uint8Array(await renderPdf(doc, st));
-      files[`json/${dir}${base}.json`] = strToU8(JSON.stringify(doc, null, 2));
+      // Wie der Server den Text intern führt (Yjs-Modus, Feldzeiten), gehört nicht in die Ausgabe.
+      const { ymode: _ymode, metaAt: _metaAt, ...exported } = doc;
+      files[`json/${dir}${base}.json`] = strToU8(JSON.stringify(exported, null, 2));
+      for (const node of blobNodesOf(doc.content)) addAttachment(node);
+      try {
+        files[`${dir}${base}.pdf`] = new Uint8Array(await renderPdf(doc, st, { image: imageOf }));
+      } catch (e) {
+        // Ein unbrauchbarer Inhalt darf den Export der übrigen nicht verhindern; der Rohinhalt liegt unter json/ bei.
+        app.log.warn({ err: e, protocol: r.id }, 'PDF für den Export nicht erzeugt');
+        problems.push(`${doc.datum} ${doc.title || 'Ohne Titel'} (${r.id}): PDF konnte nicht erzeugt werden, der Rohinhalt liegt unter json/ bei.`);
+      }
     }
+    if (problems.length) files['export-fehler.txt'] = strToU8(`${problems.join('\n')}\n`);
     return reply
       .header('Content-Type', 'application/zip')
       .header('Content-Disposition', 'attachment; filename="protokolle.zip"')
@@ -459,15 +627,19 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
   });
 
   // ---------- Administration ----------
-  app.get('/api/admin/info', async () => {
+  app.get('/api/admin/info', async (req) => {
     const count = (where: string) => (db.prepare(`SELECT COUNT(*) AS n FROM protocols WHERE ${where}`).get() as { n: number }).n;
+    const blobs = blobStats(db);
     return {
       version: VERSION,
       node: process.version,
       uptime: Math.round(process.uptime()),
       protocols: count('deletedAt IS NULL'),
-      trashed: count('deletedAt IS NOT NULL'),
+      trashed: count('deletedAt IS NOT NULL AND purgedAt IS NULL'),
       users: countUsers(db),
+      blobs: blobs.count,
+      blobBytes: blobs.bytes,
+      collab: collabStats(db, me(req)),
     };
   });
 
@@ -546,9 +718,10 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
   app.get('/api/admin/protocols', async (req) => {
     return db
       .prepare(
-        `SELECT p.id, p.title, p.datum, p.ort, p.rev, p.updatedAt, p.deletedAt, p.shared, length(p.content) AS size, COALESCE(u.displayName, u.username, '') AS owner
+        `SELECT p.id, p.title, p.datum, p.ort, p.rev, p.updatedAt, p.deletedAt, p.shared, COALESCE(u.displayName, u.username, '') AS owner,
+           length(p.content) + COALESCE((SELECT SUM(b.size) FROM blob_refs r JOIN blobs b ON b.id = r.blobId WHERE r.protocolId = p.id), 0) AS size
          FROM protocols p LEFT JOIN users u ON u.id = p.ownerId
-         WHERE (p.shared = 1 OR p.ownerId = ?)
+         WHERE (p.shared = 1 OR p.ownerId = ?) AND p.purgedAt IS NULL
          ORDER BY (p.deletedAt IS NOT NULL), p.datum DESC, p.updatedAt DESC`,
       )
       .all(me(req).id);
@@ -556,14 +729,14 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
 
   app.post<{ Params: { id: string } }>('/api/admin/protocols/:id/restore', async (req, reply) => {
     const r = db
-      .prepare(`UPDATE protocols SET deletedAt = NULL, rev = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NOT NULL AND ${VISIBLE_SQL}`)
+      .prepare(`UPDATE protocols SET deletedAt = NULL, rev = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NOT NULL AND purgedAt IS NULL AND ${VISIBLE_SQL}`)
       .run(nextRev(db), Date.now(), req.params.id, me(req).id);
     return r.changes ? { ok: true } : reply.code(404).send({ error: 'Nicht im Papierkorb' });
   });
 
   app.delete<{ Params: { id: string } }>('/api/admin/protocols/:id', async (req, reply) => {
-    const r = db.prepare(`DELETE FROM protocols WHERE id = ? AND deletedAt IS NOT NULL AND ${VISIBLE_SQL}`).run(req.params.id, me(req).id);
-    return r.changes ? { ok: true } : reply.code(404).send({ error: 'Nur Papierkorb-Einträge können endgültig gelöscht werden' });
+    const row = db.prepare(`SELECT id FROM protocols WHERE id = ? AND deletedAt IS NOT NULL AND purgedAt IS NULL AND ${VISIBLE_SQL}`).get(req.params.id, me(req).id);
+    return row && purgeProtocol(db, req.params.id) ? { ok: true } : reply.code(404).send({ error: 'Nur Papierkorb-Einträge können endgültig gelöscht werden' });
   });
 
   app.get('/api/admin/backup', limited(10), async (_req, reply) => {
@@ -683,8 +856,8 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
 
   const timer = setInterval(() => {
     purgeExpiredSessions(db);
-    const days = Number(getSettings(db).trashDays) || 30;
-    db.prepare('DELETE FROM protocols WHERE deletedAt IS NOT NULL AND deletedAt < ?').run(Date.now() - days * 86_400_000);
+    sweepTrash(db);
+    sweepBlobs(db);
   }, 6 * 3_600_000);
   timer.unref();
   app.addHook('onClose', async () => clearInterval(timer));

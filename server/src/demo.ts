@@ -1,7 +1,8 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 import { hashPassword } from './auth.js';
-import { currentRev, getConfig, nextRev, setConfig, type Role } from './db.js';
+import { migrateYjs } from './collab/migrate.js';
+import { currentRev, getConfig, markEpochRestored, nextRev, setConfig, type Role } from './db.js';
 import { DEMO_NAMES, demoData } from './demoData.js';
 
 /**
@@ -111,18 +112,24 @@ export async function resetDemo(db: DatabaseSync, now = new Date()): Promise<voi
 
   db.exec('BEGIN IMMEDIATE');
   try {
-    for (const t of ['push_reminders', 'push_subscriptions', 'sessions', 'protocols', 'folders', 'records', 'live_drafts', 'users', 'config']) db.exec(`DELETE FROM ${t}`);
+    // Alle Tabellen, auch spätere (zum Beispiel die Anhänge der Besucher): Nur die Beispieldaten sollen übrig bleiben.
+    const tables = (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'").all() as { name: string }[]).map((t) => t.name);
+    for (const t of tables) db.exec(`DELETE FROM "${t.replace(/"/g, '""')}"`);
     for (const [k, v] of Object.entries(keep)) if (v !== undefined) setConfig(db, k, v);
     // Revisionen nie zurückdrehen; neue Epoche, damit Geräte ihren Stand verwerfen.
     setConfig(db, 'revCounter', String(liveRev));
     if (stopwatchRev !== undefined) setConfig(db, 'liveRev', stopwatchRev);
     setConfig(db, 'epoch', randomUUID());
+    markEpochRestored(db); // das Zurücksetzen ist gewollt: Auf den Geräten gilt der Stand der Demo
     seed(db, now, hashes);
     db.exec('COMMIT');
   } catch (e) {
     db.exec('ROLLBACK');
     throw e;
   }
+  // Der Text der Beispielprotokolle wird zusammen bearbeitet wie überall (Yjs); die Beispieldaten kommen aus dem Code und müssen sich umstellen lassen.
+  const converted = migrateYjs(db);
+  if (converted.failed.length) throw new Error(`Beispieldaten ließen sich nicht umstellen: ${converted.failed.map((f) => `${f.id}: ${f.reason}`).join('; ')}`);
   // Platz von großen Anhängen der Besucher freigeben; klappt das nicht (z. B. Platte voll), gilt das Zurücksetzen trotzdem.
   try {
     db.exec('VACUUM');

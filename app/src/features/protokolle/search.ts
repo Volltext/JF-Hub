@@ -8,6 +8,14 @@ export function extractText(node: JSONContent | undefined): string {
   // Anhänge: nur Beschriftung bzw. Dateiname sind durchsuchbar, nie die Daten.
   if (node.type === 'photo') return String(node.attrs?.caption ?? '');
   if (node.type === 'attachment') return String(node.attrs?.name ?? '');
+  // Tabellen: eine Zeile je Tabellenzeile, die Zellen mit „ · “ getrennt (Absätze innerhalb einer Zelle bleiben in der Zeile), leere entfallen.
+  if (node.type === 'tableRow') {
+    return (node.content ?? [])
+      .map((cell) => extractText(cell).replace(/\s*\n\s*/g, ' ').trim())
+      .filter(Boolean)
+      .join(' · ');
+  }
+  if (node.type === 'table') return (node.content ?? []).map(extractText).filter(Boolean).join('\n');
   const inner = (node.content ?? []).map(extractText);
   // Block-Kinder (Absätze, Listenpunkte …) mit Zeilenumbruch trennen, Inline-Kinder direkt aneinanderfügen.
   return node.content?.some((c) => c.type !== 'text' && c.type !== 'hardBreak') ? inner.join('\n') : inner.join('');

@@ -6,7 +6,8 @@ import { DatabaseSync } from 'node:sqlite';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from './app.js';
 import { createBackup, listBackups, pruneBackups, restoreFromFile, runAutoBackup, RestoreError } from './backup.js';
-import { getConfig, getEpoch, openDb, setConfig } from './db.js';
+import { epochRestored, getConfig, getEpoch, openDb, setConfig } from './db.js';
+import { headerChange } from './collab/testing.js';
 import type { ClientChange, SyncResponse } from './sync.js';
 
 let dir: string;
@@ -82,6 +83,17 @@ describe('Wiederherstellen', () => {
     expect(getEpoch(db)).not.toBe(epoch);
   });
 
+  it('markiert die neue Epoche als gewollte Wiederherstellung; eine neue, leere Datenbank ist keine', () => {
+    const fresh = openDb(':memory:');
+    expect(epochRestored(fresh)).toBe(false); // neu angelegt (zum Beispiel Volume nicht eingebunden): Die Geräte haben die einzigen Kopien
+    seed(fresh, 'alt');
+    const backup = createBackup(fresh, dir, 'manuell');
+    restoreFromFile(fresh, join(dir, backup.name));
+    expect(epochRestored(fresh)).toBe(true); // gewollt: Der Stand des Servers gilt
+    setConfig(fresh, 'epoch', 'eine-andere-epoche'); // eine spätere neue Epoche erbt die Marke nicht
+    expect(epochRestored(fresh)).toBe(false);
+  });
+
   it('nimmt eine Sicherung ohne neuere Spalten an (Migration)', () => {
     const old = new DatabaseSync(join(dir, 'alt.sqlite'));
     old.exec(`
@@ -123,7 +135,7 @@ describe('Backup-API', () => {
   let app: FastifyInstance;
   let token: string;
   const PW = 'ein-sicheres-passwort';
-  const auth = () => ({ authorization: `Bearer ${token}` });
+  const auth = () => ({ authorization: `Bearer ${token}`, 'x-jfh-schema': '5' });
 
   beforeEach(async () => {
     app = await buildApp({ db: openDb(':memory:'), adminPassword: PW, pushTimer: false, backupTimer: false, backupDir: join(dir, 'backups') });
@@ -134,30 +146,18 @@ describe('Backup-API', () => {
     await app.close();
   });
 
-  const protocol = (id: string, title: string): ClientChange => ({
-    id,
-    baseRev: 0,
-    title,
-    datum: '2026-10-01',
-    beginn: '',
-    ende: '',
-    ort: '',
-    leitung: '',
-    content: { type: 'doc', content: [] },
-    updatedAt: Date.now(),
-    deleted: false,
-  });
+  const protocol = (id: string, title: string): ClientChange => headerChange(id, { title });
   const titles = async () => {
-    const r = await app.inject({ method: 'POST', url: '/api/sync', headers: auth(), payload: { since: 0, changes: [] } });
+    const r = await app.inject({ method: 'POST', url: '/api/sync', headers: auth(), payload: { since: 0, protocols: [] } });
     return (r.json() as SyncResponse).changes.filter((p) => !p.deleted).map((p) => p.title);
   };
 
   it('sichert, lädt herunter, stellt wieder her und legt vorher eine Sicherung an', async () => {
-    await app.inject({ method: 'POST', url: '/api/sync', headers: auth(), payload: { since: 0, changes: [protocol('doc-aaaa', 'Vorher')] } });
+    await app.inject({ method: 'POST', url: '/api/sync', headers: auth(), payload: { since: 0, protocols: [protocol('doc-aaaa', 'Vorher')] } });
     const made = await app.inject({ method: 'POST', url: '/api/admin/backups', headers: auth() });
     expect(made.statusCode).toBe(200);
     const name = made.json().name as string;
-    await app.inject({ method: 'POST', url: '/api/sync', headers: auth(), payload: { since: 0, changes: [protocol('doc-bbbb', 'Nachher')] } });
+    await app.inject({ method: 'POST', url: '/api/sync', headers: auth(), payload: { since: 0, protocols: [protocol('doc-bbbb', 'Nachher')] } });
     expect((await titles()).sort()).toEqual(['Nachher', 'Vorher']);
 
     const dl = await app.inject({ method: 'GET', url: `/api/admin/backups/${name}`, headers: auth() });
@@ -173,10 +173,10 @@ describe('Backup-API', () => {
   });
 
   it('stellt aus hochgeladener Datei wieder her und weist Müll ab', async () => {
-    await app.inject({ method: 'POST', url: '/api/sync', headers: auth(), payload: { since: 0, changes: [protocol('doc-aaaa', 'Eins')] } });
+    await app.inject({ method: 'POST', url: '/api/sync', headers: auth(), payload: { since: 0, protocols: [protocol('doc-aaaa', 'Eins')] } });
     const name = (await app.inject({ method: 'POST', url: '/api/admin/backups', headers: auth() })).json().name as string;
     const bytes = readFileSync(join(dir, 'backups', name));
-    await app.inject({ method: 'POST', url: '/api/sync', headers: auth(), payload: { since: 0, changes: [protocol('doc-bbbb', 'Zwei')] } });
+    await app.inject({ method: 'POST', url: '/api/sync', headers: auth(), payload: { since: 0, protocols: [protocol('doc-bbbb', 'Zwei')] } });
 
     const bad = await app.inject({ method: 'POST', url: '/api/admin/restore', headers: { ...auth(), 'content-type': 'application/x-sqlite3' }, payload: Buffer.alloc(500, 1) });
     expect(bad.statusCode).toBe(400);
