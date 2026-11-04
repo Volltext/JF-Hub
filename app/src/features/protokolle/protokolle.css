@@ -201,8 +201,23 @@ body.web .icon-btn { cursor: pointer; }
   body.editing .proto-bar { opacity: 0.35; }
   body.editing .proto-bar:hover, body.editing .proto-bar:focus-within { opacity: 1; }
 }
-/* Die Werkzeugleiste als schwebende Kapsel */
-.ed-dock { border-radius: 16px; background: color-mix(in srgb, var(--surface) 94%, transparent); backdrop-filter: blur(10px); }
+/* Die Werkzeugleiste als schwebende Kapsel. `overflow: hidden` schneidet die Kanten-Schatten und die Kontextzeile an den runden Ecken ab
+   (sonst ragen deren eckige Flächen in die Rundung). */
+.ed-dock { border-radius: 16px; overflow: hidden; min-width: 0; max-width: 100%; background: color-mix(in srgb, var(--surface) 94%, transparent); backdrop-filter: blur(10px); }
+.ed-toolbar, .ed-context { min-width: 0; overscroll-behavior-x: contain; }
+@media (pointer: coarse) {
+  /* Ohne Navigationsleiste (beim Schreiben) hält die Leiste Abstand zur Home-Anzeige; das Wischen bleibt in der Leiste. */
+  .ed-dock { border-radius: 16px; padding-bottom: var(--safe-bottom); }
+  .ed-toolbar { touch-action: pan-x; }
+}
+
+/* Nie seitlich scrollen: Breite Inhalte (Tabellen, Bilder, lange Wörter) bleiben in ihrem Rahmen. */
+.proto, .proto-sheet, .proto-sheet--body, .proto-split__main { min-width: 0; max-width: 100%; }
+.ed-content { min-width: 0; }
+.ed-content img, .ed-content video, .ed-content canvas, .ed-content svg { max-width: 100%; height: auto; }
+.ed-content pre { max-width: 100%; overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ed-content .tableWrapper { max-width: 100%; overscroll-behavior-x: contain; }
+.proto-title { overflow-wrap: anywhere; }
 @media (pointer: fine) { .ed-dock { align-self: flex-start; max-width: 100%; } }
 
 /* ----- Liste: Titel, Vorschau, Tags ----- */
