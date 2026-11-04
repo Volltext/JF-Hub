@@ -1,4 +1,8 @@
 import webpush from 'web-push';
+import { Agent } from 'node:https';
+import { BlockList } from 'node:net';
+import { lookup as dnsLookup } from 'node:dns';
+import type { LookupFunction } from 'node:net';
 import type { DatabaseSync } from 'node:sqlite';
 import { getConfig, setConfig } from './db.js';
 
@@ -42,7 +46,12 @@ export interface BrowserSubscription {
   keys: { p256dh: string; auth: string };
 }
 
-/** Der Server ruft diese Adresse auf: nur https, keine IP-Adressen und keine internen Namen. */
+/**
+ * Der Server ruft diese Adresse selbst auf – erste Verteidigungslinie gegen Serverseitige Anfragefälschung (SSRF):
+ * nur https an einen echten öffentlichen DNS-Namen. Verlangt werden Namenslabels mit Buchstaben-TLD; das schließt
+ * IP-Adressen in jeder Schreibweise (dezimal, hexadezimal „0x7f.1“, oktal, IPv4/IPv6) und interne/reservierte Namen aus.
+ * DNS-Namen, die auf interne Adressen zeigen, fängt zusätzlich der Adress-Filter beim Verbinden ab (siehe `safeLookup`).
+ */
 export function checkEndpoint(endpoint: unknown): string {
   if (typeof endpoint !== 'string' || endpoint.length > 1000) throw new PushError('Ungültiges Push-Abonnement');
   let url: URL;
@@ -51,11 +60,52 @@ export function checkEndpoint(endpoint: unknown): string {
   } catch {
     throw new PushError('Ungültiges Push-Abonnement');
   }
-  const host = url.hostname;
-  const internal = !host.includes('.') || /^[\d.]+$/.test(host) || host.includes(':') || /\.(local|localhost|internal|lan|home)$/i.test(host);
-  if (url.protocol !== 'https:' || internal) throw new PushError('Push-Adresse nicht erlaubt');
+  const host = url.hostname.toLowerCase();
+  const publicDomain = /^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(host);
+  const reservedSuffix = /\.(local|localhost|internal|intranet|intra|lan|home|corp|test|example|invalid)$/.test(host);
+  if (url.protocol !== 'https:' || !publicDomain || reservedSuffix) throw new PushError('Push-Adresse nicht erlaubt');
   return endpoint;
 }
+
+/** Private, lokale und sonst reservierte Adressbereiche, die der Server beim Push-Versand nie ansprechen darf. */
+const BLOCKED = new BlockList();
+for (const [net, bits] of [
+  ['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10], ['127.0.0.0', 8], ['169.254.0.0', 16],
+  ['172.16.0.0', 12], ['192.0.0.0', 24], ['192.168.0.0', 16], ['198.18.0.0', 15], ['240.0.0.0', 4],
+] as const) {
+  BLOCKED.addSubnet(net, bits, 'ipv4');
+}
+for (const [net, bits] of [['::1', 128], ['::', 128], ['fc00::', 7], ['fe80::', 10]] as const) {
+  BLOCKED.addSubnet(net, bits, 'ipv6');
+}
+// Hinweis: ::ffff:0:0/96 (IPv4-gemappt) wird bewusst NICHT pauschal geblockt – das träfe jede IPv4-Adresse.
+// Gemappte Adressen zerlegt isBlockedAddress und prüft den IPv4-Teil einzeln.
+
+/** true, wenn die IP in einem privaten/lokalen/reservierten Bereich liegt (darf nicht als Push-Ziel dienen). */
+export function isBlockedAddress(ip: string, family = ip.includes(':') ? 6 : 4): boolean {
+  try {
+    if (BLOCKED.check(ip, family === 6 ? 'ipv6' : 'ipv4')) return true;
+    // IPv4-gemappte IPv6-Adressen (::ffff:10.0.0.1) zusätzlich als IPv4 prüfen.
+    const m = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i.exec(ip);
+    return m ? BLOCKED.check(m[1]!, 'ipv4') : false;
+  } catch {
+    return true; // im Zweifel (unparsbare Adresse) blockieren
+  }
+}
+
+/**
+ * DNS-Auflösung für den Push-Versand mit Adress-Filter: schlägt die Verbindung ab, wenn der Name auf eine interne
+ * Adresse zeigt (zweite SSRF-Linie, greift auch bei öffentlichen „Resolver-Tricks“ wie *.nip.io und gegen DNS-Rebinding).
+ */
+export const safeLookup: LookupFunction = (hostname, options, callback) => {
+  const opts = typeof options === 'number' ? { family: options } : options;
+  dnsLookup(hostname, { ...opts, all: true }, (err, addresses) => {
+    if (err) return callback(err, '', 0);
+    const ok = addresses.find((a) => !isBlockedAddress(a.address, a.family));
+    if (!ok) return (callback as (e: Error) => void)(new Error('Push-Ziel zeigt auf eine nicht erlaubte Adresse'));
+    callback(null, ok.address, ok.family);
+  });
+};
 
 export function subscribe(db: DatabaseSync, userId: string, sessionHash: string, sub: BrowserSubscription, device: string): void {
   const endpoint = checkEndpoint(sub?.endpoint);
@@ -128,8 +178,10 @@ export type PushSender = (sub: BrowserSubscription, payload: PushPayload) => Pro
 export function webPushSender(db: DatabaseSync, subject: string): PushSender {
   const { publicKey, privateKey } = ensureVapid(db);
   webpush.setVapidDetails(subject, publicKey, privateKey);
+  // Eigener HTTPS-Agent mit Adress-Filter: verhindert, dass der Versand auf interne Ziele umgeleitet wird (SSRF).
+  const agent = new Agent({ lookup: safeLookup });
   return async (sub, payload) => {
-    await webpush.sendNotification(sub, JSON.stringify(payload), { TTL: 3600, urgency: 'high' });
+    await webpush.sendNotification(sub, JSON.stringify(payload), { TTL: 3600, urgency: 'high', agent });
   };
 }
 

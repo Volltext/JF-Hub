@@ -74,6 +74,18 @@ describe('Auth', () => {
     expect((await app.inject({ method: 'GET', url: '/api/me', headers: auth(t) })).statusCode).toBe(401);
   });
 
+  it('prozentkodierte Pfade umgehen die Prüfung nicht (/%61pi/admin/…)', async () => {
+    // Gleiche Route, andere Schreibweise: muss ebenso eine Anmeldung verlangen.
+    expect((await app.inject({ method: 'GET', url: '/%61pi/admin/users' })).statusCode).toBe(401);
+    expect((await app.inject({ method: 'GET', url: '/%61pi/admin/info' })).statusCode).toBe(401);
+    // Ein Betreuer (kein Admin) darf auch über eine kodierte Admin-URL nicht hinein.
+    const t = await login();
+    const inv = await app.inject({ method: 'POST', url: '/api/admin/users', headers: auth(t), payload: { username: 'max', displayName: 'Max' } });
+    const acc = await app.inject({ method: 'POST', url: '/api/invite/accept', payload: { username: 'max', code: inv.json().invite.code, password: 'max-passwort-123' } });
+    const max = acc.json().token as string;
+    expect((await app.inject({ method: 'GET', url: '/%61pi/admin/users', headers: auth(max) })).statusCode).toBe(403);
+  });
+
   it('Cookie-Sitzung braucht bei Schreibzugriffen den CSRF-Header', async () => {
     const r = await app.inject({ method: 'POST', url: '/api/login', payload: { username: 'admin', password: PW } });
     const cookie = r.headers['set-cookie'] as string;
@@ -105,6 +117,31 @@ describe('Auth', () => {
     expect(r.statusCode).toBe(200);
     expect((await app.inject({ method: 'GET', url: '/api/me', headers: auth(a) })).statusCode).toBe(200);
     expect((await app.inject({ method: 'GET', url: '/api/me', headers: auth(b) })).statusCode).toBe(401);
+  });
+});
+
+describe('Härtung', () => {
+  it('setzt CSP/Sicherheits-Header; HSTS nur über https', async () => {
+    const t = await login();
+    const r = await app.inject({ method: 'GET', url: '/api/me', headers: auth(t) });
+    const csp = r.headers['content-security-policy'] as string;
+    expect(csp).toContain("object-src 'none'");
+    expect(csp).toContain("base-uri 'self'");
+    expect(csp).toContain("frame-ancestors 'none'");
+    expect(r.headers['x-content-type-options']).toBe('nosniff');
+    // Über http (Standard bei inject) kein HSTS …
+    expect(r.headers['strict-transport-security']).toBeUndefined();
+    // … über https schon (per vertrautem Proxy signalisiert).
+    const s = await app.inject({ method: 'GET', url: '/api/me', headers: { ...auth(t), 'x-forwarded-proto': 'https' } });
+    expect(String(s.headers['strict-transport-security'])).toContain('max-age=');
+  });
+
+  it('begrenzt teure Endpunkte per Rate-Limit, normale nicht', async () => {
+    const t = await login();
+    const lim = await app.inject({ method: 'GET', url: '/api/export.zip', headers: auth(t) });
+    expect(String(lim.headers['x-ratelimit-limit'])).toBe('10');
+    const open = await app.inject({ method: 'GET', url: '/api/me', headers: auth(t) });
+    expect(open.headers['x-ratelimit-limit']).toBeUndefined();
   });
 });
 
