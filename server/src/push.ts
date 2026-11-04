@@ -218,3 +218,24 @@ export async function sendDue(db: DatabaseSync, send: PushSender, now = Date.now
     sending = false;
   }
 }
+
+/** Schickt eine Nachricht sofort an alle Geräte eines Betreuers (neue Mail). Abos, die der Push-Dienst nicht mehr kennt, werden entfernt. */
+export async function pushToUser(db: DatabaseSync, send: PushSender, userId: string, payload: PushPayload): Promise<number> {
+  const subs = db.prepare('SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE userId = ?').all(userId) as { endpoint: string; p256dh: string; auth: string }[];
+  let sent = 0;
+  for (const s of subs) {
+    try {
+      await send({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, payload);
+      sent++;
+    } catch (e) {
+      const status = (e as { statusCode?: number }).statusCode;
+      if (status === 404 || status === 410) db.prepare('DELETE FROM push_subscriptions WHERE endpoint = ?').run(s.endpoint);
+    }
+  }
+  return sent;
+}
+
+/** Hat dieser Betreuer mindestens ein Gerät für Benachrichtigungen angemeldet? */
+export function hasPushDevice(db: DatabaseSync, userId: string): boolean {
+  return !!db.prepare('SELECT 1 FROM push_subscriptions WHERE userId = ? LIMIT 1').get(userId);
+}

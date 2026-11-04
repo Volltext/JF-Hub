@@ -77,8 +77,11 @@ function pdfName(p: Protokoll): string {
   return `${base || 'Protokoll'}.pdf`;
 }
 
-/** Gleicht ab, lädt das PDF vom Server und öffnet Teilen-Dialog (App) bzw. Download (Web). */
-export async function exportPdf(id: string): Promise<void> {
+/**
+ * Bringt Kopfdaten und Text eines Protokolls zum Server und wirft, wenn das nicht gelingt. Alles, was das Protokoll dort verarbeitet
+ * (PDF, Versand per Mail), arbeitet mit der Fassung des Servers und braucht deshalb zuerst diesen Abgleich.
+ */
+export async function settleProtocol(id: string): Promise<Protokoll> {
   if (IS_DEMO) throw new ProtoError(DEMO_NEEDS_SERVER);
   const p = await db.protokolle.get(id);
   if (!p) throw new ProtoError('Protokoll nicht gefunden.');
@@ -100,6 +103,12 @@ export async function exportPdf(id: string): Promise<void> {
   }
   const after = await db.protokolle.get(id);
   if (!after || !(await settled())) throw new ProtoError('Das PDF braucht eine Verbindung zum Server, damit die neueste Fassung verwendet wird.');
+  return after;
+}
+
+/** Gleicht ab, lädt das PDF vom Server und öffnet Teilen-Dialog (App) bzw. Download (Web). */
+export async function exportPdf(id: string): Promise<void> {
+  const after = await settleProtocol(id);
   const conn = await loadConn();
   const base64 = await request<string>(conn, 'GET', `/api/protocols/${encodeURIComponent(id)}/pdf`, undefined, true);
   await shareBinaryFile(pdfName(after), base64, 'application/pdf');

@@ -40,6 +40,10 @@ import { migrateBlobs } from './migrate.js';
 import { pdfFileName, renderPdf, safeFileName, type PdfStyle } from './pdf.js';
 import { parseClothingPdf, renderClothingPdf } from './clothingPdf.js';
 import { applySync, canSee, purgeProtocol, sweepTrash, toServerDoc, VISIBLE_SQL, type SyncRequest } from './sync.js';
+import { registerMailRoutes } from './mail/routes.js';
+import { pollMail } from './mail/poller.js';
+import { ImapBackend } from './mail/imap.js';
+import type { MailBackend } from './mail/types.js';
 import { ensureVapid, PushError, replaceReminders, sendDue, subscribe, unsubscribe, webPushSender, type PushSender } from './push.js';
 import { HolidayCache, type FetchLike } from './holidays.js';
 import { sampleProtocol } from './sample.js';
@@ -96,6 +100,22 @@ export interface AppOptions {
   logger?: boolean;
   /** Kleinstes Dokumentformat (`X-JFH-Schema`), das der Server annimmt; ältere Apps bekommen 426 (Standard: `MIN_SCHEMA`). */
   minSchema?: number;
+  /**
+   * E-Mail (optional): Betreuer können ihr Postfach verbinden, Mails lesen, schreiben und Benachrichtigungen bekommen.
+   * Ohne `key` (Schlüssel für die gespeicherten Passwörter) ist die Funktion aus.
+   */
+  mail?: {
+    /** 32 Bytes; kommt aus MAIL_KEY oder der Datei mail.key im Datenordner (siehe index.ts). */
+    key?: Buffer;
+    /** false: ausschalten, auch wenn ein Schlüssel da ist (MAIL_ENABLED=0). */
+    enabled?: boolean;
+    /** Eigene Anbindung (Tests); sonst IMAP/SMTP. */
+    backend?: MailBackend;
+    /** Mail-Server in privaten Netzen erlauben (MAIL_ALLOW_PRIVATE=1). */
+    allowPrivate?: boolean;
+    /** Abstand der Prüfung auf neue Mails in Millisekunden (Standard 120 s); false: nicht automatisch prüfen (Tests). */
+    pollMs?: number | false;
+  };
   /** Tests: wird für jede registrierte Route aufgerufen (Grundlage des Sicherheitstests, der alle geschützten Routen durchgeht). */
   onRoute?: (route: { method: string; url: string }) => void;
 }
@@ -267,7 +287,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
     resetAt: formatResetAt(demoAt),
     accounts: DEMO_ACCOUNTS.map(({ username, password, displayName, role, hint }) => ({ username, password, displayName, role, hint })),
   };
-  app.get('/api/status', async () => ({ setupRequired: countUsers(db) === 0, version: VERSION, api: API_VERSION, minSchema, features: ['blobs', 'collab'], orgName: getSettings(db).orgName, ...(demoInfo ? { demo: demoInfo } : {}) }));
+  app.get('/api/status', async () => ({ setupRequired: countUsers(db) === 0, version: VERSION, api: API_VERSION, minSchema, features: mailKey ? ['blobs', 'collab', 'mail'] : ['blobs', 'collab'], orgName: getSettings(db).orgName, ...(demoInfo ? { demo: demoInfo } : {}) }));
 
   app.post<{ Body: { code?: string; username?: string; displayName?: string; password?: string; device?: string } }>(
     '/api/setup',
@@ -436,6 +456,29 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
     const row = db.prepare("SELECT data FROM blobs WHERE id = ? AND kind = 'photo'").get(blobId) as { data: Uint8Array } | undefined;
     return row ? `data:image/jpeg;base64,${Buffer.from(row.data.buffer, row.data.byteOffset, row.data.byteLength).toString('base64')}` : null;
   };
+
+  // ---------- E-Mail (optional) ----------
+  const mailKey = opts.mail?.enabled === false ? undefined : opts.mail?.key;
+  const mailBackend: MailBackend = opts.mail?.backend ?? new ImapBackend({ allowPrivate: opts.mail?.allowPrivate });
+  registerMailRoutes(app, {
+    db,
+    key: mailKey ?? Buffer.alloc(32),
+    backend: mailBackend,
+    me,
+    limited,
+    enabled: !!mailKey,
+    protocolPdf: async (id, user) => {
+      const row = db.prepare('SELECT * FROM protocols WHERE id = ?').get(id) as ProtocolRow | undefined;
+      if (!row || row.deletedAt !== null || !canSee(row, user)) return undefined;
+      const doc = toServerDoc(row);
+      try {
+        return { filename: pdfFileName(doc), content: await renderPdf(doc, style(), { image: imageOf }) };
+      } catch (e) {
+        app.log.warn({ err: e, protocol: row.id }, 'PDF für die Mail konnte nicht erzeugt werden');
+        return undefined;
+      }
+    },
+  });
 
   // ---------- Anhänge (Fotos, Dateien) ----------
   // Die App legt den Anhang lokal ab und lädt ihn hoch, bevor sie das Protokoll sendet, das auf ihn verweist. Die Kennung vergibt sie selbst.
@@ -901,6 +944,19 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
       closed = true;
       clearTimeout(next);
     });
+  }
+
+  if (mailKey && opts.mail?.pollMs !== false && opts.pushTimer !== false && !opts.demo) {
+    let polling = false;
+    const mailTimer = setInterval(() => {
+      if (polling) return;
+      polling = true;
+      pollMail(db, mailKey, mailBackend, getSender())
+        .catch((e) => app.log.warn({ err: e }, 'Prüfung auf neue Mails fehlgeschlagen'))
+        .finally(() => (polling = false));
+    }, Math.max(30_000, opts.mail?.pollMs || 120_000));
+    mailTimer.unref();
+    app.addHook('onClose', async () => clearInterval(mailTimer));
   }
 
   if (opts.pushTimer !== false) {

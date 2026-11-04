@@ -42,6 +42,7 @@ Protokolle, Dienste, Aufgaben, Kleidergrößen und Wettkampf-Training – auf Ha
 | 👕 | **Kleidung** | Kleidergrößen je Mitglied, „eine Größe größer“ vormerken, fertige PDF-Liste für den Kleiderwart |
 | ⏱️ | **Wettkampf** | Bundeswettbewerb und Leistungsspange: Aufstellung, **Live-Stoppuhr** (alle Betreuer sehen dieselbe Zeit), Fehlerwertung, Analyse, Wissensdatenbank |
 | 👥 | **Mehrere Betreuer** | Eigenes Konto je Person (Einladung per Link), Protokolle und Aufgaben **privat oder für alle**, Protokolle auch **gleichzeitig bearbeiten** |
+| ✉️ | **E-Mail** (optional) | Eigenes Postfach (GMX, WEB.DE, Posteo …) einbinden: Mails **lesen und schreiben**, Anhänge ins Protokoll übernehmen, **Protokolle als PDF verschicken**, Aufgaben aus Mails, **Benachrichtigung** bei neuen Mails |
 | 📱 | **Überall nutzbar** | Als **App im Browser** (iPhone, Android, Windows, Mac, Linux) oder als **Android-App** mit Stift-Handschrift |
 | 📴 | **Offline** | Alles liegt lokal auf dem Gerät und wird abgeglichen, sobald wieder Netz da ist |
 | 🔒 | **Deine Daten** | Alles liegt auf **deinem** Server, nicht bei einem Anbieter. Keine Werbung, keine Analyse |
@@ -124,6 +125,7 @@ Du hast schon einen Reverse-Proxy, eine eigene Domain oder Tailscale? Dann schau
 | Auf meinem Server installieren (Docker, NAS, Portainer …) | [Installation](docs/installation.md) |
 | Von außen per https erreichbar sein | [Cloudflare Tunnel](docs/cloudflare-tunnel.md) · [Alternativen](docs/https-alternativen.md) |
 | Betreuer einladen und verstehen, wer was sieht | [Benutzer und Sichtbarkeit](docs/benutzer-und-sichtbarkeit.md) |
+| Mein Postfach einbinden (GMX & Co.) | [E-Mail](docs/e-mail.md) |
 | Die Android-App nutzen oder selbst bauen | [Android-App](docs/android-app.md) |
 | Die Demo verstehen oder einen eigenen Demo-Server betreiben | [Demo](docs/demo.md) |
 | Wissen, welche Daten gespeichert werden | [Datenschutz](docs/datenschutz.md) |
@@ -149,6 +151,7 @@ Alles ist optional, die Standardwerte funktionieren. Die Werte stehen in einer `
 | `TRUST_PROXY` | Welchen Proxys `X-Forwarded-For` geglaubt wird | private Netze |
 | `TUNNEL_TOKEN` | Token für Cloudflare Tunnel (Profil `tunnel`) | leer |
 | `DEMO`, `DEMO_RESET_AT` | Öffentliche [Demo](docs/demo.md) mit Beispieldaten, täglich zurückgesetzt. **Löscht alle Daten!** | `0`, `03:00` |
+| `MAIL_ENABLED`, `MAIL_KEY` | [E-Mail](docs/e-mail.md) ganz abschalten bzw. eigener Schlüssel für die gespeicherten Postfach-Passwörter | an, Schlüssel automatisch |
 | `TZ` | Zeitzone | `Europe/Berlin` |
 
 </details>

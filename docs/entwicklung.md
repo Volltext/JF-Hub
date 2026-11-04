@@ -52,7 +52,7 @@ cd ../e2e && npm ci && npx playwright install chromium && npm test
 
 Die CI (`.github/workflows/ci.yml`) führt alles aus, baut die PWA und startet das Docker-Image als Rauchtest.
 
-Was getestet wird: Wertungslogik und Regeln (reine Funktionen), Datenbank-Schema, Abgleich (Kopfdaten Feld für Feld, Sichtbarkeit, Löschhinweise), Dienst-Rhythmus, Web-Push-Client, Service Worker (in einer nachgebauten Umgebung), Server-API (Anmeldung, Benutzer, Sichtbarkeit, Push, PDF, Migration einer Alt-Datenbank), Anhänge (Hochladen und Zugriff, Auslagern aus dem Inhalt, Migration, Müllsammlung, PDF und ZIP mit Fotos), Editor-Schema und Link-Regeln, PDF mit Tabellen, Links und feindlichen Eingaben, das gemeinsame Bearbeiten (Konverter gegen `@tiptap/y-tiptap`, Austausch, Sitzung, Umstellung des Bestands, Zwei-Geräte-Szenarien).
+Was getestet wird: Wertungslogik und Regeln (reine Funktionen), Datenbank-Schema, Abgleich (Kopfdaten Feld für Feld, Sichtbarkeit, Löschhinweise), Dienst-Rhythmus, Web-Push-Client, Service Worker (in einer nachgebauten Umgebung), Server-API (Anmeldung, Benutzer, Sichtbarkeit, Push, PDF, Migration einer Alt-Datenbank), Anhänge (Hochladen und Zugriff, Auslagern aus dem Inhalt, Migration, Müllsammlung, PDF und ZIP mit Fotos), Editor-Schema und Link-Regeln, PDF mit Tabellen, Links und feindlichen Eingaben, das gemeinsame Bearbeiten (Konverter gegen `@tiptap/y-tiptap`, Austausch, Sitzung, Umstellung des Bestands, Zwei-Geräte-Szenarien), E-Mail (Verschlüsselung, Schutz vor internen Adressen, Routen mit Attrappe, Versand gegen einen lokalen SMTP-Testserver, Benachrichtigungen; in der App Antworten, Anbieter-Erkennung, Aufgabe und Protokoll aus Mail, Verträglichkeit des erzeugten Inhalts mit dem Editor).
 
 Zwei Tests haben eine besondere Rolle:
 
@@ -75,7 +75,7 @@ app/
       push/       Web-Push-Client (Abo, Erinnerungen an den Server schicken, Service-Worker-Registrierung)
       native/     Brücke zu Capacitor-Plugins (Benachrichtigungen, Dateien, Haptik, …)
       ui/         Design-System (Komponenten, eigene Dialoge/Wähler, Tokens)
-    features/     ein Ordner je Bereich: dienste, aufgaben, mitglieder, protokolle, kleidung, wettkampf, wissen, ink, attachments, account, einstellungen
+    features/     ein Ordner je Bereich: dienste, aufgaben, mitglieder, protokolle, kleidung, wettkampf, wissen, ink, attachments, account, einstellungen, mail
     sw/           Service-Worker-Vorlage (Vite-Plugin macht daraus /sw.js)
   android/        Capacitor-Projekt mit den Java-Teilen für Handschrift
 server/
@@ -88,6 +88,7 @@ server/
     blobs.ts      Fotos und Dateien: Speicher, Zugriff, Prüfung beim Hochladen, Auslagern aus dem Inhalt, Aufräumen
     migrate.ts    Einmaliger Umbau: Anhänge aus alten Protokollen in Blobs (beim Start und beim Einspielen alter Backups)
     push.ts       Web-Push: Abos, Erinnerungen, Versand
+    mail/         E-Mail (optional): Konto und Verschlüsselung (`store.ts`, `crypto.ts`), Prüfung der Mail-Server (`hosts.ts`), IMAP/SMTP (`imap.ts`), Routen (`routes.ts`), Prüfung auf neue Mails (`poller.ts`), Attrappe für Tests (`testing.ts`)
     backup.ts     Backups (VACUUM INTO, täglich, Aufräumen) und Wiederherstellung
     pdf.ts, clothingPdf.ts, inkSvg.ts   PDF-Erzeugung
     db.ts         Schema und Migrationen (SQLite)
@@ -260,7 +261,7 @@ Dass die Termin-Logik im Client bleibt (Ferien, Saison-Zeiten), hält den Server
 ## API in Kürze
 
 Öffentlich: `GET /api/health`, `GET /api/status` (mit `api`, `minSchema`, `features`; im Demo-Modus zusätzlich `demo: { resetAt, accounts }`), `POST /api/setup`, `/api/login`, `/api/invite/accept`.
-Angemeldet (Bearer-Token oder Cookie mit `X-JFH: 1`): `/api/me`, `/api/logout`, `/api/account/{password,sessions…}`, `POST /api/sync`, `POST /api/collab/exchange`, `GET /api/protocols/trash`, `POST /api/protocols/:id/restore`, `PUT|GET|HEAD /api/blobs/:id`, `GET /api/protocols/:id/pdf`, `POST /api/clothing/pdf`, `GET /api/export.zip`, `GET /api/holidays`, `/api/push/{key,subscribe,unsubscribe,reminders,test}`.
+Angemeldet (Bearer-Token oder Cookie mit `X-JFH: 1`): `/api/me`, `/api/logout`, `/api/account/{password,sessions…}`, `POST /api/sync`, `POST /api/collab/exchange`, `GET /api/protocols/trash`, `POST /api/protocols/:id/restore`, `PUT|GET|HEAD /api/blobs/:id`, `GET /api/protocols/:id/pdf`, `POST /api/clothing/pdf`, `GET /api/export.zip`, `GET /api/holidays`, `/api/push/{key,subscribe,unsubscribe,reminders,test}`, `/api/mail/{account,folders,messages,messages/:uid,messages/:uid/attachments/:index,messages/:uid/seen,send}` ([E-Mail](e-mail.md)).
 Nur Admins: `/api/admin/{info,settings,users…,sessions…,protocols…,backup,backups…,restore,preview.pdf}`.
 
 Die Zugriffsregel entscheidet der Server am **Routenmuster** (`req.routeOptions.url`), nie am rohen Pfad, denn Fastify dekodiert Pfade erst beim Routing. Pfade mit unnötig kodierten Zeichen weist ein Hook mit 400 ab, und `security.test.ts` prüft jede neue Route.

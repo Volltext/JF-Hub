@@ -5,8 +5,9 @@ import type { Editor } from '@tiptap/core';
 import { EditorContent, useEditor, useEditorState } from '@tiptap/react';
 import Collaboration from '@tiptap/extension-collaboration';
 import Placeholder from '@tiptap/extension-placeholder';
-import { ChevronDown, ChevronLeft, FileDown, Folder, Hash, Lock, Trash2, Users } from 'lucide-react';
+import { ChevronDown, ChevronLeft, FileDown, Folder, Hash, Lock, Mail, Trash2, Users } from 'lucide-react';
 import { db } from '@/core/db/db';
+import { IS_DEMO } from '@/core/env';
 import { requeueBlobs } from '@/core/db/blobs';
 import { formatDate } from '@/core/domain/format';
 import { confirmDialog } from '@/core/ui/dialog';
@@ -37,6 +38,7 @@ import type { Protokoll } from './model';
 import { exportPdf, protokolleRepo } from './repo';
 import { scheduleSync } from './sync';
 import { UnreadableProtokoll } from './UnreadableProtokoll';
+import { usePendingMailAttachments } from '@/features/mail/pending';
 
 type Meta = Pick<Protokoll, 'title' | 'datum' | 'beginn' | 'ende' | 'ort' | 'leitung'>;
 type MetaKey = keyof Meta;
@@ -256,6 +258,8 @@ function EditorInner({ initial, session, editorRef }: { initial: Protokoll; sess
     editor?.setEditable(editable);
     if (!editable) autosave.cancel();
   }, [editor, editable, autosave]);
+  // Anhänge, die aus einer Mail für dieses Protokoll vorgemerkt wurden, kommen ans Ende des Textes.
+  usePendingMailAttachments(editor, initial.id, editable);
 
   const folders = useLiveQuery(liveFolders, []);
   // Ein dem Gerät unbekannter Ordner (von jemand anderem gelöscht) zählt als oberste Ebene, wie in der Liste.
@@ -314,6 +318,11 @@ function EditorInner({ initial, session, editorRef }: { initial: Protokoll; sess
         <button type="button" className="icon-btn" onClick={pdf} disabled={busy} aria-label="Als PDF exportieren" title="Als PDF exportieren">
           <FileDown size={20} />
         </button>
+        {!IS_DEMO && (
+          <Link to={`/mail/neu?protokoll=${encodeURIComponent(initial.id)}`} className="icon-btn" aria-label="Als PDF per E-Mail senden" title="Als PDF per E-Mail senden" onClick={() => void autosave.flushIfDirty()}>
+            <Mail size={20} />
+          </Link>
+        )}
         <button
           type="button"
           className="icon-btn"

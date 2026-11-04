@@ -33,6 +33,11 @@ services:
       TRUST_PROXY: ${TRUST_PROXY:-}
       # Kontaktadresse für den Push-Dienst der Browser (mailto: oder https-Adresse). Bitte eigene E-Mail eintragen.
       PUSH_SUBJECT: ${PUSH_SUBJECT:-mailto:admin@example.com}
+      # E-Mail (optional, docs/e-mail.md): abschalten, eigener Schlüssel für die Postfach-Passwörter, interne Mail-Server, Abfrage-Abstand.
+      MAIL_ENABLED: ${MAIL_ENABLED:-1}
+      MAIL_KEY: ${MAIL_KEY:-}
+      MAIL_ALLOW_PRIVATE: ${MAIL_ALLOW_PRIVATE:-0}
+      MAIL_POLL_SECONDS: ${MAIL_POLL_SECONDS:-120}
       # Öffentliche Demo mit Beispieldaten (docs/demo.md). ACHTUNG: löscht beim Start und täglich ALLE Daten.
       DEMO: ${DEMO:-0}
       DEMO_RESET_AT: ${DEMO_RESET_AT:-03:00}

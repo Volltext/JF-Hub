@@ -13,13 +13,14 @@
 
 | Daten | Wo | Anmerkung |
 | --- | --- | --- |
-| Konten der Betreuer: Benutzername, Anzeigename, Passwort-Hash (scrypt), letzte Anmeldung | Server | Keine E-Mail-Adresse, keine Telefonnummer |
+| Konten der Betreuer: Benutzername, Anzeigename, Passwort-Hash (scrypt), letzte Anmeldung | Server | Keine E-Mail-Adresse, keine Telefonnummer (außer ein Betreuer verbindet freiwillig ein Postfach, siehe unten) |
 | Geräte-Anmeldungen: Gerätebezeichnung, Zeitpunkte, Hash des Tokens | Server | einzeln widerrufbar |
 | Mitglieder: **Name**, Jugendlicher/Betreuer, aktiv | Server + Geräte | **keine** Geburtsdaten, Adressen, Kontakte |
 | Dienste: Datum, wer anwesend/abwesend war | Server + Geräte | |
 | Kleidergrößen und Bestellwünsche je Mitglied | Server + Geräte | |
 | Protokolle (Text, Fotos, Anhänge, Handschrift), Aufgaben | Server + Geräte | Inhalt bestimmen die Betreuer – denkt an Fotos von Kindern. Der Text liegt in der Datenbank zweimal vor (als gemeinsames Dokument zum Mitschreiben und als lesbarer Inhalt für Liste, Suche und PDF) |
 | Wer ein Protokoll gerade geöffnet hat | nur im Arbeitsspeicher des Servers, etwa 15 Sekunden | Die Namen sehen alle, die das Protokoll sehen dürfen („Anna ist auch hier“). Gespeichert wird nichts davon, nach einem Neustart ist es weg |
+| **Optional: Postfach** (E-Mail-Adresse, Servernamen, Passwort **verschlüsselt**, Stand der Benachrichtigung) | Server | nur wenn ein Betreuer sein Postfach verbindet. Die **Mails selbst werden nicht gespeichert**, sie werden bei Bedarf vom Mail-Server gelesen ([E-Mail](e-mail.md)) |
 | Push-Abonnements: technische Adresse des Push-Dienstes deines Browsers, geplante Erinnerungen | Server | werden beim Abmelden gelöscht |
 | Wettkampf-Läufe (mit Namen der aufgestellten Mitglieder) und Aufstellungs-Vorlagen | Server + Geräte | für alle Betreuer sichtbar |
 | Stoppuhr je Modus: Zeiten, Fehler, Notizen, wer zuletzt geändert hat | Server + Geräte | für alle Betreuer live sichtbar (Live-Stoppuhr); enthält keine Namen von Mitgliedern |
@@ -33,6 +34,7 @@ Es gibt **keine Analyse-Werkzeuge, keine Werbung und keine Weitergabe** an Dritt
 | --- | --- | --- |
 | **Schulferien** (`openholidaysapi.org`) | Nur das Bundesland, keine personenbezogenen Daten | Der Server fragt die Termine ab und gibt sie an die Geräte weiter. Die Android-App fragt den Dienst direkt ab, wenn sie ohne Server benutzt wird – dabei sieht er die IP-Adresse des Handys. |
 | **Push-Benachrichtigungen** | Die Nachricht und die technische Adresse des Geräts | Browser nutzen für Web-Push den Dienst ihres Herstellers (Google, Mozilla, Apple, Microsoft). Die Nachrichtentexte („Dienst gleich“, Titel fälliger Aufgaben) sind Ende-zu-Ende verschlüsselt, sodass der Push-Dienst sie nicht lesen kann. |
+| **Mail-Anbieter** (falls ein Postfach verbunden ist) | Anmeldung, Abruf und Versand der Mails durch den JF-Hub-Server | Der Server verbindet sich verschlüsselt mit dem Mail-Server (IMAP/SMTP) im Namen des Betreuers. Der Anbieter sieht diese Anmeldung von deinem Server. Mails von und an Dritte enthalten personenbezogene Daten: Das ist beim Verein wie bei jedem Mail-Programm zu beachten. Benachrichtigungen zeigen Absender und Betreff. |
 | **Handschrift → Text** (Android) | Beim ersten Mal wird ein Sprachmodell von Google heruntergeladen | Die Erkennung selbst läuft auf dem Gerät. |
 | **Cloudflare Tunnel** (falls genutzt) | Der gesamte Datenverkehr läuft über Cloudflare | Cloudflare beendet die Verschlüsselung und kann den Verkehr technisch einsehen (siehe [Cloudflare Tunnel](cloudflare-tunnel.md)). Wer das nicht möchte, nimmt Tailscale oder einen eigenen Reverse-Proxy ([Alternativen](https-alternativen.md)). Mit Cloudflare ist ein Vertrag zur Auftragsverarbeitung nötig (Cloudflare bietet ihn an). |
 

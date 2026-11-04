@@ -1,0 +1,22 @@
+.mail-row { display: flex; text-decoration: none; color: inherit; }
+.mail-row__head { display: flex; justify-content: space-between; align-items: baseline; gap: var(--s-3); }
+.mail-row__from { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.mail-row__when { display: inline-flex; align-items: center; gap: var(--s-1); flex: none; font-size: 0.8rem; }
+.mail-row__subject { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+.mail-row--unread .mail-row__from, .mail-row--unread .mail-row__subject { font-weight: 700; color: var(--text); }
+.mail-row--unread { border-left: 4px solid var(--primary); }
+
+.mail-view__head { margin-bottom: var(--s-3); }
+.mail-view__head .page__title { overflow-wrap: anywhere; }
+.mail-meta { display: grid; grid-template-columns: auto 1fr; gap: var(--s-1) var(--s-3); margin: var(--s-2) 0 0; font-size: 0.9rem; }
+.mail-meta dt { color: var(--muted); }
+.mail-meta dd { margin: 0; overflow-wrap: anywhere; }
+.mail-actions { display: flex; flex-wrap: wrap; gap: var(--s-2); margin: var(--s-3) 0; }
+.mail-actions .btn { display: inline-flex; align-items: center; gap: var(--s-1); }
+.mail-body { white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; padding: var(--s-4); border-radius: var(--r-md); border: 1px solid var(--border); background: var(--surface); line-height: 1.5; margin: var(--s-3) 0; }
+.mail-att { display: flex; align-items: center; gap: var(--s-2); flex-wrap: wrap; }
+.mail-att__name { overflow-wrap: anywhere; }
+.mail-attachments .card__title { display: inline-flex; align-items: center; gap: var(--s-1); }
+.mail-compose__text { width: 100%; min-height: 16rem; resize: vertical; line-height: 1.45; }
+.mail-notes { margin: 0; padding-left: 1.2em; display: flex; flex-direction: column; gap: var(--s-2); }
+.mail-notice { padding: var(--s-2) var(--s-3); border-radius: var(--r-md); background: color-mix(in srgb, var(--success) 14%, transparent); color: var(--success); font-weight: 600; margin: 0 0 var(--s-3); }
