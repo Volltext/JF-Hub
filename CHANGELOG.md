@@ -6,6 +6,7 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/). Versionen 
 
 ### Neu
 
+- **ZimaOS / CasaOS:** Fertige `docker-compose.zimaos.yml` zum Einfügen unter „Eigene App installieren“: ohne `.env` und Variablen, im Heimnetz erreichbar, Daten unter `/DATA/AppData/jf-hub/data`, mit Kachel (Name, Symbol, Beschreibung) auf dem Dashboard. Anleitung: Installation, Variante D.
 - **Live-Stoppuhr:** Alle angemeldeten Betreuer sehen dieselbe Stoppuhr je Modus, mit laufender Zeit, Zwischenzeiten, Fehlern, Wertung und Notizen. Jeder kann starten, stoppen, eintragen und speichern. Die Geräte gleichen ihre Uhren mit dem Server ab, damit die Zeit überall gleich läuft. Gleichzeitige Eingaben werden zusammengeführt (zwei Fehler von zwei Geräten zählen beide, keiner doppelt), zweimal „Lauf speichern“ ergibt einen Lauf. Offline weiter nutzbar; Eingaben werden nachgereicht, auch nach einem Neustart. Läuft die Stoppuhr in einem anderen Modus, zeigt die App das an. Technisch: Long-Polling (`GET /api/live`, `PUT /api/live/:modus`), geht ohne Zusatz-Einstellungen durch Reverse-Proxy und Tunnel; Apps an einem älteren Server arbeiten wie bisher nur auf dem Gerät.
 
 ### Geändert

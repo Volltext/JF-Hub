@@ -73,12 +73,28 @@ docker run -d --name jf-hub --restart unless-stopped \
 </details>
 
 <details>
-<summary><b>Variante D: NAS- und Server-Oberflächen</b> (ZimaOS, Portainer, Arcane, Unraid, Synology)</summary>
+<summary><b>Variante D: ZimaOS</b> (und CasaOS)</summary>
 <br>
 
-Lege einen neuen Stack bzw. ein neues Projekt an und füge den Inhalt aus **Variante B** (oder die `docker-compose.yml` aus dem Repository) ein. Die Variablen aus `.env.example` trägst du im Feld „Environment“ ein.
+Für ZimaOS gibt es eine eigene, fertige Datei: [`docker-compose.zimaos.yml`](../docker-compose.zimaos.yml). Sie braucht keine `.env` und keine Anpassung, sondern nur ein Klick-Import:
 
-Für einen festen Datenordner setzt du `DATA_PATH` auf einen Pfad deines Geräts (z. B. `/DATA/AppData/jf-hub` unter ZimaOS).
+1. In ZimaOS den **App Store** öffnen, oben rechts **Eigene App installieren** wählen.
+2. Rechts oben **Importieren → Docker Compose** wählen, den Inhalt der Datei einfügen (oder hochladen) und auf **Absenden** tippen.
+3. Optional vorher `PUSH_SUBJECT` auf die eigene E-Mail-Adresse stellen. Dann **Installieren**.
+4. Setup-Code ablesen: auf dem Dashboard bei JF Hub **⋮ → Protokolle**, dort nach „Ersteinrichtung“ suchen.
+5. Die Kachel öffnen, hinter die Adresse `/admin/` setzen, Setup-Code eingeben und das Admin-Konto anlegen.
+
+Die Datenbank liegt unter `/DATA/AppData/jf-hub/data` und ist in der ZimaOS-App „Dateien“ sichtbar. Sichere diesen Ordner mit. **Aktualisieren:** bei der App ⋮ → **Aktualisieren** (zieht das neueste Image). Ist Port 8080 schon belegt, ändere links in `ports` die Zahl (z. B. `"8081:8080"`) und `port_map` unten auf denselben Wert.
+
+Für Zugriff von außen (https) nimmst du [Cloudflare Tunnel](cloudflare-tunnel.md) oder [Tailscale](https-alternativen.md).
+
+</details>
+
+<details>
+<summary><b>Variante E: Portainer, Arcane, Unraid, Synology</b></summary>
+<br>
+
+Lege einen neuen Stack bzw. ein neues Projekt an und füge den Inhalt aus **Variante B** (oder die `docker-compose.yml` aus dem Repository) ein. Die Variablen aus `.env.example` trägst du im Feld „Environment“ ein. Für einen festen Datenordner setzt du `DATA_PATH` auf einen Pfad deines Geräts.
 
 </details>
 

@@ -1,0 +1,96 @@
+# JF Hub für ZimaOS (und CasaOS) – zum Einfügen in „Eigene App installieren“.
+#
+# So geht's:
+#   1. ZimaOS öffnen → App Store → oben rechts „Eigene App installieren“ (Custom Install)
+#   2. Rechts oben „Importieren“ → „Docker Compose“ wählen und den Inhalt dieser Datei einfügen
+#      (oder die Datei hochladen) → „Absenden“ → „Installieren“
+#   3. Setup-Code ablesen: Auf dem Dashboard beim Symbol von JF Hub ⋮ → „Protokolle“ (Logs),
+#      nach „Ersteinrichtung“ suchen
+#   4. Die Kachel „JF Hub“ öffnen → hinter die Adresse /admin/ setzen, Setup-Code eingeben, Admin-Konto anlegen
+#
+# Diese Datei kommt ohne .env und ohne Variablen aus: Alles Wichtige steht direkt hier.
+# Anleitung mit Bildschirmschritten, Aktualisieren und Sichern: docs/installation.md (Abschnitt ZimaOS)
+name: jf-hub
+
+services:
+  jf-hub:
+    image: ghcr.io/volltext/jf-hub:latest
+    container_name: jf-hub
+    restart: unless-stopped
+    ports:
+      # Im ganzen Heimnetz erreichbar (anders als in der normalen docker-compose.yml).
+      # Ist 8080 schon belegt, links eine andere Zahl eintragen (z. B. "8081:8080") und port_map unten anpassen.
+      - "8080:8080"
+    environment:
+      TZ: Europe/Berlin
+      # Leer lassen: Der Setup-Code erscheint im Log, das Konto legst du im Browser unter /admin/ an (empfohlen).
+      ADMIN_USER: admin
+      ADMIN_PASSWORD: ""
+      # Bitte die eigene E-Mail-Adresse eintragen (Kontakt für den Push-Dienst der Browser).
+      PUSH_SUBJECT: mailto:admin@example.com
+    volumes:
+      # Die Datenbank liegt im ZimaOS-Ordner „AppData“ (sichtbar in Dateien) und bleibt beim Löschen der App erhalten.
+      - /DATA/AppData/$AppID/data:/data
+    security_opt:
+      - no-new-privileges:true
+    # Beschriftungen der Felder in der ZimaOS-Oberfläche
+    x-casaos:
+      envs:
+        - container: TZ
+          description:
+            en_us: Time zone
+            de_de: Zeitzone
+        - container: ADMIN_USER
+          description:
+            en_us: Name of the first admin (only used if a password is set)
+            de_de: Name des ersten Admins (nur wirksam, wenn ein Passwort gesetzt ist)
+        - container: ADMIN_PASSWORD
+          description:
+            en_us: Leave empty to create the admin in the browser with a setup code from the log (recommended)
+            de_de: Leer lassen, dann legst du den Admin im Browser mit dem Setup-Code aus dem Log an (empfohlen)
+        - container: PUSH_SUBJECT
+          description:
+            en_us: Contact address for browser push services (mailto:you@example.org)
+            de_de: Kontaktadresse für den Push-Dienst der Browser (mailto:du@example.org)
+      ports:
+        - container: "8080"
+          description:
+            en_us: Web interface
+            de_de: Weboberfläche
+      volumes:
+        - container: /data
+          description:
+            en_us: Database, photos and backups
+            de_de: Datenbank, Fotos und Backups
+
+# Oberfläche von ZimaOS (Kachel auf dem Dashboard)
+x-casaos:
+  architectures:
+    - amd64
+    - arm64
+  main: jf-hub
+  author: Volltext
+  developer: Volltext
+  category: Productivity
+  icon: https://raw.githubusercontent.com/Volltext/JF-Hub/main/docs/images/logo.png
+  thumbnail: https://raw.githubusercontent.com/Volltext/JF-Hub/main/docs/images/hero.png
+  screenshot_link:
+    - https://raw.githubusercontent.com/Volltext/JF-Hub/main/docs/images/app-heute.png
+    - https://raw.githubusercontent.com/Volltext/JF-Hub/main/docs/images/app-protokoll.png
+    - https://raw.githubusercontent.com/Volltext/JF-Hub/main/docs/images/app-wettkampf.png
+  index: /
+  port_map: "8080"
+  scheme: http
+  title:
+    en_us: JF Hub
+    de_de: JF Hub
+  tagline:
+    en_us: Self-hosted hub for youth fire brigade leaders
+    de_de: Selbst gehostete Zentrale für Jugendfeuerwehr-Betreuer
+  description:
+    en_us: Minutes, duty attendance, tasks, clothing sizes and competition training with a live stopwatch. Works offline on phone, tablet and laptop. All data stays on your server.
+    de_de: Protokolle, Dienste, Aufgaben, Kleidergrößen und Wettkampf-Training mit Live-Stoppuhr. Funktioniert auf Handy, Tablet und Laptop, auch ohne Netz. Alle Daten bleiben auf deinem Server.
+  tips:
+    before_install:
+      en_us: After starting, read the setup code in the app's logs (search for "Ersteinrichtung"), then open the web interface and add /admin/ to the address to create the admin account.
+      de_de: Nach dem Start den Setup-Code in den Protokollen der App ablesen (nach „Ersteinrichtung“ suchen), dann die Weboberfläche öffnen, /admin/ an die Adresse hängen und das Admin-Konto anlegen.
