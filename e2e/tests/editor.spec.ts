@@ -71,6 +71,9 @@ test.describe.serial('Protokolle: Tabellen, Links und Hervorhebung', () => {
     await page.getByLabel('Adresse').fill('beispiel.de');
     await page.getByLabel(/^Text/).fill('Webseite');
     await page.getByRole('button', { name: 'Link einfügen', exact: true }).click();
+    // Der Fokus kehrt erst nach dem Schließen des Dialogs in den Editor zurück; wer vorher tippt, verliert die ersten Zeichen (auf langsamen Runnern sichtbar).
+    await expect(page.getByRole('dialog', { name: 'Link' })).toHaveCount(0);
+    await expect(editor).toBeFocused();
     await page.keyboard.type(' und mehr');
     const link = editor.locator('a');
     await expect(link).toHaveCount(1);
