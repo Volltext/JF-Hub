@@ -20,7 +20,12 @@ async function publish(page: Page, title: string, text: string) {
 
 async function openProtocol(page: Page, title: string) {
   await page.goto('/#/protokolle');
-  await page.getByText(title).click({ timeout: 30_000 });
+  // Die App gleicht nur gelegentlich von selbst ab (unter Last länger als jede feste Wartezeit): selbst abgleichen, bis das Protokoll in der Liste steht.
+  await expect(async () => {
+    await syncNow(page);
+    await expect(page.getByText(title)).toBeVisible({ timeout: 3_000 });
+  }).toPass({ timeout: 30_000 });
+  await page.getByText(title).click();
   await expect(editorOf(page)).toBeVisible();
 }
 
