@@ -1,4 +1,6 @@
+import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 import { inkSvg } from './inkSvg.js';
 import type { ServerDoc } from './sync.js';
 
@@ -251,13 +253,15 @@ function blocks(nodes: Node[] | undefined, st: PdfStyle, depth = 0, image?: Imag
       }
       case 'heading': {
         const level = Number(n.attrs?.level) || 1;
-        const size = level === 1 ? 16 : level === 2 ? 13 : 11.5;
+        // Deutlich abgesetzt: größere Stufen, mehr Luft davor als danach, damit man den Abschnitt beim Überfliegen findet.
+        const size = level === 1 ? 17 : level === 2 ? 14 : 11.5;
         out.push({
           text: runs(n.content, st),
           bold: true,
           fontSize: size,
-          color: level === 1 ? st.accent : TEXT,
-          margin: [0, level === 1 ? 12 : 9, 0, 4],
+          color: level === 1 ? st.accent : level === 2 ? TEXT : MUTED,
+          characterSpacing: level === 3 ? 0.3 : -0.1,
+          margin: [0, level === 1 ? 20 : level === 2 ? 16 : 12, 0, level === 3 ? 3 : 5],
           keepWithNext: true,
         } as Any);
         break;
@@ -357,7 +361,7 @@ export function buildDocDefinition(doc: ServerDoc, st: PdfStyle, opts: PdfOption
   if (doc.ort) meta.push(['Ort', doc.ort]);
   if (doc.leitung) meta.push(['Protokoll', doc.leitung]);
 
-  const content: Any[] = [{ text: doc.title || 'Protokoll', fontSize: 22, bold: true, color: TEXT, margin: [0, 0, 0, 6] }];
+  const content: Any[] = [{ text: doc.title || 'Protokoll', fontSize: 24, bold: true, color: TEXT, characterSpacing: -0.3, lineHeight: 1.1, margin: [0, 0, 0, 8] }];
   if (meta.length) {
     content.push({
       table: { widths: [70, '*'], body: meta.map(([k, v]) => [{ text: k, color: MUTED, fontSize: 9.5 }, { text: v, fontSize: 10.5 }]) },
@@ -382,7 +386,7 @@ export function pageFrame(st: PdfStyle, title: string, orientation: 'portrait' |
     pageOrientation: orientation,
     pageMargins: [50, 70, 50, 60],
     info: { title, creator: 'JF Hub' },
-    defaultStyle: { font: 'Roboto', fontSize: 10.5, color: TEXT },
+    defaultStyle: { font: 'Inter', fontSize: 10, color: TEXT },
     header: () => ({
       margin: [50, 24, 50, 0],
       columns: [
@@ -400,20 +404,35 @@ export function pageFrame(st: PdfStyle, title: string, orientation: 'portrait' |
   };
 }
 
+/**
+ * Schriftdateien liegen in `server/fonts/` (neben `src/` bzw. `dist/`, im Docker-Image unter `/app/fonts`). Inter wie in der App (SIL OFL 1.1,
+ * Lizenztext im selben Ordner); pdfmake bettet nur die verwendeten Zeichen ein, die PDFs bleiben klein. Fehlt eine Datei, nimmt das PDF
+ * die mitgelieferte Roboto, damit es immer entsteht.
+ */
+const FONT_DIR = fileURLToPath(new URL('../fonts/', import.meta.url));
+
+function loadFonts(): Record<string, Record<string, Buffer>> {
+  const vfs = require('pdfmake/build/vfs_fonts.js') as Record<string, string>;
+  const roboto = (name: string) => Buffer.from(vfs[name]!, 'base64');
+  const fallback = {
+    normal: roboto('Roboto-Regular.ttf'),
+    bold: roboto('Roboto-Medium.ttf'),
+    italics: roboto('Roboto-Italic.ttf'),
+    bolditalics: roboto('Roboto-MediumItalic.ttf'),
+  };
+  try {
+    const inter = (name: string) => readFileSync(FONT_DIR + name);
+    return { Inter: { normal: inter('Inter-Regular.ttf'), bold: inter('Inter-SemiBold.ttf'), italics: inter('Inter-Italic.ttf'), bolditalics: inter('Inter-SemiBoldItalic.ttf') } };
+  } catch {
+    return { Inter: fallback };
+  }
+}
+
 let printer: Any;
 function getPrinter(): Any {
   if (!printer) {
     const PdfPrinter = require('pdfmake');
-    const vfs = require('pdfmake/build/vfs_fonts.js') as Record<string, string>;
-    const f = (name: string) => Buffer.from(vfs[name]!, 'base64');
-    printer = new PdfPrinter({
-      Roboto: {
-        normal: f('Roboto-Regular.ttf'),
-        bold: f('Roboto-Medium.ttf'),
-        italics: f('Roboto-Italic.ttf'),
-        bolditalics: f('Roboto-MediumItalic.ttf'),
-      },
-    });
+    printer = new PdfPrinter(loadFonts());
   }
   return printer;
 }
