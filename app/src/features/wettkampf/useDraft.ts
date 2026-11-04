@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import { keepScreenOn } from '@/core/native/device';
 import type { Draft } from './model';
-import { loadDraft, saveDraft } from './store';
+import type { DraftOp } from './ops';
+import { live } from './live';
 
 /** Liefert den Entwurf nur, wenn er zum gewünschten Modus gehört (beim Moduswechsel steht kurz noch der alte im State). */
 export function draftForMode(draft: Draft | null, mode: string): Draft | null {
@@ -9,26 +10,17 @@ export function draftForMode(draft: Draft | null, mode: string): Draft | null {
 }
 
 /**
- * Stoppuhr-Zustand eines Modus: wird geladen, bei jeder Änderung gespeichert (auch laufend,
- * dadurch übersteht er einen App-Neustart) und tickt alle 50 ms, solange die Uhr läuft.
+ * Stoppuhr-Zustand eines Modus aus der Live-Stoppuhr (`live.ts`): wird geladen, bei jeder Änderung gespeichert
+ * (auch laufend, dadurch übersteht er einen App-Neustart), mit den anderen Betreuern abgeglichen und tickt alle 50 ms,
+ * solange die Uhr läuft – auch auf Geräten, die nur zuschauen.
  */
 export function useDraft(mode: string) {
-  const [loaded, setLoaded] = useState<Draft | null>(null);
   const [, setTick] = useState(0);
-  const ref = useRef<Draft | null>(null);
+  const subscribe = useCallback((fn: () => void) => live.subscribe(mode, fn), [mode]);
+  const loaded = useSyncExternalStore(subscribe, () => live.peek(mode));
 
   useEffect(() => {
-    let alive = true;
-    ref.current = null;
-    setLoaded(null);
-    void loadDraft(mode).then((d) => {
-      if (!alive) return;
-      ref.current = d;
-      setLoaded(d);
-    });
-    return () => {
-      alive = false;
-    };
+    void live.load(mode);
   }, [mode]);
 
   // Nie einen Entwurf eines anderen Modus ausliefern – sonst rechnen Wertung und Anzeige mit falschen Daten.
@@ -45,19 +37,8 @@ export function useDraft(mode: string) {
     };
   }, [running]);
 
-  /** Wendet eine Änderung an; mit `now` für zeitabhängige Übergänge. */
-  const update = useCallback(
-    (fn: (d: Draft, now: number) => Draft) => {
-      const cur = ref.current;
-      if (!cur || cur.mode !== mode) return;
-      const next = fn(cur, Date.now());
-      if (next === cur) return;
-      ref.current = next;
-      setLoaded(next);
-      void saveDraft(next);
-    },
-    [mode],
-  );
+  /** Wendet eine Eingabe an; mit `session` nur, solange noch dieser Lauf angezeigt wird. */
+  const dispatch = useCallback((op: DraftOp, session?: string) => live.dispatch(mode, op, session), [mode]);
 
-  return { draft, update };
+  return { draft, dispatch, editor: live.editor(mode) };
 }

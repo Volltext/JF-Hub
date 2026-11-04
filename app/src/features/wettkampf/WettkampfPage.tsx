@@ -8,7 +8,7 @@ import { AnalyseTab } from './AnalyseTab';
 import { AufstellungTab } from './AufstellungTab';
 import { StoppuhrTab } from './StoppuhrTab';
 import { WASSERENTNAHME_LABEL } from './rules/bwScoring';
-import { COMPETITIONS, getCompetition } from './rules/modes';
+import { COMPETITIONS, getCompetition, getMode } from './rules/modes';
 import { loadLsp, loadWasserentnahme } from './store';
 
 type Tab = 'aufstellung' | 'stoppuhr' | 'analyse';
@@ -71,6 +71,13 @@ export function WettkampfPage() {
           lsp={lsp}
           defaultVariant={prefs.variant}
           onMode={(id) => void db.kv.put({ key: LAST_MODE(competition.id), value: id })}
+          onShow={(id) => {
+            const target = getMode(id).competition;
+            void db.kv.bulkPut([
+              { key: COMPETITION_KEY, value: target },
+              { key: LAST_MODE(target), value: id },
+            ]);
+          }}
         />
       )}
       {tab === 'analyse' && <AnalyseTab competition={competition.id} lsp={lsp} />}

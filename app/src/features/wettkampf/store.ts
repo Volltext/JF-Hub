@@ -5,7 +5,7 @@ import type { Draft, LineupTemplate, LspState, Run } from './model';
 import { buildRun } from './run';
 import type { Wasserentnahme } from './rules/bwScoring';
 import { buildEmptyAssignments, type Assignments } from './rules/positions';
-import { emptyDraft, reset } from './stopwatch';
+import { normalizeDraft } from './stopwatch';
 
 /** Persistenz des Wettkampf-Moduls. Kleine Zustände liegen im kv-Speicher, Läufe und Vorlagen in Tabellen. */
 
@@ -24,8 +24,7 @@ export const saveWasserentnahme = (v: Wasserentnahme) => db.kv.put({ key: VARIAN
 export const DEFAULT_LSP: LspState = { variante: 'gruppe', gesamteindruck: [null, null, null, null, null] };
 
 export async function loadDraft(mode: string): Promise<Draft> {
-  const row = await db.kv.get(draftKey(mode));
-  return { ...emptyDraft(mode), ...((row?.value as Partial<Draft>) ?? {}), mode };
+  return normalizeDraft(mode, (await db.kv.get(draftKey(mode)))?.value);
 }
 
 export const saveDraft = (d: Draft) => db.kv.put({ key: draftKey(d.mode), value: d });
@@ -59,7 +58,10 @@ export const templateRepo = {
 };
 
 export const runRepo = {
-  /** Speichert den Lauf mit der aktuellen Aufstellung und setzt die Stoppuhr zurück. */
+  /**
+   * Speichert den Lauf mit der aktuellen Aufstellung. Die Stoppuhr setzt danach der Aufrufer zurück (Live-Stoppuhr).
+   * Speichern zwei Geräte denselben Stand, ergibt das einen Lauf (gleiche ID), nicht zwei.
+   */
   async saveFromDraft(d: Draft, lspVariante: string, now = Date.now()): Promise<Run> {
     const [assignments, members] = await Promise.all([loadLineup(), db.members.toArray()]);
     const run = buildRun(d, {
@@ -68,9 +70,8 @@ export const runRepo = {
       memberNames: Object.fromEntries(members.map((m) => [m.id, m.name])),
       lspVariante,
     });
-    await db.runs.add(run);
+    await db.runs.put(run);
     await markChanged('runs', run.id);
-    await saveDraft(reset(d));
     return run;
   },
   async updateNotes(id: string, notes: string): Promise<void> {

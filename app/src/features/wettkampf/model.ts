@@ -13,11 +13,16 @@ export interface TaskTimer {
   endElapsedMs: number | null;
 }
 
-/** Zustand der Stoppuhr eines Modus. Überlebt App-Neustarts, auch während die Uhr läuft. */
+/**
+ * Zustand der Stoppuhr eines Modus. Überlebt App-Neustarts, auch während die Uhr läuft, und wird mit dem Server
+ * live geteilt (siehe live.ts): alle Betreuer sehen dieselbe Stoppuhr.
+ */
 export interface Draft {
   mode: string;
+  /** Kennung des Laufs; ändert sich beim Zurücksetzen (auf jedem Gerät gleich, siehe `nextSessionId`). */
+  id: string;
   isRunning: boolean;
-  /** Zeitpunkt (Date.now) des letzten Starts; nur gesetzt, solange die Uhr läuft. */
+  /** Zeitpunkt (Date.now dieses Geräts) des letzten Starts; nur gesetzt, solange die Uhr läuft. */
   startTimestamp: number | null;
   /** Bis zum letzten Stopp aufgelaufene Zeit. */
   elapsedMs: number;
@@ -35,6 +40,8 @@ export interface Draft {
   nullwertungIds: string[];
   /** Nur A-Teil: Wasserentnahme dieses Laufs. Fehlt bei älteren Ständen (= Saugleitung). */
   wasserentnahme?: Wasserentnahme;
+  /** Die zuletzt angewendeten Eingaben (IDs), damit keine doppelt zählt, wenn Stände zusammengeführt werden. */
+  opIds?: string[];
 }
 
 export interface ScoringSnapshot {

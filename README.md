@@ -40,7 +40,7 @@ Protokolle, Dienste, Aufgaben, Kleidergrößen und Wettkampf-Training – auf Ha
 | 📅 | **Dienste** | Anwesenheit per Antippen erfassen, Statistik, wöchentliche **Erinnerung** (mit Ferien-Rhythmus je Bundesland) |
 | ✅ | **Aufgaben** | Eigene Aufgaben oder für alle Betreuer **veröffentlichen**, mit Fälligkeit und Erinnerung |
 | 👕 | **Kleidung** | Kleidergrößen je Mitglied, „eine Größe größer“ vormerken, fertige PDF-Liste für den Kleiderwart |
-| ⏱️ | **Wettkampf** | Bundeswettbewerb und Leistungsspange: Aufstellung, Stoppuhr, Fehlerwertung, Analyse, Wissensdatenbank |
+| ⏱️ | **Wettkampf** | Bundeswettbewerb und Leistungsspange: Aufstellung, **Live-Stoppuhr** (alle Betreuer sehen dieselbe Zeit), Fehlerwertung, Analyse, Wissensdatenbank |
 | 👥 | **Mehrere Betreuer** | Eigenes Konto je Person (Einladung per Link), Protokolle und Aufgaben **privat oder für alle** |
 | 📱 | **Überall nutzbar** | Als **App im Browser** (iPhone, Android, Windows, Mac, Linux) oder als **Android-App** mit Stift-Handschrift |
 | 📴 | **Offline** | Alles liegt lokal auf dem Gerät und wird abgeglichen, sobald wieder Netz da ist |

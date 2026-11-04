@@ -46,7 +46,17 @@ Benutzernamen unterscheiden nicht zwischen Groß- und Kleinschreibung (3–32 Ze
 | Ordner für Protokolle | für alle (nur die Struktur, nicht der Inhalt privater Protokolle) |
 | **Protokolle** | **privat** (nur du) oder **veröffentlicht** (alle Betreuer) |
 | **Aufgaben** | **privat** oder **veröffentlicht** |
-| Laufende Stoppuhr, aktuelle Aufstellung und Wertung | nur auf dem jeweiligen Gerät (Arbeitsstand, wird nicht abgeglichen) |
+| **Stoppuhr** (laufende Zeit, Zwischenzeiten, Fehler, Notizen) | **live für alle** Betreuer: alle sehen dieselbe Stoppuhr je Modus |
+| Aktuelle Aufstellung, Leistungsspangen-Variante | nur auf dem jeweiligen Gerät (Arbeitsstand, wird nicht abgeglichen) |
+
+### Live-Stoppuhr
+
+Sind mehrere Betreuer angemeldet, sehen alle **dieselbe Stoppuhr**: Startet einer den A-Teil, läuft die Zeit auf allen Handys mit derselben Anzeige mit (die App gleicht die Uhren der Geräte mit dem Server ab, eine falsch gehende Handyuhr spielt keine Rolle). Jeder kann stoppen, Zwischenzeiten setzen, Fehler eintragen oder den Lauf speichern. Tragen zwei gleichzeitig Fehler ein, zählen beide. Speichern zwei gleichzeitig, entsteht ein Lauf, nicht zwei.
+
+- In der Uhr-Karte steht **„● Live“**, darunter, wer zuletzt etwas geändert hat.
+- Läuft die Stoppuhr in einem anderen Modus (z. B. B-Teil, während du den A-Teil offen hast), zeigt die App das an; ein Tipp wechselt dorthin.
+- **Ohne Netz** arbeitet die Stoppuhr normal weiter. Was du offline eingibst, wird nachgereicht, sobald der Server wieder erreichbar ist, auch nach einem Neustart der App. Hat inzwischen jemand anderes den Lauf gespeichert oder zurückgesetzt, verfallen die offline gemachten Eingaben zu diesem Lauf, damit sie nicht im nächsten landen.
+- Ohne Server (nur Android-App) bleibt die Stoppuhr wie bisher auf dem Gerät.
 
 Neue Protokolle und Aufgaben sind **zuerst privat**. Wer lieber gleich für alle schreibt, stellt das unter *Einstellungen → Darstellung & neue Einträge* um (gilt nur für das eigene Konto und Gerät).
 

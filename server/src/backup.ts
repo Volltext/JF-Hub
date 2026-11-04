@@ -141,6 +141,7 @@ export function restoreFromFile(db: DatabaseSync, file: string): void {
 
     const keep = Object.fromEntries(KEEP_CONFIG.map((k) => [k, getConfig(db, k)]));
     const liveRev = Number(getConfig(db, 'revCounter') ?? '0');
+    const stopwatchRev = Number(getConfig(db, 'liveRev') ?? '0');
 
     db.exec(`ATTACH DATABASE '${copy.replace(/'/g, "''")}' AS bak`);
     try {
@@ -159,6 +160,7 @@ export function restoreFromFile(db: DatabaseSync, file: string): void {
         for (const [k, v] of Object.entries(keep)) if (v !== undefined) setConfig(db, k, v);
         // Revisionen nie zurückdrehen und neue Epoche, damit sich alle Clients neu abgleichen.
         setConfig(db, 'revCounter', String(Math.max(liveRev, Number(getConfig(db, 'revCounter') ?? '0'))));
+        setConfig(db, 'liveRev', String(Math.max(stopwatchRev, Number(getConfig(db, 'liveRev') ?? '0'))));
         setConfig(db, 'epoch', randomUUID());
         const bad = db.prepare('PRAGMA foreign_key_check').all();
         if (bad.length) throw new RestoreError('Die Sicherung ist in sich nicht stimmig (verwaiste Verweise).');

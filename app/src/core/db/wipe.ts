@@ -12,10 +12,14 @@ const SYNC_KV_KEYS = [
   'push.endpoint',
 ];
 
+/** Abgleich-Zustand der Live-Stoppuhr (`draftSync` und `draftSync.<modus>`, siehe features/wettkampf/live.ts). */
+const LIVE_KV_PREFIX = 'draftSync';
+
 /**
  * Entfernt alle abgeglichenen Daten und den Abgleich-Zustand von diesem Gerät (nach dem Abmelden bzw. bei Kontowechsel),
  * damit der nächste Nutzer weder fremde Daten sieht noch sie unter seinem Konto hochlädt.
- * Einstellungen, Ferien-Zwischenspeicher und die laufende Stoppuhr, Aufstellung und Wertung dieses Geräts bleiben.
+ * Einstellungen, Ferien-Zwischenspeicher und die Stoppuhr, Aufstellung und Wertung dieses Geräts bleiben
+ * (die Stoppuhr ohne ihren Live-Abgleich: noch nicht gesendete Eingaben gehen nicht an das nächste Konto).
  */
 export async function wipeLocalData(): Promise<void> {
   await db.transaction('rw', [db.protokolle, db.folders, db.members, db.sessions, db.tasks, db.clothing, db.clothingItems, db.runs, db.lineupTemplates, db.outbox, db.kv], async () => {
@@ -31,6 +35,7 @@ export async function wipeLocalData(): Promise<void> {
       db.lineupTemplates.clear(),
       db.outbox.clear(),
       db.kv.bulkDelete(SYNC_KV_KEYS),
+      db.kv.where('key').startsWith(LIVE_KV_PREFIX).delete(),
     ]);
   });
 }

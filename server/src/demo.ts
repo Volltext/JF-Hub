@@ -107,13 +107,15 @@ export async function resetDemo(db: DatabaseSync, now = new Date()): Promise<voi
   const hashes = await Promise.all(DEMO_ACCOUNTS.map((a) => hashPassword(a.password)));
   const keep = Object.fromEntries(KEEP_CONFIG.map((k) => [k, getConfig(db, k)]));
   const liveRev = currentRev(db);
+  const stopwatchRev = getConfig(db, 'liveRev');
 
   db.exec('BEGIN IMMEDIATE');
   try {
-    for (const t of ['push_reminders', 'push_subscriptions', 'sessions', 'protocols', 'folders', 'records', 'users', 'config']) db.exec(`DELETE FROM ${t}`);
+    for (const t of ['push_reminders', 'push_subscriptions', 'sessions', 'protocols', 'folders', 'records', 'live_drafts', 'users', 'config']) db.exec(`DELETE FROM ${t}`);
     for (const [k, v] of Object.entries(keep)) if (v !== undefined) setConfig(db, k, v);
     // Revisionen nie zurückdrehen; neue Epoche, damit Geräte ihren Stand verwerfen.
     setConfig(db, 'revCounter', String(liveRev));
+    if (stopwatchRev !== undefined) setConfig(db, 'liveRev', stopwatchRev);
     setConfig(db, 'epoch', randomUUID());
     seed(db, now, hashes);
     db.exec('COMMIT');
