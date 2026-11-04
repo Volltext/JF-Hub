@@ -84,6 +84,13 @@ export async function syncNow(page: Page) {
   await Promise.all([page.waitForResponse((r) => r.url().endsWith('/api/sync') && r.request().method() === 'POST'), badge.click()]);
 }
 
+/**
+ * Die Zeile eines Protokolls in der Liste (als Link), nicht das Titelfeld des Editors: Auf breiten Bildschirmen steht die Liste neben dem
+ * geöffneten Protokoll, ein Text-Treffer auf den Titel fände dort beides. Kopien wie „… (Konflikt)“ und „… (lokale Fassung)“ zählen nicht.
+ */
+const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+export const noteLink = (page: Page, title: string) => page.getByRole('link', { name: new RegExp(`^${escapeRegExp(title)}(?! \\()`) });
+
 export async function writeProtocol(page: Page, title: string, text: string) {
   await page.goto('/#/protokolle');
   await page.getByRole('button', { name: 'Neues Protokoll' }).click();
