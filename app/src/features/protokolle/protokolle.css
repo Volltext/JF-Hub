@@ -161,3 +161,85 @@ body.web .icon-btn { cursor: pointer; }
 .proto-snippet mark { background: color-mix(in srgb, var(--accent) 35%, transparent); color: var(--text); border-radius: 3px; padding: 0 2px; }
 .proto-folder-btn { display: inline-flex; align-items: center; gap: var(--s-2); max-width: 100%; min-height: 36px; padding: 0 var(--s-3); margin-bottom: var(--s-2); border-radius: 999px; border: 1px solid var(--border); background: var(--surface-2); color: var(--muted); font-size: 0.85rem; cursor: pointer; }
 .proto-folder-btn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ======================================================================
+   Schreiben wie in einem Notizbuch: ruhig, randlos, der Text steht im Vordergrund
+   ====================================================================== */
+.proto-sheet { background: transparent; border: 0; border-radius: 0; padding: 0; }
+.proto-title { max-width: 46rem; font-size: 1.9rem; line-height: 1.2; font-weight: 750; letter-spacing: -0.025em; padding: var(--s-2) 0 var(--s-1); }
+@media (min-width: 720px) { .proto-sheet { padding: 0; } .proto-title { font-size: 2.2rem; } }
+.proto-sheet--body { padding: var(--s-3) 0 var(--s-5); min-height: 55vh; }
+@media (min-width: 720px) { .proto-sheet--body { padding-top: var(--s-4); } }
+.ed-content { max-width: 46rem; font-size: 1.1rem; line-height: 1.78; font-feature-settings: 'cv11', 'ss03', 'calt'; }
+.ed-content > * + * { margin-top: 0.7em; }
+.ed-content h1 { font-size: 1.7rem; color: var(--text); letter-spacing: -0.02em; margin-top: 1.4em; }
+.ed-content h2 { font-size: 1.35rem; letter-spacing: -0.015em; margin-top: 1.3em; }
+.ed-content h3 { font-size: 1.12rem; color: var(--muted); text-transform: none; margin-top: 1.1em; }
+.ed-content p.is-editor-empty:first-child::before { content: attr(data-placeholder); float: left; height: 0; pointer-events: none; color: var(--muted); opacity: 0.7; }
+
+/* Kopfdaten: eine leise Zeile unter dem Titel, aufklappbar */
+.proto-meta-toggle { border-top: 0; min-height: 36px; padding: 0; font-size: 0.88rem; max-width: 46rem; }
+.proto-meta-toggle:hover { color: var(--text); }
+.proto-folder-btn { margin-top: var(--s-1); }
+.proto-meta { margin-top: var(--s-2); padding: var(--s-4); max-width: 46rem; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); }
+.proto-tags { display: flex; flex-wrap: wrap; gap: var(--s-1) var(--s-2); margin-top: var(--s-2); max-width: 46rem; }
+
+/* #Tags: im Text farbig, in Liste und Kopf als Schild */
+.ed-tag { color: var(--primary); font-weight: 600; border-radius: 4px; background: color-mix(in srgb, var(--primary) 10%, transparent); padding: 0 0.15em; }
+:root:not([data-theme='light']) .ed-tag { color: color-mix(in srgb, var(--primary) 70%, var(--text)); }
+.note__tag { display: inline-flex; align-items: center; gap: 2px; padding: 1px 8px; border-radius: 999px; font-size: var(--t-xs); font-weight: 650; color: var(--primary); background: color-mix(in srgb, var(--primary) 11%, transparent); text-decoration: none; }
+:root:not([data-theme='light']) .note__tag { color: color-mix(in srgb, var(--primary) 70%, var(--text)); }
+.note__tag--link { padding: 3px 10px; font-size: 0.8rem; }
+.note__tag--link:hover { background: color-mix(in srgb, var(--primary) 20%, transparent); }
+
+/* Fußzeile unter dem Text */
+.ed-stats { max-width: 46rem; margin: 0; padding: var(--s-3) 0 var(--s-6); color: var(--muted); font-size: var(--t-sm); font-variant-numeric: tabular-nums; }
+.ed-stats__saved { color: var(--muted); }
+.ed-stats__saving { color: var(--warning); }
+
+/* Beim Schreiben treten die Leisten zurück (Maus/Tastatur): man sieht den Text, nicht die Bedienung */
+@media (pointer: fine) {
+  .proto-bar { transition: opacity 0.25s var(--ease); }
+  body.editing .proto-bar { opacity: 0.35; }
+  body.editing .proto-bar:hover, body.editing .proto-bar:focus-within { opacity: 1; }
+}
+/* Die Werkzeugleiste als schwebende Kapsel */
+.ed-dock { border-radius: 16px; background: color-mix(in srgb, var(--surface) 94%, transparent); backdrop-filter: blur(10px); }
+@media (pointer: fine) { .ed-dock { align-self: flex-start; max-width: 100%; } }
+
+/* ----- Liste: Titel, Vorschau, Tags ----- */
+.icon-btn--primary { background: var(--primary); border-color: transparent; color: var(--on-primary); }
+.icon-btn--primary:hover { background: var(--primary-press); color: var(--on-primary); }
+.note { align-items: flex-start; padding-top: var(--s-3); padding-bottom: var(--s-3); }
+.note__head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s-3); }
+.note__title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.note__date { flex-shrink: 0; color: var(--muted); font-size: var(--t-xs); font-weight: 600; font-variant-numeric: tabular-nums; }
+.note__preview { color: var(--muted); font-size: 0.9rem; line-height: 1.4; margin-top: 2px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.note__meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-1) var(--s-2); margin-top: var(--s-2); }
+.note__place { color: var(--muted); font-size: var(--t-xs); }
+.item.is-active { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 7%, var(--surface)); }
+.tagbar { display: flex; gap: var(--s-2); overflow-x: auto; scrollbar-width: none; margin: 0 calc(var(--s-4) * -1); padding: 2px var(--s-4); }
+.tagbar::-webkit-scrollbar { display: none; }
+.tagchip { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 4px; min-height: 36px; padding: 0 var(--s-3); border-radius: 999px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-size: 0.88rem; font-weight: 600; cursor: pointer; }
+.tagchip svg { color: var(--primary); }
+.tagchip__n { color: var(--muted); font-size: var(--t-xs); font-weight: 600; }
+.tagchip[aria-pressed='true'] { background: var(--primary); border-color: transparent; color: var(--on-primary); }
+.tagchip[aria-pressed='true'] svg, .tagchip[aria-pressed='true'] .tagchip__n { color: inherit; opacity: 0.9; }
+.proto-filter { display: flex; align-items: center; justify-content: space-between; gap: var(--s-2); color: var(--muted); font-size: 0.92rem; }
+.proto-filter strong { color: var(--text); }
+
+/* ----- Breit: Liste links, Editor rechts ----- */
+.proto-split { display: grid; grid-template-columns: minmax(300px, 360px) minmax(0, 1fr); gap: var(--s-6); align-items: start; max-width: 1180px; margin: 0 auto; }
+.proto-split__list { position: sticky; top: calc(var(--s-6) * -1); align-self: start; max-height: 100vh; overflow-y: auto; padding: var(--s-6) var(--s-2) var(--s-6) 0; margin-top: calc(var(--s-6) * -1); scrollbar-width: thin; }
+.proto-split__main { min-width: 0; }
+.proto-split__list .proto { gap: var(--s-3); max-width: none; min-height: 0; }
+.proto-split__list .page__title { font-size: 1.5rem; }
+.proto-split__list .proto-fab { display: none; }
+.proto-split__list .sync-badge span { display: none; }
+.proto-split__list .sync-badge { padding: 0 var(--s-2); }
+.proto-split__main .proto { max-width: 46rem; margin: 0; }
+.proto-split__main .proto-back { display: none; }
+.proto-split__empty { min-height: 60vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--s-2); text-align: center; color: var(--muted); }
+.proto-split__empty svg { color: var(--primary); opacity: 0.8; }
+.proto-split__empty strong { color: var(--text); font-size: 1.1rem; }
+.proto-split__empty p { margin: 0; max-width: 34ch; }

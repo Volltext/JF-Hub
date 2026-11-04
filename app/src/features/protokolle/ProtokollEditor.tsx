@@ -2,10 +2,10 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type Mutabl
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import type { Editor } from '@tiptap/core';
-import { EditorContent, useEditor } from '@tiptap/react';
+import { EditorContent, useEditor, useEditorState } from '@tiptap/react';
 import Collaboration from '@tiptap/extension-collaboration';
 import Placeholder from '@tiptap/extension-placeholder';
-import { ChevronDown, ChevronLeft, FileDown, Folder, Lock, Trash2, Users } from 'lucide-react';
+import { ChevronDown, ChevronLeft, FileDown, Folder, Hash, Lock, Trash2, Users } from 'lucide-react';
 import { db } from '@/core/db/db';
 import { requeueBlobs } from '@/core/db/blobs';
 import { formatDate } from '@/core/domain/format';
@@ -30,6 +30,9 @@ import { loadConn } from './http';
 import { openLink } from './openLink';
 import { flattenCellContent } from './pasteTables';
 import { SyncBadge } from './SyncBadge';
+import { countWords, readingMinutes } from './preview';
+import { extractTags } from './tags';
+import { TagHighlight } from './tagsExtension';
 import type { Protokoll } from './model';
 import { exportPdf, protokolleRepo } from './repo';
 import { scheduleSync } from './sync';
@@ -138,8 +141,8 @@ function EditorInner({ initial, session, editorRef }: { initial: Protokoll; sess
   const account = useAccount();
   const users = useDirectory();
 
-  // Neue Protokolle und breite Bildschirme zeigen die Kopfdaten offen, sonst eine Zusammenfassung.
-  const [headOpen, setHeadOpen] = useState(() => !initial.title || window.innerWidth >= 720);
+  // Nur neue Protokolle zeigen die Kopfdaten offen; sonst steht eine ruhige Zeile unter dem Titel und der Text im Vordergrund.
+  const [headOpen, setHeadOpen] = useState(() => !initial.title);
   const titleRef = useRef<HTMLTextAreaElement>(null);
   const summary = [meta.datum && formatDate(meta.datum, true), [meta.beginn, meta.ende].filter(Boolean).join('–'), meta.ort, meta.leitung]
     .filter(Boolean)
@@ -176,7 +179,7 @@ function EditorInner({ initial, session, editorRef }: { initial: Protokoll; sess
 
   const editor = useEditor({
     // Der Text kommt aus dem geteilten Dokument der Sitzung (Zusammenarbeit); der Editor schreibt hinein und liest daraus.
-    extensions: [...EXTENSIONS, LocalTrailingNode, Collaboration.configure({ document: session.doc, field: FIELD }), Placeholder.configure({ placeholder: 'Protokoll schreiben …' })],
+    extensions: [...EXTENSIONS, LocalTrailingNode, TagHighlight, Collaboration.configure({ document: session.doc, field: FIELD }), Placeholder.configure({ placeholder: 'Schreib los … mit #Tags ordnest du dein Protokoll' })],
     editorProps: {
       attributes: { class: 'ed-content', 'aria-label': 'Protokolltext', lang: 'de', spellcheck: 'true' },
       // Eingefügte Tabellen aus anderen Programmen: Was eine Zelle nicht aufnimmt, wird zu Absätzen (sonst zerreißt die Tabelle).
@@ -197,6 +200,15 @@ function EditorInner({ initial, session, editorRef }: { initial: Protokoll; sess
     onBlur: () => document.body.classList.remove('editing'),
   });
   editorRef.current = editor;
+  // Wörter und #Tags des Textes für Fußzeile und Tag-Schilder; ändert sich nur, wenn sich Zahl oder Tags ändern.
+  const stats = useEditorState({
+    editor,
+    selector: ({ editor: e }) => {
+      const text = e ? e.state.doc.textBetween(0, e.state.doc.content.size, '\n', ' ') : '';
+      return { words: countWords(text), tags: extractTags(text) };
+    },
+    equalityFn: (a, b) => !!a && !!b && a.words === b.words && a.tags.join('\u0000') === b.tags.join('\u0000'),
+  });
 
   // Ungespeichertes beim Verlassen/Wechseln der App sichern.
   useEffect(() => {
@@ -386,6 +398,16 @@ function EditorInner({ initial, session, editorRef }: { initial: Protokoll; sess
           <span className="proto-meta-toggle__text">{summary || 'Datum, Zeit und Ort'}</span>
           <ChevronDown size={18} className={headOpen ? 'flip' : undefined} />
         </button>
+        {stats && stats.tags.length > 0 && (
+          <div className="proto-tags" aria-label="Tags in diesem Protokoll">
+            {stats.tags.map((t) => (
+              <Link key={t} to={`/protokolle?tag=${encodeURIComponent(t)}`} className="note__tag note__tag--link" onClick={() => void autosave.flushIfDirty()}>
+                <Hash size={12} />
+                {t}
+              </Link>
+            ))}
+          </div>
+        )}
         {headOpen && (
           <div className="proto-meta">
             <DateField label="Datum" value={meta.datum || null} onChange={(v) => patchMeta({ datum: v ?? '' })} />
@@ -448,6 +470,13 @@ function EditorInner({ initial, session, editorRef }: { initial: Protokoll; sess
       <div className="proto-sheet proto-sheet--body" onClick={(e) => e.target === e.currentTarget && editor?.commands.focus('end')}>
         <EditorContent editor={editor} />
       </div>
+      {stats && (
+        <p className="ed-stats" aria-live="off">
+          {stats.words === 0 ? 'Noch kein Text' : `${stats.words} ${stats.words === 1 ? 'Wort' : 'Wörter'} · ${readingMinutes(stats.words)} Min. Lesezeit`}
+          <span aria-hidden> · </span>
+          <span className={saved ? 'ed-stats__saved' : 'ed-stats__saving'}>{saved ? 'Gespeichert' : 'Speichert …'}</span>
+        </p>
+      )}
     </div>
   );
 }
