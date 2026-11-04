@@ -77,7 +77,7 @@ test.describe.serial('Protokolle: Schutz vor unbekannten Inhalten', () => {
     await page.goto('/#/protokolle');
     await page.getByText(title).click();
     await expect(page.getByRole('alert')).toContainText('Elemente, die diese App-Version nicht kennt');
-    await expect(page.getByText('Wichtiger Hinweis')).toBeVisible(); // als Text lesbar
+    await expect(page.getByText('Wichtiger Hinweis', { exact: true })).toBeVisible(); // als Text lesbar
     await expect(page.getByLabel('Protokolltext', { exact: true })).toHaveCount(0); // aber kein Editor
     await page.screenshot({ path: 'test-results/unbekannte-elemente.png', fullPage: true });
 
