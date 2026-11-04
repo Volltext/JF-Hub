@@ -11,6 +11,7 @@
 !server/package-lock.json
 !server/tsconfig.json
 !server/src
+!server/fonts
 !server/public/admin
 !docker/entrypoint.sh
 **/*.test.ts
