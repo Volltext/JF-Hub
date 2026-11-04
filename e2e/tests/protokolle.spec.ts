@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import * as Y from 'yjs';
-import { ADMIN, adminTokens, BEN, createBen, foreignParagraph, PNG_1X1, putForeignText, serverDoc, serverHasText, sessions, syncNow, writeProtocol } from './helpers';
+import { ADMIN, adminTokens, BEN, createBen, foreignParagraph, PNG_1X1, putForeignText, serverDoc, serverHasText, noteLink, sessions, syncNow, writeProtocol } from './helpers';
 
 // Eigener Server (siehe playwright.config.ts), damit die Anmeldungen dieser Tests das Anmelde-Limit des Rauchtests nicht aufbrauchen.
 test.use({ baseURL: 'http://127.0.0.1:8096' });
@@ -19,7 +19,7 @@ test.describe.serial('Protokolle: Fundament', () => {
 
     // Liste öffnen, Protokoll öffnen, wieder zurück.
     await page.getByRole('link', { name: /Protokolle/ }).first().click();
-    await page.getByText(title).click();
+    await noteLink(page, title).click();
     await expect(page.getByLabel('Protokolltext')).toContainText('Dieser Text bleibt unberührt.');
     await page.getByRole('link', { name: /Protokolle/ }).first().click();
     await syncNow(page); // schickt alles, was als geändert vorgemerkt wäre
@@ -41,7 +41,7 @@ test.describe.serial('Protokolle: Fundament', () => {
     await page.getByRole('button', { name: 'Protokoll löschen' }).click();
     await page.getByRole('button', { name: 'Löschen', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Protokolle' })).toBeVisible();
-    await expect(page.getByText(title)).toBeHidden();
+    await expect(noteLink(page, title)).toBeHidden();
     await syncNow(page);
 
     await page.getByRole('link', { name: 'Papierkorb' }).click();
@@ -75,7 +75,7 @@ test.describe.serial('Protokolle: Schutz vor unbekannten Inhalten', () => {
 
     const { context, page } = await open(browser, ADMIN);
     await page.goto('/#/protokolle');
-    await page.getByText(title).click();
+    await noteLink(page, title).click();
     await expect(page.getByRole('alert')).toContainText('Elemente, die diese App-Version nicht kennt');
     await expect(page.getByText('Wichtiger Hinweis', { exact: true })).toBeVisible(); // als Text lesbar
     await expect(page.getByLabel('Protokolltext', { exact: true })).toHaveCount(0); // aber kein Editor
@@ -143,7 +143,7 @@ test.describe.serial('Protokolle: Fotos als Anhänge', () => {
     // Ben sieht das Foto: Es wird beim Anschauen vom Server geholt.
     const ben = await open(browser, BEN);
     await ben.page.goto('/#/protokolle');
-    await ben.page.getByText(title).click({ timeout: 30_000 });
+    await noteLink(ben.page, title).click({ timeout: 30_000 });
     const benPhoto = ben.page.locator('.photo-node img');
     await expect(benPhoto).toBeVisible({ timeout: 30_000 });
     await expect.poll(() => benPhoto.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);

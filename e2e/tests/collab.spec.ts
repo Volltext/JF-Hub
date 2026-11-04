@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import * as Y from 'yjs';
-import { ADMIN, adminTokens, BEN, createBen, foreignParagraph, putForeignText, serverDoc, serverHasText, sessions, syncNow, writeProtocol } from './helpers';
+import { ADMIN, adminTokens, BEN, createBen, foreignParagraph, putForeignText, serverDoc, serverHasText, noteLink, sessions, syncNow, writeProtocol } from './helpers';
 
 // Eigener Server (siehe playwright.config.ts): Die Anmeldung ist je Adresse begrenzt, und jede Datei teilt sich die Anmeldungen ihrer Tests.
 test.use({ baseURL: 'http://127.0.0.1:8094' });
@@ -23,9 +23,9 @@ async function openProtocol(page: Page, title: string) {
   // Die App gleicht nur gelegentlich von selbst ab (unter Last länger als jede feste Wartezeit): selbst abgleichen, bis das Protokoll in der Liste steht.
   await expect(async () => {
     await syncNow(page);
-    await expect(page.getByText(title)).toBeVisible({ timeout: 3_000 });
+    await expect(noteLink(page, title)).toBeVisible({ timeout: 3_000 });
   }).toPass({ timeout: 30_000 });
-  await page.getByText(title).click();
+  await noteLink(page, title).click();
   await expect(editorOf(page)).toBeVisible();
 }
 
@@ -213,7 +213,7 @@ test.describe.serial('Gemeinsam schreiben', () => {
 
     // Das Original zeigt den Stand der Sicherung, ohne das später Dazugekommene
     await ben.page.getByRole('link', { name: /Protokolle/ }).first().click();
-    await ben.page.getByText(title, { exact: true }).click();
+    await noteLink(ben.page, title).click();
     await expect(editorOf(ben.page)).toContainText('Stand der Sicherung.');
     await expect(editorOf(ben.page)).not.toContainText('Später dazugekommen.');
     await admin.context.close();

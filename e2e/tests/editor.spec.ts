@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import * as Y from 'yjs';
-import { ADMIN, adminTokens, foreignParagraph, PNG_1X1, pdfText, putForeignText, serverDoc, serverHasText, sessions, syncNow, writeProtocol } from './helpers';
+import { ADMIN, adminTokens, foreignParagraph, PNG_1X1, pdfText, putForeignText, serverDoc, serverHasText, noteLink, sessions, syncNow, writeProtocol } from './helpers';
 
 // Eigener Server (siehe playwright.config.ts): Die Anmeldung ist je Adresse begrenzt, und diese Datei soll weder das Limit des
 // Rauchtests noch das der Protokoll-Tests aufbrauchen.
@@ -296,7 +296,7 @@ test.describe.serial('Protokolle: feindliche Tabellen', () => {
 
     const { context, page } = await open(browser, ADMIN);
     await page.goto('/#/protokolle');
-    await page.getByText(title).click();
+    await noteLink(page, title).click();
     // Mit einer Million Spalten bräuchte der Editor Minuten: Das Protokoll öffnet nur lesend, und zwar sofort.
     await expect(page.getByRole('alert')).toContainText('Elemente, die diese App-Version nicht kennt', { timeout: 5000 });
     await expect(page.getByLabel('Protokolltext', { exact: true })).toHaveCount(0);
