@@ -33,6 +33,7 @@ test.describe.serial('Protokolle: Tabellen, Links und Hervorhebung', () => {
     await page.getByRole('button', { name: 'Tabelle einfügen', exact: true }).click();
     await expect(editor.locator('table')).toHaveCount(1);
     await expect(editor.locator('th')).toHaveCount(2);
+    await expect(editor).toBeFocused(); // erst tippen, wenn der Fokus aus dem Dialog zurück ist
     for (const cell of ['Wer', 'Aufgabe', 'Anna', 'Schläuche']) {
       await page.keyboard.type(cell);
       await page.keyboard.press('Tab');
@@ -132,6 +133,8 @@ test.describe.serial('Protokolle: Tabellen, Links und Hervorhebung', () => {
     await page.getByLabel(/^Zeilen/).fill('2');
     await page.getByLabel(/^Spalten/).fill('2');
     await page.getByRole('button', { name: 'Tabelle einfügen', exact: true }).click();
+    await expect(editor.locator('table')).toHaveCount(1);
+    await expect(editor).toBeFocused(); // der Fokus kehrt erst nach dem Schließen des Dialogs zurück; vorher getippte Zeichen gehen verloren
     await page.keyboard.type('Zelle'); // der Cursor steht in der ersten Zelle der ersten Zeile
 
     // Zellen nehmen nur Text und Listen auf. Ein Foto soll nicht verschwinden und die Tabelle nicht zerreißen, sondern dahinter stehen.
