@@ -194,8 +194,6 @@ body.web .icon-btn { cursor: pointer; }
 
 /* Fußzeile unter dem Text */
 .ed-stats { max-width: 46rem; margin: 0; padding: var(--s-3) 0 var(--s-6); color: var(--muted); font-size: var(--t-sm); font-variant-numeric: tabular-nums; }
-.ed-stats__saved { color: var(--muted); }
-.ed-stats__saving { color: var(--warning); }
 
 /* Beim Schreiben treten die Leisten zurück (Maus/Tastatur): man sieht den Text, nicht die Bedienung */
 @media (pointer: fine) {

@@ -300,7 +300,7 @@ test.describe.serial('Protokolle: feindliche Tabellen', () => {
     // Mit einer Million Spalten bräuchte der Editor Minuten: Das Protokoll öffnet nur lesend, und zwar sofort.
     await expect(page.getByRole('alert')).toContainText('Elemente, die diese App-Version nicht kennt', { timeout: 5000 });
     await expect(page.getByLabel('Protokolltext', { exact: true })).toHaveCount(0);
-    await expect(page.getByText('Zelle')).toBeVisible();
+    await expect(page.getByText('Zelle', { exact: true })).toBeVisible();
     await context.close();
   });
 });

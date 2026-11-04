@@ -473,8 +473,6 @@ function EditorInner({ initial, session, editorRef }: { initial: Protokoll; sess
       {stats && (
         <p className="ed-stats" aria-live="off">
           {stats.words === 0 ? 'Noch kein Text' : `${stats.words} ${stats.words === 1 ? 'Wort' : 'Wörter'} · ${readingMinutes(stats.words)} Min. Lesezeit`}
-          <span aria-hidden> · </span>
-          <span className={saved ? 'ed-stats__saved' : 'ed-stats__saving'}>{saved ? 'Gespeichert' : 'Speichert …'}</span>
         </p>
       )}
     </div>
