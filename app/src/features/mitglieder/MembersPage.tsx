@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { Plus } from 'lucide-react';
+import { Plus, Users } from 'lucide-react';
 import { db } from '@/core/db/db';
 import { memberRepo } from '@/core/db/repos';
 import { attendanceStats, percent } from '@/core/domain/stats';
 import type { Member, MemberKind } from '@/core/domain/types';
-import { Button, Card, Page, Segmented, Sheet } from '@/core/ui/components';
+import { Button, EmptyState, Page, Segmented, Sheet } from '@/core/ui/components';
 import { confirmDialog } from '@/core/ui/dialog';
 
 type Draft = { id?: string; name: string; kind: MemberKind; active: boolean };
@@ -38,11 +38,11 @@ export function MembersPage() {
   const edit = (m: Member) => setDraft({ id: m.id, name: m.name, kind: m.kind, active: m.active });
 
   return (
-    <Page title="Mitglieder" sub={`${members.filter((m) => m.active).length} aktiv`}>
+    <Page title="Mitglieder" fromMore sub={`${members.filter((m) => m.active).length} aktiv`}>
       {members.length === 0 && (
-        <Card>
-          <p className="muted">Noch keine Mitglieder. Mit „+“ anlegen.</p>
-        </Card>
+        <EmptyState icon={Users} title="Noch keine Mitglieder" action={<Button variant="primary" onClick={() => setDraft({ name: '', kind: 'jugendlich', active: true })}>Mitglied anlegen</Button>}>
+          Lege deine Gruppe an, dann kannst du Dienste und Anwesenheit erfassen.
+        </EmptyState>
       )}
       {groups.map(({ kind, label }) => {
         const list = members.filter((m) => m.kind === kind);
@@ -60,7 +60,7 @@ export function MembersPage() {
                       {m.active ? `${st.present} von ${st.total} Diensten` : 'inaktiv'}
                     </div>
                   </div>
-                  {m.active && <span className="chip">{percent(st.rate)}</span>}
+                  {m.active && <span className={`chip ${st.rate === null ? '' : st.rate >= 0.8 ? 'chip--ok' : st.rate >= 0.5 ? 'chip--warn' : 'chip--danger'}`}>{percent(st.rate)}</span>}
                 </button>
               );
             })}

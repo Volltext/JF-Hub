@@ -8,6 +8,17 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/). Versionen 
 
 - **Live-Stoppuhr:** Alle angemeldeten Betreuer sehen dieselbe Stoppuhr je Modus, mit laufender Zeit, Zwischenzeiten, Fehlern, Wertung und Notizen. Jeder kann starten, stoppen, eintragen und speichern. Die Geräte gleichen ihre Uhren mit dem Server ab, damit die Zeit überall gleich läuft. Gleichzeitige Eingaben werden zusammengeführt (zwei Fehler von zwei Geräten zählen beide, keiner doppelt), zweimal „Lauf speichern“ ergibt einen Lauf. Offline weiter nutzbar; Eingaben werden nachgereicht, auch nach einem Neustart. Läuft die Stoppuhr in einem anderen Modus, zeigt die App das an. Technisch: Long-Polling (`GET /api/live`, `PUT /api/live/:modus`), geht ohne Zusatz-Einstellungen durch Reverse-Proxy und Tunnel; Apps an einem älteren Server arbeiten wie bisher nur auf dem Gerät.
 
+### Geändert
+
+- **Design überarbeitet** (App, Web-Client und Server-Verwaltung): Schrift Inter, selbst ausgeliefert (kein Fremdserver, offline nutzbar); einheitliche Schrift- und Schattenstufen; Kartenüberschriften als Kleinschrift-Etiketten; sanfte Übergänge für Fenster, Seiten und Abhaken (bei „Bewegung reduzieren“ abgeschaltet).
+- **Aufgaben:** Titel nutzen die volle Breite, Hinweise („bald“, „hoch“, Sichtbarkeit) stehen darunter; überfällige Aufgaben sind rot. Auf „Heute“ steht das Datum in eigener Spalte.
+- **Dienste, Mitglieder:** Namensvorschau einzeilig mit „+N“, Anwesenheit farbig (ab 80 % grün, ab 50 % gelb, darunter rot). Leere Listen zeigen eine Schaltfläche für den ersten Eintrag.
+- **Wettkampf:** Bereiche als Reiter mit Unterstrich, damit die drei Ebenen (Wettbewerb, Bereich, Modus) unterscheidbar sind; die Kopfzeile bleibt beim Scrollen stehen.
+- **Navigation:** Unterseiten von „Mehr“ zeigen auf dem Handy einen Zurück-Link.
+- **Protokoll-Editor:** Die Symbolleiste läuft auf schmalen Handys nicht mehr aus dem Bild.
+- **Startseite am Laptop:** Karten ohne Lücken; Hinweis „Nur lokal“ statt „Nur im Browser“ mit Erklärung beim Antippen.
+- **Server-Verwaltung:** Statuskacheln und Aktionen füllen jede Zeile vollständig.
+
 ### Sicherheit
 
 - **Zugriffsprüfung umgehbar über prozentkodierte Pfade:** Die API-Prüfung entschied anhand der rohen URL (`/api/…`), Fastify leitet aber auf dem dekodierten Pfad weiter – so traf z. B. `/%61pi/admin/users` denselben Admin-Handler, umging aber die Prüfung, und Admin-Endpunkte waren ohne Anmeldung erreichbar. Die Prüfung richtet sich jetzt nach dem gematchten Route-Muster (wie der Demo-Schutz).

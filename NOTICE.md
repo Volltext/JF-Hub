@@ -27,6 +27,8 @@ Fehler in den Inhalten kannst du gern als Issue melden, am besten mit Verweis au
 
 JF Hub nutzt unter anderem React, Vite, Dexie, TipTap, Capacitor, Lucide (Symbole), Fastify, pdfmake, web-push, fflate sowie in der Android-App androidx.ink und ML Kit Digital Ink Recognition. Ihre Lizenzen (überwiegend MIT, ISC, Apache-2.0) stehen in den jeweiligen Paketen (`node_modules/<paket>/LICENSE`) und lassen sich mit dem Lizenz-Werkzeug deiner Wahl auflisten, z. B. `npx license-checker --production` in `app/` und `server/`.
 
+Die Schrift **Inter** (© The Inter Project Authors, SIL Open Font License 1.1) liegt in `app/src/core/ui/fonts/` und `server/public/admin/fonts/`, jeweils mit Lizenztext.
+
 Die Schulferien-Termine stammen von [OpenHolidays API](https://www.openholidaysapi.org/) (Datenlizenz dort beschrieben).
 
 ## Symbol

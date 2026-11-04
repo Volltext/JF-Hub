@@ -2,7 +2,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { CalendarCheck, FileText, ListTodo, Shirt, Timer, type LucideIcon } from 'lucide-react';
 import { db } from '@/core/db/db';
-import { formatDate } from '@/core/domain/format';
+import { formatDate, formatDateShort } from '@/core/domain/format';
 import { todayIso } from '@/core/domain/id';
 import { sortOpen } from '@/core/domain/tasks';
 import { Card, Page } from '@/core/ui/components';
@@ -80,12 +80,12 @@ export function HomePage() {
             <p className="muted">Keine offenen Aufgaben.</p>
           ) : (
             <div className="stack">
-              {overdue > 0 && <span className="chip chip--warn">{overdue} überfällig</span>}
+              {overdue > 0 && <span className="chip chip--danger">{overdue} überfällig</span>}
               {openTasks.slice(0, 5).map((t) => (
-                <div key={t.id} className="item__title">
-                  {t.title}
-                  {t.dueDate && <span className="item__sub"> · {formatDate(t.dueDate)}</span>}
-                </div>
+                <Link key={t.id} to="/aufgaben" className="line" style={linkStyle}>
+                  <span className="line__title">{t.title}</span>
+                  {t.dueDate && <span className={`line__meta${t.dueDate < today ? ' line__meta--late' : ''}`}>{formatDateShort(t.dueDate)}</span>}
+                </Link>
               ))}
             </div>
           )}

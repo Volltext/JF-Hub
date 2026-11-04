@@ -292,7 +292,7 @@ function EditorInner({ initial, session, editorRef }: { initial: Protokoll; sess
     <div className="proto">
       <div className="proto-bar">
         <Link to={folderId ? `/protokolle/o/${folderId}` : '/protokolle'} className="proto-back" onClick={() => void autosave.flushIfDirty()}>
-          <ChevronLeft size={20} /> Protokolle
+          <ChevronLeft size={20} /> <span className="proto-back__text">Protokolle</span>
         </Link>
         <span className="proto-bar__spacer" />
         <span className="muted proto-saved" aria-live="polite">

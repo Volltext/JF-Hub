@@ -96,6 +96,7 @@ export function KleidungPage() {
 
   return (
     <Page
+      fromMore
       title="Kleidung"
       sub={requests.length ? `${teile(requests.length)} zu beschaffen` : 'Kleidergrößen der Gruppe'}
       actions={

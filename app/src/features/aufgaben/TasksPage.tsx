@@ -1,14 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { Check, Plus } from 'lucide-react';
+import { Check, ListChecks, Plus } from 'lucide-react';
 import { db } from '@/core/db/db';
 import { taskRepo, type TaskInput } from '@/core/db/repos';
 import { formatDate } from '@/core/domain/format';
 import { todayIso } from '@/core/domain/id';
 import { dueState, sortOpen, type DueState } from '@/core/domain/tasks';
 import type { Priority, Task } from '@/core/domain/types';
-import { Button, Card, Page, Segmented, Sheet } from '@/core/ui/components';
+import { Button, EmptyState, Page, Segmented, Sheet } from '@/core/ui/components';
 import { DateField, SelectField } from '@/core/ui/pickers';
 import { confirmDialog } from '@/core/ui/dialog';
 import { isMine, useAccount, useDirectory, visibilityLabel } from '@/core/account/account';
@@ -82,28 +82,25 @@ export function TasksPage() {
   const row = (t: Task) => {
     const state = dueState(t.dueDate, today);
     const label = t.completed ? null : DUE_LABEL[state];
+    const showChips = (t.shared || !isMine(t, account)) || label || (!t.completed && t.priority === 'high');
+    const chips = showChips ? (
+      <>
+        {(t.shared || !isMine(t, account)) && <span className="chip">{visibilityLabel(t, account, users)}</span>}
+        {label && <span className={`chip ${state === 'overdue' ? 'chip--danger' : state === 'today' ? 'chip--warn' : ''}`}>{label}</span>}
+        {!t.completed && t.priority === 'high' && <span className="chip chip--warn">hoch</span>}
+      </>
+    ) : null;
     return (
-      <div key={t.id} className={`item ${t.completed ? 'item--off' : ''}`} style={{ cursor: 'default' }}>
+      <div key={t.id} className={`item item--top ${t.completed ? 'item--off' : ''}`} style={{ cursor: 'default' }}>
         <button
-          className="toggle__box"
-          style={{
-            width: 32,
-            height: 32,
-            borderRadius: 10,
-            background: t.completed ? 'var(--success)' : 'transparent',
-            color: '#fff',
-            cursor: 'pointer',
-          }}
+          className={`check${t.completed ? ' check--on' : ''}`}
           aria-label={t.completed ? 'Wieder öffnen' : 'Als erledigt markieren'}
+          aria-pressed={t.completed}
           onClick={() => taskRepo.setCompleted(t.id, !t.completed)}
         >
-          {t.completed && <Check size={18} />}
+          {t.completed && <Check size={18} strokeWidth={3} />}
         </button>
-        <button
-          className="item__main"
-          style={{ background: 'none', border: 0, textAlign: 'left', cursor: 'pointer', padding: 0 }}
-          onClick={() => edit(t)}
-        >
+        <button className="item__main item__btn" onClick={() => edit(t)}>
           <div className="item__title" style={t.completed ? { textDecoration: 'line-through' } : undefined}>
             {t.title}
           </div>
@@ -115,20 +112,18 @@ export function TasksPage() {
               .filter(Boolean)
               .join(' · ')}
           </div>
+          {chips && <div className="item__chips">{chips}</div>}
         </button>
-        {(t.shared || !isMine(t, account)) && <span className="chip">{visibilityLabel(t, account, users)}</span>}
-        {label && <span className={`chip ${state === 'overdue' ? 'chip--warn' : ''}`}>{label}</span>}
-        {!t.completed && t.priority === 'high' && <span className="chip chip--warn">hoch</span>}
       </div>
     );
   };
 
   return (
-    <Page title="Aufgaben" sub={`${open.length} offen`}>
+    <Page title="Aufgaben" fromMore sub={`${open.length} offen`}>
       {open.length === 0 && (
-        <Card>
-          <p className="muted">Nichts zu tun. Mit „+“ eine Aufgabe anlegen.</p>
-        </Card>
+        <EmptyState icon={ListChecks} title="Alles erledigt" action={<Button variant="primary" onClick={() => setDraft({ ...EMPTY, shared: defaultShared })}>Aufgabe anlegen</Button>}>
+          Es sind keine Aufgaben offen.
+        </EmptyState>
       )}
       <div className="list">{open.map(row)}</div>
 

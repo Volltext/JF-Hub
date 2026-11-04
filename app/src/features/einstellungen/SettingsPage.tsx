@@ -39,7 +39,7 @@ export function SettingsPage() {
 
 function Overview() {
   return (
-    <Page title="Einstellungen">
+    <Page title="Einstellungen" fromMore>
       <MenuGroup>
         <MenuRow to="/einstellungen/allgemein" icon={SlidersHorizontal} title={IS_WEB ? 'Darstellung & neue Einträge' : 'Darstellung & Sicherheit'} sub={IS_WEB ? 'Hell/Dunkel, wer neue Einträge sieht' : 'Hell/Dunkel, PIN-Sperre, wer neue Einträge sieht'} />
         <MenuRow to="/einstellungen/erinnerungen" icon={Bell} title="Erinnerungen" sub="Dienst-Erinnerung, fällige Aufgaben" />

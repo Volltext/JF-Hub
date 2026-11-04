@@ -4,7 +4,11 @@
 .proto-bar { display: flex; align-items: center; gap: var(--s-2); }
 .proto-bar__spacer { flex: 1; }
 .proto-back { display: inline-flex; align-items: center; gap: 2px; min-height: 44px; color: var(--muted); text-decoration: none; font-weight: 600; }
-.proto-saved { font-size: 0.82rem; white-space: nowrap; }
+.proto-saved { font-size: 0.82rem; white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.proto-bar > * { flex-shrink: 0; }
+.proto-bar > .proto-saved { flex-shrink: 1; }
+/* Schmale Handys: Der Zurück-Pfeil genügt, damit die Symbole rechts nicht aus dem Bild laufen. */
+@media (max-width: 479px) { .proto-back__text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); } .proto-back { min-width: 44px; justify-content: center; } }
 .proto-error { margin: 0; padding: var(--s-3); border-radius: var(--r-md); background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); }
 .proto-notice { margin: 0; padding: var(--s-3); border-radius: var(--r-md); background: color-mix(in srgb, var(--warning) 14%, transparent); display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2) var(--s-3); }
 .proto-notice a { font-weight: 600; }
@@ -129,7 +133,7 @@ body.web .icon-btn { cursor: pointer; }
 .web-frame__app { flex: 1; min-height: 0; }
 
 /* ---- Demo-Instanz ---- */
-.demo-banner { padding: calc(var(--safe-top) + var(--s-2)) var(--s-4) var(--s-2); background: color-mix(in srgb, var(--warning) 18%, var(--surface)); border-bottom: 1px solid var(--border); font-size: 0.85rem; line-height: 1.35; text-align: center; }
+.demo-banner { padding: calc(var(--safe-top) + 6px) var(--s-4) 6px; background: color-mix(in srgb, var(--warning) 18%, var(--surface)); border-bottom: 1px solid var(--border); font-size: 0.8rem; line-height: 1.3; text-align: center; }
 /* Die Leiste nimmt schon den Abstand zur Statusleiste (Notch) auf. */
 @media (max-width: 899px) { .demo-banner + .web-frame__app .shell__main { padding-top: var(--s-4); } }
 .demo-banner__link { padding: 0; border: 0; background: none; color: inherit; font: inherit; font-weight: 700; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }

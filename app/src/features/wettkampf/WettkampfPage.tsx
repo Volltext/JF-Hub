@@ -52,7 +52,7 @@ export function WettkampfPage() {
         </div>
 
         <Segmented<Tab>
-          compact
+          tabs
           value={tab}
           onChange={setTab}
           options={[
