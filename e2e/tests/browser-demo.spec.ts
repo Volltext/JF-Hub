@@ -61,4 +61,26 @@ test.describe('Demo im Browser (ohne Server)', () => {
     await page.getByRole('alertdialog').getByRole('button', { name: 'Zurücksetzen' }).click();
     await expect(page.getByText('Anmeldung Kreiszeltlager abschicken')).toBeVisible();
   });
+
+  // Der Kopf des Wettkampf-Bereichs (Wettbewerb, Reiter) darf den Inhalt darunter nicht verdecken und keine Beschriftung abschneiden:
+  // früher lag er (sticky mit negativen Rändern) bis zu 32 px über dem Zeitnehmer, dem A/B-Wechsel und der Verlauf/Matrix-Wahl.
+  for (const width of [320, 360, 390, 1280]) {
+    test(`Wettkampf: Kopfzeile verdeckt nichts und schneidet nichts ab (${width} px breit)`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(`${DEMO}#/wettkampf`);
+      for (const tab of ['Aufstellung', 'Stoppuhr', 'Analyse']) {
+        await page.getByRole('button', { name: tab, exact: true }).click();
+        const head = page.locator('.head-compact');
+        await expect(head).toBeVisible();
+        // Das erste Element unter der Kopfzeile beginnt unterhalb von ihr …
+        const first = head.locator('xpath=following-sibling::*[1]');
+        await expect(first).toBeVisible();
+        const [h, f] = await Promise.all([head.boundingBox(), first.boundingBox()]);
+        expect(f!.y, `${tab}: Inhalt beginnt unter der Kopfzeile`).toBeGreaterThanOrEqual(h!.y + h!.height - 0.5);
+        // … und keine Reiter- oder Wettbewerbsbeschriftung ist abgeschnitten.
+        const clipped = await head.locator('button').evaluateAll((buttons) => buttons.filter((b) => b.scrollWidth > b.clientWidth + 1).map((b) => b.textContent));
+        expect(clipped, `${tab}: abgeschnittene Beschriftungen`).toEqual([]);
+      }
+    });
+  }
 });
