@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Route, Routes } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { Bell, Database, Server, SlidersHorizontal, Timer } from 'lucide-react';
+import { Bell, Database, Mail, Server, SlidersHorizontal, Timer } from 'lucide-react';
 import { Button, Card, MenuGroup, MenuRow, Page, Segmented } from '@/core/ui/components';
 import { applyTheme } from '@/core/ui/theme';
 import { DEFAULT_SETTINGS, loadSettings, saveSettings, type Settings } from '@/core/settings/settings';
@@ -43,6 +43,7 @@ function Overview() {
       <MenuGroup>
         <MenuRow to="/einstellungen/allgemein" icon={SlidersHorizontal} title={IS_WEB ? 'Darstellung & neue Einträge' : 'Darstellung & Sicherheit'} sub={IS_WEB ? 'Hell/Dunkel, wer neue Einträge sieht' : 'Hell/Dunkel, PIN-Sperre, wer neue Einträge sieht'} />
         <MenuRow to="/einstellungen/erinnerungen" icon={Bell} title="Erinnerungen" sub="Dienst-Erinnerung, fällige Aufgaben" />
+        {!IS_DEMO && <MenuRow to="/mail/konto" icon={Mail} title="E-Mail-Postfach" sub="Eigenes Postfach verbinden, Benachrichtigung bei neuen Mails" />}
         <MenuRow to="/einstellungen/wettkampf" icon={Timer} title="Wettkampf" sub="Wasserentnahme im A-Teil" />
         <MenuRow to="/einstellungen/server" icon={Server} title={IS_WEB ? 'Konto' : 'Server & Konto'} sub="Anmeldung, Passwort, Geräte" />
         <MenuRow to="/einstellungen/daten" icon={Database} title="Daten & Backup" sub="Sicherung dieses Geräts, Export" />

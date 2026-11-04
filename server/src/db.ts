@@ -210,7 +210,7 @@ export function openDb(path: string): DatabaseSync {
       PRIMARY KEY (blobId, protocolId)
     );
     CREATE INDEX IF NOT EXISTS blob_refs_protocol ON blob_refs(protocolId);
-    -- Postfach je Betreuer (optional, ab 3.1.0). Das Passwort liegt verschlüsselt hier; der Schlüssel steht nie in der Datenbank (siehe mail/crypto.ts).
+    -- Postfach je Betreuer (optional). Das Passwort liegt verschlüsselt hier; der Schlüssel steht nie in der Datenbank (siehe mail/crypto.ts).
     CREATE TABLE IF NOT EXISTS mail_accounts (
       userId TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
       email TEXT NOT NULL,

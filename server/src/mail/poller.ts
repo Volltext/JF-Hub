@@ -38,10 +38,10 @@ export async function pollMail(db: DatabaseSync, key: Buffer, backend: MailBacke
       const items = check.fresh;
       if (items.length <= SHOW_INDIVIDUALLY) {
         for (const m of items) {
-          result.notified += await pushToUser(db, send, row.userId, { title: m.from || 'Neue Mail', body: m.subject || '(ohne Betreff)', url: `/mail/m/${encodeURIComponent('INBOX')}/${m.uid}`, tag: `mail:${m.uid}` });
+          result.notified += await pushToUser(db, send, row.userId, { title: m.from || 'Neue Mail', body: m.subject || '(ohne Betreff)', url: `/#/mail/m/INBOX/${m.uid}`, tag: `mail:${m.uid}` });
         }
       } else {
-        result.notified += await pushToUser(db, send, row.userId, { title: `${items.length} neue Mails`, body: items.slice(0, 3).map((m) => m.from).join(', ') + ' …', url: '/mail', tag: 'mail:many' });
+        result.notified += await pushToUser(db, send, row.userId, { title: `${items.length} neue Mails`, body: items.slice(0, 3).map((m) => m.from).join(', ') + ' …', url: '/#/mail', tag: 'mail:many' });
       }
     } catch (e) {
       result.failed++;

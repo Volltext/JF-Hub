@@ -15,6 +15,7 @@ Hier findest du alles zu JF Hub – von der Installation bis zum Datenschutz. Su
 | Thema | Worum geht's |
 | --- | --- |
 | [Erste Schritte](erste-schritte.md) | Die App in Bildern: Dienst erfassen, Protokoll schreiben, Aufgaben, Kleidung, Wettkampf |
+| [E-Mail](e-mail.md) | Eigenes Postfach einbinden: Mails lesen und schreiben, Anhänge und Aufgaben übernehmen, Protokolle als PDF verschicken |
 | [Benutzer und Sichtbarkeit](benutzer-und-sichtbarkeit.md) | Betreuer einladen, Rollen, privat oder veröffentlicht, geteilte Geräte |
 | [Android-App](android-app.md) | APK installieren, Unterschied zur Browser-App, selbst bauen |
 | [Datenschutz](datenschutz.md) | Welche Daten gespeichert werden und was du beachten solltest |

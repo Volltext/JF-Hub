@@ -101,7 +101,7 @@ export interface AppOptions {
   /** Kleinstes Dokumentformat (`X-JFH-Schema`), das der Server annimmt; ältere Apps bekommen 426 (Standard: `MIN_SCHEMA`). */
   minSchema?: number;
   /**
-   * E-Mail (optional, ab 3.1.0): Betreuer können ihr Postfach verbinden, Mails lesen, schreiben und Benachrichtigungen bekommen.
+   * E-Mail (optional): Betreuer können ihr Postfach verbinden, Mails lesen, schreiben und Benachrichtigungen bekommen.
    * Ohne `key` (Schlüssel für die gespeicherten Passwörter) ist die Funktion aus.
    */
   mail?: {

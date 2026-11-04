@@ -57,7 +57,7 @@ export function PushCard() {
     <Card title="Benachrichtigungen auf diesem Gerät">
       <div className="stack">
         <p className="muted">
-          Der Server schickt Erinnerungen (Dienst, fällige Aufgaben) auch dann, wenn diese Seite geschlossen ist. Das gilt nur für dieses Gerät und diesen Browser.
+          Der Server schickt Erinnerungen (Dienst, fällige Aufgaben) und, wenn du ein E-Mail-Postfach verbunden hast, neue Mails auch dann, wenn diese Seite geschlossen ist. Das gilt nur für dieses Gerät und diesen Browser.
         </p>
         {reason ? (
           <p role="status">{reason}</p>

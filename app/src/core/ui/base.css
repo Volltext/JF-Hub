@@ -10,7 +10,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 h1, h2, h3 { margin: 0; line-height: 1.2; letter-spacing: -0.015em; }
 
 .shell { display: flex; flex-direction: column; height: 100%; }
-.shell__main { flex: 1; min-width: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior-x: none; padding: calc(var(--safe-top) + var(--s-4)) var(--s-4) var(--s-5); }
+.shell__main { position: relative; z-index: 1; /* Fenster (Sheet) darin liegen über der unteren Leiste, nicht darunter */ flex: 1; min-width: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior-x: none; padding: calc(var(--safe-top) + var(--s-4)) var(--s-4) var(--s-5); }
 .page { max-width: 720px; margin: 0 auto; display: flex; flex-direction: column; gap: var(--s-4); padding-bottom: 72px; animation: page-in 220ms var(--ease) both; }
 .page__head { display: flex; align-items: flex-start; gap: var(--s-3); }
 .page__headtext { flex: 1; min-width: 0; }

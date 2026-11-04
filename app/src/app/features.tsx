@@ -6,6 +6,7 @@ import {
   Home,
   LayoutGrid,
   ListTodo,
+  Mail,
   Settings,
   Shirt,
   Timer,
@@ -22,6 +23,7 @@ import { WissenPage } from '@/features/wissen/WissenPage';
 import { MembersPage } from '@/features/mitglieder/MembersPage';
 import { ProtokollePage } from '@/features/protokolle/ProtokollePage';
 import { KleidungPage } from '@/features/kleidung/KleidungPage';
+import { MailPage } from '@/features/mail/MailPage';
 
 /** Thematische Gruppen: gliedern die Seitenleiste (breite Bildschirme) und die Mehr-Seite. */
 export type FeatureGroup = 'start' | 'gruppe' | 'dokumentation' | 'wettkampf' | 'app';
@@ -94,6 +96,15 @@ export const features: Feature[] = [
     group: 'gruppe',
     description: 'Kleidergrößen und was neu beschafft werden muss',
     element: <KleidungPage />,
+  },
+  {
+    id: 'mail',
+    path: '/mail/*',
+    label: 'E-Mail',
+    icon: Mail,
+    group: 'dokumentation',
+    description: 'Eigenes Postfach: Mails lesen, schreiben, Anhänge und Aufgaben übernehmen',
+    element: <MailPage />,
   },
   {
     id: 'protokolle',

@@ -318,7 +318,7 @@ describe('Benachrichtigung bei neuen Mails', () => {
     fake.add({ from: { name: 'Bernd Chef', address: 'b@example.org' }, subject: 'Zeltlager' });
     const res = await poll();
     expect(res.notified).toBe(1);
-    expect(pushed).toEqual([{ title: 'Bernd Chef', body: 'Zeltlager', url: '/mail/m/INBOX/3', tag: 'mail:3' }]);
+    expect(pushed).toEqual([{ title: 'Bernd Chef', body: 'Zeltlager', url: '/#/mail/m/INBOX/3', tag: 'mail:3' }]);
     await poll();
     expect(pushed).toHaveLength(1); // nicht noch einmal
   });
@@ -332,7 +332,7 @@ describe('Benachrichtigung bei neuen Mails', () => {
     await poll();
     expect(pushed).toHaveLength(1);
     expect(pushed[0]!.title).toBe('5 neue Mails');
-    expect(pushed[0]!.url).toBe('/mail');
+    expect(pushed[0]!.url).toBe('/#/mail');
   });
 
   it('bei neuer UIDVALIDITY (Posteingang neu aufgebaut) wird neu begonnen statt alles zu melden', async () => {

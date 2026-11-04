@@ -137,6 +137,10 @@ Alle Werte sind **optional**. Sie stehen in der `.env` neben der `docker-compose
 | `ADMIN_USER` / `ADMIN_PASSWORD` | Erstes Konto per Umgebung statt Setup-Code | leer |
 | `ADMIN_PASSWORD_RESET` | `1` setzt das Passwort von `ADMIN_USER` auf `ADMIN_PASSWORD` (danach wieder `0`) | `0` |
 | `PUSH_SUBJECT` | Kontaktadresse für den Push-Dienst der Browser (`mailto:…` oder https-Adresse) – bitte eine eigene eintragen | `mailto:admin@example.com` |
+| `MAIL_ENABLED` | `0` schaltet die [E-Mail](e-mail.md)-Funktion auf dem Server ab | `1` |
+| `MAIL_KEY` | Schlüssel für die gespeicherten Postfach-Passwörter (64 Hex-Zeichen, `openssl rand -hex 32`). Leer = Datei `mail.key` im Datenordner | leer |
+| `MAIL_ALLOW_PRIVATE` | `1` erlaubt Mail-Server in privaten Netzen | `0` |
+| `MAIL_POLL_SECONDS` | Abstand der Prüfung auf neue Mails (mindestens 30) | `120` |
 | `TRUST_PROXY` | Welchen Proxys `X-Forwarded-For` geglaubt wird. Leer = nur Proxys aus privaten Netzen. `true` = jedem. `false` = keinem | leer |
 | `TUNNEL_TOKEN` | Cloudflare-Tunnel-Token (Profil `tunnel`) | leer |
 | `DOMAIN` | Domain für Caddy (`docker-compose.caddy.yml`) | – |
@@ -163,7 +167,7 @@ Die App im Browser aktualisiert sich selbst: Beim nächsten Öffnen mit Netz wir
 
 ## Backup und Wiederherstellung
 
-Alles liegt in `/data` (Datei `jf-hub.sqlite`).
+Alles liegt in `/data` (Datei `jf-hub.sqlite`). Hast du [E-Mail](e-mail.md) im Einsatz, liegt dort auch `mail.key`: der Schlüssel zu den gespeicherten Postfach-Passwörtern. Die Backups enthalten ihn bewusst **nicht**; sicher ihn getrennt (sonst verbinden die Betreuer ihr Postfach nach einer Wiederherstellung auf einem neuen Volume neu).
 
 ### Automatisch
 
