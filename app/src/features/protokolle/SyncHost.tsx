@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { App as CapApp } from '@capacitor/app';
 import { CHANGED_EVENT } from '@/core/db/outbox';
+import { live } from '@/features/wettkampf/live';
 import { refreshAccount } from './auth';
 import { scheduleSync, syncNow } from './sync';
 
@@ -9,6 +10,7 @@ export function SyncHost() {
   useEffect(() => {
     const run = () => {
       void syncNow();
+      void live.flush(); // offline getippte Stoppuhr-Eingaben, auch wenn die Stoppuhr nicht offen ist
     };
     run();
     void refreshAccount(); // Name und Rolle des Kontos (auch nach einem Update von 1.x ohne neue Anmeldung)

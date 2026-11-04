@@ -137,7 +137,7 @@ Pro Mitglied trägst du die aktuelle Größe ein. Mit **eine Größe größer** 
 
 **Wettkampf**
 
-Wähle Bundeswettbewerb oder Leistungsspange, stelle die **Aufstellung** zusammen und nimm Läufe mit der **Stoppuhr** samt Zwischenzeiten und Fehlerwertung auf. Die **Analyse** zeigt den Verlauf deiner Läufe und eine Matrix, wer auf welcher Position schon eingesetzt war.
+Wähle Bundeswettbewerb oder Leistungsspange, stelle die **Aufstellung** zusammen und nimm Läufe mit der **Stoppuhr** samt Zwischenzeiten und Fehlerwertung auf. Die Stoppuhr ist **live**: alle angemeldeten Betreuer sehen dieselbe Zeit mitlaufen. Die **Analyse** zeigt den Verlauf deiner Läufe und eine Matrix, wer auf welcher Position schon eingesetzt war.
 
 </td>
 </tr>

@@ -1,13 +1,21 @@
-import { newId } from '@/core/domain/id';
+import { deriveId, newId } from '@/core/domain/id';
 import type { Draft } from './model';
 
 /** Reine Zustandsübergänge der Stoppuhr. `now` wird übergeben, damit alles ohne Uhr testbar ist. */
 
 export const KNOT_START = 'Knoten Start';
 
+/**
+ * Kennung des nächsten Laufs nach dem Zurücksetzen. Abgeleitet statt zufällig: setzen zwei Geräte denselben Lauf
+ * gleichzeitig zurück (z. B. beide tippen „Lauf speichern“), landen sie beim selben neuen Lauf.
+ */
+export const nextSessionId = (id: string): string => deriveId('lauf', id);
+
 export function emptyDraft(mode: string): Draft {
   return {
     mode,
+    // Auch der erste Lauf eines Modus ist auf allen Geräten derselbe.
+    id: deriveId('lauf', mode),
     isRunning: false,
     startTimestamp: null,
     elapsedMs: 0,
@@ -23,6 +31,27 @@ export function emptyDraft(mode: string): Draft {
     judgePoints: null,
     nullwertungIds: [],
   };
+}
+
+const isObject = (x: unknown): x is Record<string, unknown> => !!x && typeof x === 'object' && !Array.isArray(x);
+
+/**
+ * Ein gespeicherter oder vom Server empfangener Stand, ergänzt um fehlende Felder (ältere Stände, andere App-Versionen).
+ * Unbrauchbare Werte werden ersetzt statt die Anzeige abstürzen zu lassen.
+ */
+export function normalizeDraft(mode: string, raw: unknown): Draft {
+  const d: Draft = { ...emptyDraft(mode), ...(isObject(raw) ? (raw as Partial<Draft>) : {}), mode };
+  if (typeof d.id !== 'string' || !d.id) d.id = emptyDraft(mode).id;
+  if (typeof d.elapsedMs !== 'number' || !Number.isFinite(d.elapsedMs)) d.elapsedMs = 0;
+  if (typeof d.isRunning !== 'boolean' || (d.isRunning && typeof d.startTimestamp !== 'number')) d.isRunning = false;
+  if (!d.isRunning) d.startTimestamp = null;
+  if (!Array.isArray(d.markers)) d.markers = [];
+  if (!isObject(d.taskTimers)) d.taskTimers = {};
+  if (!isObject(d.fehlerCounts)) d.fehlerCounts = {};
+  if (!Array.isArray(d.nullwertungIds)) d.nullwertungIds = [];
+  if (typeof d.notes !== 'string') d.notes = '';
+  if (d.opIds !== undefined && !Array.isArray(d.opIds)) delete d.opIds;
+  return d;
 }
 
 export function elapsedOf(d: Draft, now: number): number {
@@ -44,9 +73,15 @@ export function stop(d: Draft, now: number): Draft {
   return { ...d, isRunning: false, startTimestamp: null, elapsedMs, knotDurationMs };
 }
 
-/** Setzt Zeit, Marker und Messwerte zurück. Wertungs-Einstellungen (Soll-Zeit, an/aus) bleiben. */
+/** Setzt Zeit, Marker und Messwerte zurück und beginnt einen neuen Lauf. Wertungs-Einstellungen (Soll-Zeit, an/aus) bleiben. */
 export function reset(d: Draft): Draft {
-  return { ...emptyDraft(d.mode), scoringEnabled: d.scoringEnabled, targetSeconds: d.targetSeconds, wasserentnahme: d.wasserentnahme };
+  return {
+    ...emptyDraft(d.mode),
+    id: nextSessionId(d.id),
+    scoringEnabled: d.scoringEnabled,
+    targetSeconds: d.targetSeconds,
+    wasserentnahme: d.wasserentnahme,
+  };
 }
 
 export function hasData(d: Draft, now: number): boolean {
@@ -67,7 +102,7 @@ export function hasData(d: Draft, now: number): boolean {
  * B-Teil: erstes Tippen startet die Aufgabe, zweites stoppt sie, danach passiert nichts mehr.
  * A-Teil: „Knoten Start“ kann nur einmal gesetzt werden, andere Marker beliebig oft.
  */
-export function addSplit(d: Draft, label: string, now: number): Draft {
+export function addSplit(d: Draft, label: string, now: number, markerId: string = newId()): Draft {
   if (!d.isRunning) return d;
   const elapsed = elapsedOf(d, now);
 
@@ -80,7 +115,7 @@ export function addSplit(d: Draft, label: string, now: number): Draft {
   }
 
   if (label === KNOT_START && d.knotStartElapsedMs !== null) return d;
-  const marker = { id: newId(), label, elapsedMs: elapsed };
+  const marker = { id: markerId, label, elapsedMs: elapsed };
   return {
     ...d,
     markers: [marker, ...d.markers],
@@ -119,10 +154,13 @@ export function removeFehler(d: Draft, errorId: string): Draft {
 }
 
 export function toggleNullwertung(d: Draft, id: string): Draft {
-  return {
-    ...d,
-    nullwertungIds: d.nullwertungIds.includes(id) ? d.nullwertungIds.filter((x) => x !== id) : [...d.nullwertungIds, id],
-  };
+  return setNullwertung(d, id, !d.nullwertungIds.includes(id));
+}
+
+/** Setzt eine Nullwertung an oder aus (unverändert, wenn sie schon so steht). */
+export function setNullwertung(d: Draft, id: string, on: boolean): Draft {
+  if (d.nullwertungIds.includes(id) === on) return d;
+  return { ...d, nullwertungIds: on ? [...d.nullwertungIds, id] : d.nullwertungIds.filter((x) => x !== id) };
 }
 
 /** Eingabemaske für Zeiten: nur Ziffern, höchstens vier, als „mm:ss“. */

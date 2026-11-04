@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Card, Segmented } from '@/core/ui/components';
 import type { Draft } from './model';
+import type { DraftOp } from './ops';
 import { ErrorCatalog } from './ErrorCatalog';
 import { A_FEHLER_GROUPS, A_QUICK_FEHLER } from './rules/bwScoring';
 import {
@@ -12,20 +13,27 @@ import {
   naechsteStufe,
 } from './rules/leistungsspange';
 import { lspWertung } from './run';
-import { addFehler, removeFehler, toggleNullwertung } from './stopwatch';
-
-type Update = (fn: (d: Draft, now: number) => Draft) => void;
 
 interface Props {
   draft: Draft;
-  update: Update;
+  dispatch: (op: DraftOp) => void;
   variante: string;
   onVariante: (id: string) => void;
 }
 
 /** Leistungsspange: Disziplin-Hinweise, Messwert bzw. Bewertung, Nullwertungen und live berechnete Punkte. */
-export function LspPanel({ draft, update, variante, onVariante }: Props) {
-  const [meters, setMeters] = useState(draft.measuredCm ? String(draft.measuredCm / 100).replace('.', ',') : '');
+const toCm = (meters: string): number | null => {
+  const n = Number(meters.replace(',', '.'));
+  return Number.isFinite(n) && n > 0 ? Math.round(n * 100) : null;
+};
+const toMeters = (cm: number | null) => (cm ? String(cm / 100).replace('.', ',') : '');
+
+export function LspPanel({ draft, dispatch, variante, onVariante }: Props) {
+  const [meters, setMeters] = useState(toMeters(draft.measuredCm));
+  // Messwert von einem anderen Gerät (oder anderem Modus) übernehmen; die eigene Eingabe bleibt, solange sie dasselbe meint.
+  useEffect(() => {
+    setMeters((m) => (toCm(m) === draft.measuredCm ? m : toMeters(draft.measuredCm)));
+  }, [draft.measuredCm]);
   const disziplin = getLspDisziplin(draft.mode);
   const wertung = lspWertung(draft, variante, Date.now());
   // Schutz: gehört der Entwurf nicht zu einer Leistungsspangen-Disziplin, gibt es hier nichts anzuzeigen.
@@ -72,8 +80,7 @@ export function LspPanel({ draft, update, variante, onVariante }: Props) {
                 value={meters}
                 onChange={(e) => {
                   setMeters(e.target.value);
-                  const n = Number(e.target.value.replace(',', '.'));
-                  update((d) => ({ ...d, measuredCm: Number.isFinite(n) && n > 0 ? Math.round(n * 100) : null }));
+                  dispatch({ type: 'set', patch: { measuredCm: toCm(e.target.value) } });
                 }}
               />
             </label>
@@ -87,7 +94,7 @@ export function LspPanel({ draft, update, variante, onVariante }: Props) {
                   <button
                     key={s.punkte}
                     aria-pressed={draft.judgePoints === s.punkte}
-                    onClick={() => update((d) => ({ ...d, judgePoints: d.judgePoints === s.punkte ? null : s.punkte }))}
+                    onClick={() => dispatch({ type: 'set', patch: { judgePoints: draft.judgePoints === s.punkte ? null : s.punkte } })}
                   >
                     <strong>{s.punkte}</strong>
                     <small>{s.label}</small>
@@ -112,7 +119,7 @@ export function LspPanel({ draft, update, variante, onVariante }: Props) {
                 key={n.id}
                 className="toggle"
                 aria-pressed={draft.nullwertungIds.includes(n.id)}
-                onClick={() => update((d) => toggleNullwertung(d, n.id))}
+                onClick={() => dispatch({ type: 'nullwertung', id: n.id, on: !draft.nullwertungIds.includes(n.id) })}
               >
                 <span className="toggle__box">{draft.nullwertungIds.includes(n.id) && '✓'}</span>
                 {n.label}
@@ -132,8 +139,8 @@ export function LspPanel({ draft, update, variante, onVariante }: Props) {
             quick={A_QUICK_FEHLER}
             hiddenIds={[...LSP_OHNE_HINDERNIS_FEHLER_IDS, 'a-q-wassergraben', 'a-q-hindernis']}
             counts={draft.fehlerCounts}
-            onAdd={(id) => update((d) => addFehler(d, id))}
-            onRemove={(id) => update((d) => removeFehler(d, id))}
+            onAdd={(id) => dispatch({ type: 'fehler', errorId: id, delta: 1 })}
+            onRemove={(id) => dispatch({ type: 'fehler', errorId: id, delta: -1 })}
           />
         </Card>
       )}

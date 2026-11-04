@@ -1,18 +1,23 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Card } from '@/core/ui/components';
 import type { Draft } from './model';
+import type { DraftOp } from './ops';
 import { ErrorCatalog } from './ErrorCatalog';
 import { catalogFor, getScoringConfig, type Wasserentnahme } from './rules/bwScoring';
 import { bwScore } from './run';
-import { addFehler, maskTime, parseTargetSeconds, removeFehler } from './stopwatch';
+import { maskTime, parseTargetSeconds } from './stopwatch';
 
-type Update = (fn: (d: Draft, now: number) => Draft) => void;
+type Dispatch = (op: DraftOp) => void;
 
 const fmt = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 
 /** Wertung im Bundeswettbewerb: Soll-Zeit, Fehlererfassung und live berechnete Punktzahl. */
-export function BwPanel({ draft, update, variant }: { draft: Draft; update: Update; variant: Wasserentnahme }) {
+export function BwPanel({ draft, dispatch, variant }: { draft: Draft; dispatch: Dispatch; variant: Wasserentnahme }) {
   const [target, setTarget] = useState(draft.targetSeconds ? fmt(draft.targetSeconds) : '');
+  // Soll-Zeit von einem anderen Gerät (oder anderem Modus) übernehmen; die eigene Eingabe bleibt, solange sie dasselbe meint.
+  useEffect(() => {
+    setTarget((t) => (parseTargetSeconds(t) === draft.targetSeconds ? t : draft.targetSeconds ? fmt(draft.targetSeconds) : ''));
+  }, [draft.targetSeconds]);
   const cfg = getScoringConfig(draft.mode);
   const score = bwScore(draft, Date.now());
   const isA = draft.mode === 'a';
@@ -23,7 +28,7 @@ export function BwPanel({ draft, update, variant }: { draft: Draft; update: Upda
         <button
           className="toggle"
           aria-pressed={draft.scoringEnabled}
-          onClick={() => update((d) => ({ ...d, scoringEnabled: !d.scoringEnabled }))}
+          onClick={() => dispatch({ type: 'set', patch: { scoringEnabled: !draft.scoringEnabled } })}
         >
           <span className="toggle__box">{draft.scoringEnabled && '✓'}</span> Wettkampf-Wertung mitführen
         </button>
@@ -40,7 +45,7 @@ export function BwPanel({ draft, update, variant }: { draft: Draft; update: Upda
                   const masked = maskTime(e.target.value);
                   setTarget(masked);
                   const seconds = parseTargetSeconds(masked);
-                  update((d) => ({ ...d, targetSeconds: seconds }));
+                  dispatch({ type: 'set', patch: { targetSeconds: seconds } });
                 }}
               />
             </label>
@@ -57,8 +62,8 @@ export function BwPanel({ draft, update, variant }: { draft: Draft; update: Upda
               groups={catalogFor(draft.mode, variant)}
               quick={cfg.quick}
               counts={draft.fehlerCounts}
-              onAdd={(id) => update((d) => addFehler(d, id))}
-              onRemove={(id) => update((d) => removeFehler(d, id))}
+              onAdd={(id) => dispatch({ type: 'fehler', errorId: id, delta: 1 })}
+              onRemove={(id) => dispatch({ type: 'fehler', errorId: id, delta: -1 })}
             />
           </>
         )}
