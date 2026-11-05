@@ -56,15 +56,18 @@ export function PushCard() {
   return (
     <Card title="Benachrichtigungen auf diesem Gerät">
       <div className="stack">
-        <p className="muted">
-          Der Server schickt Erinnerungen (Dienst, fällige Aufgaben) und, wenn du ein E-Mail-Postfach verbunden hast, neue Mails auch dann, wenn diese Seite geschlossen ist. Das gilt nur für dieses Gerät und diesen Browser.
-        </p>
+        {!reason && (
+          <p className="muted" style={{ margin: 0 }}>
+            Dienst-Erinnerungen, fällige Aufgaben und neue Mails – auch wenn JF Hub geschlossen ist. Gilt nur für dieses Gerät.
+          </p>
+        )}
         {reason ? (
           <p role="status">{reason}</p>
         ) : (
           <>
-            <button className="toggle" aria-pressed={!!on} disabled={busy || on === null} onClick={() => void toggle()}>
-              <span className="toggle__box">{on && '✓'}</span> Erinnerungen als Benachrichtigung zeigen
+            <button className="toggle toggle--switch" aria-pressed={!!on} disabled={busy || on === null} onClick={() => void toggle()}>
+              Erinnerungen als Benachrichtigung zeigen
+              <span className="switch" aria-hidden="true" />
             </button>
             {on && (
               <Button disabled={busy} onClick={() => void test()}>

@@ -54,9 +54,9 @@ body.web .icon-btn { cursor: pointer; }
 .ed-toolbar::-webkit-scrollbar, .ed-context::-webkit-scrollbar { display: none; }
 .ed-tool { flex: 0 0 auto; width: 44px; height: 44px; display: grid; place-items: center; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text); cursor: pointer; }
 .ed-tool:hover { background: var(--surface-2); }
-.ed-tool[aria-pressed='true'] { background: var(--primary); color: var(--on-primary); }
+.ed-tool[aria-pressed='true'] { background: color-mix(in srgb, var(--primary) 16%, transparent); color: var(--primary-text); }
 .ed-tool:disabled { opacity: 0.35; cursor: default; }
-.ed-tool:focus-visible, .proto-title:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.ed-tool:focus-visible, .proto-title:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
 .ed-toolbar__sep { flex: 0 0 1px; align-self: stretch; margin: 8px 4px; background: var(--border); }
 
 /* Kontextzeile: Link-Leiste oder Tabellen-Leiste, je nachdem, wo der Cursor steht */
@@ -68,7 +68,7 @@ body.web .icon-btn { cursor: pointer; }
 .ed-chip[aria-pressed='true'] { background: var(--primary); border-color: transparent; color: var(--on-primary); }
 .ed-chip:disabled { opacity: 0.35; cursor: default; }
 .ed-chip--danger { color: var(--danger); }
-.ed-chip:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.ed-chip:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
 
 /* Maus/Tastatur: Dock haftet oben, die Kontextzeile steht unter der Leiste (auch in der Tab-Reihenfolge: Leiste zuerst).
    Touch: Dock haftet unten, direkt über der Bildschirmtastatur, die Kontextzeile steht optisch über der Leiste. */
@@ -128,7 +128,7 @@ body.web .icon-btn { cursor: pointer; }
 .ed-content ::selection { background: color-mix(in srgb, var(--primary) 30%, transparent); }
 
 /* ---- Web-Client (Laptop) ---- */
-.web-login { max-width: 380px; margin: 14vh auto 0; padding: 0 var(--s-4); }
+.web-login { max-width: 400px; margin: 10vh auto 0; padding: 0 var(--s-4) var(--s-6); }
 .web-frame { height: 100%; display: flex; flex-direction: column; }
 .web-frame__app { flex: 1; min-height: 0; }
 
@@ -242,7 +242,7 @@ body.web .icon-btn { cursor: pointer; }
 .proto-filter strong { color: var(--text); }
 
 /* ----- Breit: Liste links, Editor rechts ----- */
-.proto-split { display: grid; grid-template-columns: minmax(300px, 360px) minmax(0, 1fr); gap: var(--s-6); align-items: start; max-width: 1180px; margin: 0 auto; }
+.proto-split { display: grid; grid-template-columns: minmax(320px, 400px) minmax(0, 1fr); gap: var(--s-6); align-items: start; max-width: 1180px; margin: 0 auto; }
 .proto-split__list { position: sticky; top: calc(var(--s-6) * -1); align-self: start; max-height: 100vh; overflow-y: auto; padding: var(--s-6) var(--s-2) var(--s-6) 0; margin-top: calc(var(--s-6) * -1); scrollbar-width: thin; }
 .proto-split__main { min-width: 0; }
 .proto-split__list .proto { gap: var(--s-3); max-width: none; min-height: 0; }
@@ -256,3 +256,15 @@ body.web .icon-btn { cursor: pointer; }
 .proto-split__empty svg { color: var(--primary); opacity: 0.8; }
 .proto-split__empty strong { color: var(--text); font-size: 1.1rem; }
 .proto-split__empty p { margin: 0; max-width: 34ch; }
+
+/* Laptop mit Maus: alle Werkzeuge sichtbar, ohne seitliches Wischen */
+@media (min-width: 900px) and (pointer: fine) {
+  .ed-toolbar { flex-wrap: wrap; overflow: visible; background: var(--surface); }
+  .ed-tool { width: 36px; height: 36px; }
+  .ed-toolbar__sep { margin: 6px 3px; }
+}
+/* Tastenkürzel-Hinweis nur mit Tastatur/Maus */
+.kbd-hint { flex-shrink: 0; min-width: 24px; padding: 1px 7px; border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 6px; font: 600 0.78rem var(--font-mono); color: var(--muted); text-align: center; }
+@media (hover: none) { .kbd-hint { display: none; } }
+.icon-btn--danger:hover { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, var(--border)); }
+.proto-bar .icon-btn--danger { margin-left: var(--s-2); }

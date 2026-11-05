@@ -33,6 +33,7 @@ export function WettkampfPage() {
 
   return (
     <div className="page page--tight">
+      <h1 className="sr-only">Wettkampf</h1>
       {/* Kopfzeile bewusst flach: Wettbewerb und Bereich auf möglichst wenig Höhe. */}
       <div className="head-compact">
         <Segmented

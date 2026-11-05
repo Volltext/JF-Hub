@@ -14,8 +14,15 @@
   --border: rgba(255, 255, 255, 0.09);
   --text: #f4f4f6;
   --muted: #9aa0ab;
-  --primary: #e5372e;
-  --primary-press: #c92c24;
+  /* Flächen mit weißer Schrift (mind. 4,5 : 1) */
+  --primary: #d42a22;
+  --primary-press: #b8231c;
+  /* Rot als Schrift auf dunklen Flächen (mind. 4,5 : 1) */
+  --primary-text: #ff6b63;
+  /* Fokusrahmen: bewusst nicht rot, damit er nicht wie ein Fehler aussieht */
+  --focus: #7aa7ff;
+  /* Diagramme: eine Reihe, neutral-kühl (Rot und Grün sind für Status reserviert) */
+  --chart: #7aa7ff;
   --on-primary: #ffffff;
   --accent: #f97316;
   --success: #34c27a;
@@ -48,8 +55,11 @@
   --muted: #5f6672;
   --primary: #d42a22;
   --primary-press: #b4221b;
-  --accent: #c2570c;
-  --success: #177a47; /* mindestens 4,5 : 1 als Text auf --bg und --surface (WCAG AA) */
+  --primary-text: #c4251d;
+  --focus: #2563eb;
+  --chart: #3b6fd8;
+  --accent: #ad4b08;
+  --success: #136a3d; /* mindestens 4,5 : 1 als Text auf --bg, --surface und getönten Chips (WCAG AA) */
   --warning: #8a5f00;
   --danger: #c93028;
   --shadow-1: 0 1px 2px rgba(20, 22, 28, 0.06), 0 1px 3px rgba(20, 22, 28, 0.05);

@@ -36,12 +36,13 @@ export function WebApp() {
   if (phase === 'boot') return null;
   if (phase === 'login') {
     return (
-      <div className="web-login stack">
-        <div className="side__brand" style={{ justifyContent: 'center', paddingBottom: 'var(--s-3)' }}>
+      <main className="web-login stack">
+        <header className="web-login__brand">
           <img className="side__logo" src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" />
-          JF Hub
-        </div>
-        <Card title={invite ? 'Willkommen – Passwort festlegen' : 'Anmelden'}>
+          <h1>JF Hub</h1>
+        </header>
+        <p className="web-login__lead">{invite ? 'Willkommen! Leg dein Passwort fest, dann geht es los.' : 'Die Zentrale für eure Betreuer: Dienste, Protokolle, Aufgaben und Wettkampf.'}</p>
+        <Card>
           <AuthForm
             invite={invite}
             onDone={() => {
@@ -51,7 +52,7 @@ export function WebApp() {
             }}
           />
         </Card>
-      </div>
+      </main>
     );
   }
   // Immer im selben Rahmen, damit die App nicht neu startet, wenn die Demo-Auskunft nachträglich eintrifft.

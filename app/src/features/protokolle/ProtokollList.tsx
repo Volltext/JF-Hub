@@ -145,8 +145,8 @@ export function ProtokollList({ split = false, folder, activeId }: { split?: boo
           <ArrowDownUp size={19} />
         </button>
         {split && (
-          <button type="button" className="icon-btn icon-btn--primary" aria-label="Neues Protokoll" title="Neues Protokoll" onClick={() => void create()}>
-            <Plus size={20} />
+          <button type="button" className="btn btn--primary btn--sm btn--icon" aria-label="Neues Protokoll" title="Neues Protokoll" onClick={() => void create()}>
+            <Plus size={18} /> Neu
           </button>
         )}
         {syncState !== 'off' && (
@@ -197,7 +197,8 @@ export function ProtokollList({ split = false, folder, activeId }: { split?: boo
 
       <label className="proto-search">
         <Search size={18} />
-        <input ref={searchRef} type="search" placeholder="Alle Protokolle durchsuchen   ( / )" aria-label="Volltextsuche in allen Protokollen" value={q} onChange={(e) => setQ(e.target.value)} />
+        <input ref={searchRef} type="search" placeholder="Alle Protokolle durchsuchen" aria-label="Volltextsuche in allen Protokollen" aria-keyshortcuts="/" value={q} onChange={(e) => setQ(e.target.value)} />
+        {!q && <kbd className="kbd-hint" title="Taste / springt in die Suche">/</kbd>}
       </label>
 
       {tagCounts.length > 0 && (

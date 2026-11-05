@@ -151,7 +151,11 @@
       setup && field('Anzeigename', name),
       field(setup ? 'Passwort (mind. 10 Zeichen)' : 'Passwort', pw),
       btn, box);
-    return h('div', { class: 'center' }, h('div', { class: 'brand', style: 'margin-bottom:16px' }, h('img', { class: 'logo', src: 'favicon.svg', alt: '' }), 'JF Hub – Server'), !setup && demoLogin(), form);
+    return h('main', { class: 'center' },
+      h('div', { class: 'brand', style: 'margin-bottom:8px' }, h('img', { class: 'logo', src: 'favicon.svg', alt: '' }), h('h1', null, 'JF Hub – Server-Verwaltung')),
+      h('p', { class: 'muted', style: 'margin:0 0 16px' }, setup ? 'Lege das erste Admin-Konto an.' : 'Nur für Admins. Die App für alle Betreuer liegt unter ' + location.host + '.'),
+      !setup && demoLogin(), form,
+      !setup && h('p', { class: 'muted small', style: 'text-align:center;margin-top:12px' }, 'Passwort vergessen? Ein anderer Admin kann es unter „Benutzer“ zurücksetzen.'));
   }
 
   // ---------- Demo-Instanz (Server mit DEMO=1) ----------
@@ -218,24 +222,19 @@
   }
 
   VIEWS.overview = function () {
-    var wrap = h('div', { class: 'page', style: 'display:grid;gap:16px' });
+    var wrap = h('div', { class: 'page' });
     var stats = h('div', { class: 'card' }, h('h2', null, 'Status'), h('p', { class: 'muted' }, 'Lade …'));
-    var tiles = h('div', { class: 'tiles' },
-      tile('Benutzer verwalten', 'Betreuer einladen, sperren, Passwort zurücksetzen', 'users', 'users'),
-      tile('Protokolle verwalten', 'Ansehen, als PDF öffnen, Papierkorb', 'file', 'protocols'),
-      tile('PDF-Layout anpassen', 'Logo, Kopf- und Fußzeile, Akzentfarbe', 'layout', 'layout'),
-      tile('Geräte & Passwort', 'Wer ist angemeldet, eigenes Passwort ändern', 'shield', 'security'),
-      tile('Backup herunterladen', 'Datenbank und alle Protokolle sichern', 'db', 'backup'));
-    Promise.all([json('GET', '/admin/info'), json('GET', '/admin/sessions')]).then(function (r) {
+    var next = h('div', { class: 'card' }, h('h2', null, 'Als Nächstes'), h('p', { class: 'muted' }, 'Lade …'));
+    Promise.all([json('GET', '/admin/info'), json('GET', '/admin/sessions'), json('GET', '/admin/settings').catch(function () { return {}; }), json('GET', '/admin/backups').catch(function () { return { items: [] }; })]).then(function (r) {
       var i = r[0];
-      var up = Math.floor(i.uptime / 86400) ? Math.floor(i.uptime / 86400) + ' d ' : '';
-      up += Math.floor((i.uptime % 86400) / 3600) + ' h ' + Math.floor((i.uptime % 3600) / 60) + ' min';
+      var d = Math.floor(i.uptime / 86400), hrs = Math.floor(i.uptime / 3600), min = Math.floor(i.uptime / 60);
+      var up = d ? 'läuft seit ' + d + (d === 1 ? ' Tag' : ' Tagen') : hrs ? 'läuft seit ' + hrs + ' Std.' : min ? 'läuft seit ' + min + ' Min.' : 'gerade gestartet';
       stats.textContent = '';
       stats.appendChild(h('h2', null, 'Status'));
       stats.appendChild(h('div', { class: 'grid' },
-        stat(i.users, 'Benutzer'), stat(i.protocols, 'Protokolle'), stat(i.trashed, 'im Papierkorb'), stat(r[1].length, 'angemeldete Geräte'),
-        stat(i.blobs === undefined ? '–' : i.blobs + ' · ' + fmtSize(i.blobBytes), 'Fotos und Anhänge'),
-        stat(i.version, 'Serverversion'), stat(up, 'Laufzeit')));
+        stat(i.users, i.users === 1 ? 'Benutzer' : 'Benutzer'), stat(r[1].length, 'angemeldete Geräte'), stat(i.protocols, 'Protokolle'), stat(i.trashed, 'im Papierkorb'),
+        stat(i.blobs === undefined ? '–' : i.blobs, 'Fotos und Anhänge')));
+      stats.appendChild(h('p', { class: 'meta-line' }, 'Version ' + i.version + ' · ' + up + (i.blobBytes ? ' · Anhänge belegen ' + fmtSize(i.blobBytes) : '')));
       // Texte, die sich nicht für das gemeinsame Bearbeiten umstellen ließen, bleiben unverändert und sind nur lesbar.
       if (i.collab && (i.collab.pending > 0 || i.collab.error)) {
         var parts = [];
@@ -249,20 +248,36 @@
         }
         stats.appendChild(h('div', { class: 'msg err', role: 'alert' }, parts));
       }
+      // Was für einen guten Betrieb noch fehlt – erledigte Schritte bleiben abgehakt stehen.
+      var steps = [
+        { done: i.users > 1, title: 'Betreuer einladen', sub: 'Jeder bekommt einen Link und vergibt sein Passwort selbst.', tab: 'users', btn: 'Einladen' },
+        { done: !!(r[2].logo || (r[2].footer && r[2].footer.trim())), title: 'PDF-Layout anpassen', sub: 'Logo und Fußzeile eurer Wehr für die Protokoll-PDFs.', tab: 'layout', btn: 'Anpassen' },
+        { done: recentDownload(), title: 'Backup außerhalb des Servers ablegen', sub: recentDownload() ? 'In den letzten 30 Tagen heruntergeladen.' : 'Etwa monatlich herunterladen – fällt die Festplatte aus, ist das die Rettung.', tab: 'backup', btn: 'Zum Backup' },
+      ];
+      next.textContent = '';
+      next.appendChild(h('h2', null, 'Als Nächstes'));
+      next.appendChild(h('ul', { class: 'next' }, steps.map(function (st) {
+        return h('li', { class: st.done ? 'done' : '' },
+          h('span', { class: 'next__check', 'aria-hidden': 'true' }, st.done ? '✓' : ''),
+          h('span', { class: 'next__text' }, h('span', { class: 'sr-only' }, st.done ? 'Erledigt: ' : 'Offen: '), st.title, h('small', null, st.sub)),
+          h('button', { class: 'btn small', onclick: function () { go(st.tab); } }, st.btn));
+      })));
     }).catch(function (e) { stats.appendChild(h('div', { class: 'msg err' }, e.message)); });
-    wrap.appendChild(pageHead('Übersicht', 'Die Web-App (PWA) für alle Betreuer erreichst du unter dem Hauptpfad dieser Adresse.'));
-    wrap.appendChild(h('div', { class: 'row' }, h('a', { class: 'btn primary', href: '/' }, 'Web-App öffnen')));
+    wrap.appendChild(pageHead('Übersicht', 'Die App für alle Betreuer liegt unter ' + location.host + '/ – hier verwaltest du Benutzer, PDF-Layout und Backups.'));
     wrap.appendChild(stats);
-    wrap.appendChild(tiles);
+    wrap.appendChild(next);
     return wrap;
   };
-  function stat(v, label) { return h('div', { class: 'stat' }, h('b', null, v), h('span', null, label)); }
-  function tile(title, sub, ic, tab) {
-    return h('button', { class: 'tile', onclick: function () { go(tab); } }, h('b', null, icon(ic), title), h('span', null, sub));
+  /** Merkt sich in diesem Browser, wann zuletzt ein Backup heruntergeladen wurde (der Server kann das nicht wissen). */
+  var DL_KEY = 'jfh.admin.lastBackupDownload';
+  function recentDownload() {
+    try { return Date.now() - Number(localStorage.getItem(DL_KEY) || 0) < 30 * 86400000; } catch (e) { return false; }
   }
+  function noteDownload() { try { localStorage.setItem(DL_KEY, String(Date.now())); } catch (e) { /* privat: egal */ } }
+  function stat(v, label) { return h('div', { class: 'stat' }, h('b', null, v), h('span', null, label)); }
 
   VIEWS.protocols = function () {
-    var wrap = h('div', { class: 'page', style: 'display:grid;gap:16px' });
+    var wrap = h('div', { class: 'page' });
     var card = h('div', { class: 'card' });
     var box = msgBox();
     var filter = 'active';
@@ -314,7 +329,7 @@
           acts));
       });
       list.appendChild(h('div', { class: 'scroll' }, h('table', null,
-        h('thead', null, h('tr', null, h('th', null, 'Titel'), h('th', null, 'Von'), h('th', null, 'Datum'), h('th', null, 'Ort'), h('th', null, 'Geändert'), h('th'))), body)));
+        h('thead', null, h('tr', null, h('th', null, 'Titel'), h('th', null, 'Von'), h('th', null, 'Datum'), h('th', null, 'Ort'), h('th', null, 'Geändert'), h('th', null, h('span', { class: 'sr-only' }, 'Aktionen')))), body)));
     }
     function load() {
       json('GET', '/admin/protocols').then(function (r) { rows = r; box.show(''); draw(); }).catch(function (e) { box.show(e.message); });
@@ -329,51 +344,78 @@
   };
 
   VIEWS.layout = function () {
-    var wrap = h('div', { class: 'page', style: 'display:grid;gap:16px' });
+    var wrap = h('div', { class: 'page' });
     var card = h('div', { class: 'card' }, h('p', { class: 'muted' }, 'Lade …'));
+    var side = h('div');
     json('GET', '/admin/settings').then(function (s) {
       var box = msgBox();
-      var org = h('input', { type: 'text', value: s.orgName, maxlength: 200 });
-      var footer = h('input', { type: 'text', value: s.footer, maxlength: 200, placeholder: 'z. B. Freiwillige Feuerwehr Musterstadt' });
-      var accent = h('input', { type: 'color', value: s.accent });
+      var org = h('input', { type: 'text', value: s.orgName, maxlength: 200, oninput: drawPrev });
+      var footer = h('input', { type: 'text', value: s.footer, maxlength: 200, placeholder: 'z. B. Freiwillige Feuerwehr Musterstadt', oninput: drawPrev });
+      var accent = h('input', { type: 'color', value: s.accent, oninput: drawPrev });
       var logo = s.logo;
-      var prev = h('div');
-      function drawLogo() {
+      var saved = JSON.stringify([s.orgName, s.footer, s.accent, s.logo]);
+      var fileName = h('span', { class: 'file-pick__name' });
+      var removeLogo = h('button', { class: 'btn small', type: 'button', onclick: function () { logo = ''; file.value = ''; drawPrev(); } }, 'Logo entfernen');
+      // Skizze der ersten PDF-Seite: zeigt Änderungen sofort, noch bevor gespeichert ist.
+      var prev = h('div', { class: 'pdf-prev', role: 'img', 'aria-label': 'Skizze der PDF-Seite mit Kopfzeile, Akzentfarbe und Fußzeile' });
+      function drawPrev() {
         prev.textContent = '';
-        if (logo) prev.appendChild(h('img', { class: 'logo-prev', src: logo, alt: 'Logo' }));
+        prev.style.setProperty('--accent-prev', accent.value);
+        prev.appendChild(h('div', { class: 'pdf-prev__head' }, h('span', { class: 'pdf-prev__org' }, org.value || ' '), logo ? h('img', { class: 'pdf-prev__logo', src: logo, alt: '' }) : null));
+        prev.appendChild(h('div', { class: 'pdf-prev__title' }, 'Dienst: Knoten und Stiche'));
+        prev.appendChild(h('div', { class: 'pdf-prev__meta' }, 'Mo., 02.11.2026 · 18:00–19:30 · Gerätehaus'));
+        prev.appendChild(h('div', { class: 'pdf-prev__rule' }));
+        prev.appendChild(h('div', { class: 'pdf-prev__h' }, 'Ablauf'));
+        [92, 80, 86, 60].forEach(function (w) { prev.appendChild(h('div', { class: 'pdf-prev__line', style: 'width:' + w + '%' })); });
+        prev.appendChild(h('div', { class: 'pdf-prev__h' }, 'Beobachtungen'));
+        [95, 88, 70].forEach(function (w) { prev.appendChild(h('div', { class: 'pdf-prev__line', style: 'width:' + w + '%' })); });
+        prev.appendChild(h('div', { class: 'pdf-prev__foot' }, h('span', null, footer.value || ' '), h('span', null, 'Seite 1 von 1')));
+        removeLogo.hidden = !logo;
+        var dirty = JSON.stringify([org.value, footer.value, accent.value, logo]) !== saved;
+        save.disabled = !dirty;
+        ui.hint.textContent = dirty ? 'Ungespeicherte Änderungen' : 'Alles gespeichert';
       }
-      drawLogo();
       var file = h('input', { type: 'file', accept: 'image/png,image/jpeg', onchange: function () {
         var f = file.files[0];
         if (!f) return;
-        if (f.size > 500000) { box.show('Logo ist größer als 500 KB.'); return; }
+        if (f.size > 500000) { box.show('Das Logo ist größer als 500 KB. Bitte eine kleinere Datei wählen.'); return; }
+        fileName.textContent = f.name;
         var rd = new FileReader();
-        rd.onload = function () { logo = String(rd.result); drawLogo(); };
+        rd.onload = function () { logo = String(rd.result); drawPrev(); };
         rd.readAsDataURL(f);
       } });
+      var ui = { hint: h('span', { class: 'muted small', 'aria-live': 'polite' }) };
       var save = h('button', { class: 'btn primary', onclick: function () {
-        run(save, box, function () { return json('PUT', '/admin/settings', { orgName: org.value, footer: footer.value, accent: accent.value, logo: logo }); }, 'Gespeichert.');
+        run(save, box, function () {
+          return json('PUT', '/admin/settings', { orgName: org.value, footer: footer.value, accent: accent.value, logo: logo }).then(function () {
+            saved = JSON.stringify([org.value, footer.value, accent.value, logo]);
+            drawPrev();
+          });
+        }, 'Gespeichert. Neue PDFs nutzen ab jetzt dieses Layout.');
       } }, 'Speichern');
       var preview = h('button', { class: 'btn', onclick: function () {
         run(preview, box, function () { return download('/admin/preview.pdf', '', true); });
-      } }, 'Vorschau (gespeicherter Stand)');
+      } }, 'Echtes PDF ansehen');
       card.textContent = '';
       card.appendChild(field('Organisation (Kopfzeile)', org));
       card.appendChild(field('Fußzeile', footer));
-      card.appendChild(field('Akzentfarbe', accent));
-      card.appendChild(h('div', { class: 'small muted', style: 'margin-bottom:6px' }, 'Logo (PNG/JPEG, max. 500 KB)'));
-      card.appendChild(prev);
-      card.appendChild(h('div', { class: 'row', style: 'margin-bottom:14px' }, file, h('button', { class: 'btn small', onclick: function () { logo = ''; file.value = ''; drawLogo(); } }, 'Logo entfernen')));
-      card.appendChild(h('div', { class: 'row' }, save, preview));
+      card.appendChild(field('Akzentfarbe (Linie, Überschriften, Häkchen)', accent));
+      card.appendChild(h('div', { style: 'font-size:14px;font-weight:600;margin-bottom:6px' }, 'Logo'));
+      card.appendChild(h('label', { class: 'file-pick' }, file, h('span', { class: 'btn small' }, 'Bild auswählen …'), h('span', { class: 'sr-only' }, 'Logo als PNG oder JPEG, höchstens 500 KB'), fileName));
+      card.appendChild(h('div', { class: 'row', style: 'margin:-6px 0 14px' }, h('span', { class: 'muted small' }, 'PNG oder JPEG, höchstens 500 KB'), removeLogo));
+      card.appendChild(h('div', { class: 'row' }, save, preview, ui.hint));
       card.appendChild(box);
+      side.appendChild(h('div', { class: 'muted small', style: 'margin-bottom:8px' }, 'Vorschau (Skizze)'));
+      side.appendChild(prev);
+      drawPrev();
     }).catch(function (e) { card.appendChild(h('div', { class: 'msg err' }, e.message)); });
-    wrap.appendChild(pageHead('PDF-Layout', 'So sehen die PDFs aus, die aus Protokollen erzeugt werden. Änderungen gelten sofort für alle Geräte.'));
-    wrap.appendChild(card);
+    wrap.appendChild(pageHead('PDF-Layout', 'So sehen die PDFs aus, die aus Protokollen erzeugt werden. Nach dem Speichern gilt es sofort für alle Geräte.'));
+    wrap.appendChild(h('div', { class: 'layout-grid' }, card, side));
     return wrap;
   };
 
   VIEWS.devices = function () {
-    var wrap = h('div', { class: 'page', style: 'display:grid;gap:16px' });
+    var wrap = h('div', { class: 'page' });
     var card = h('div', { class: 'card' });
     var box = msgBox();
     function load() {
@@ -389,7 +431,7 @@
             h('td', { class: 'act' }, !s.current && h('button', { class: 'btn small danger', onclick: function () { json('DELETE', '/admin/sessions/' + s.id).then(load); } }, 'Abmelden'))));
         });
         card.appendChild(h('div', { class: 'scroll' }, h('table', null,
-          h('thead', null, h('tr', null, h('th', null, 'Gerät'), h('th', null, 'Benutzer'), h('th', null, 'Zuletzt aktiv'), h('th', null, 'Läuft ab'), h('th'))), body)));
+          h('thead', null, h('tr', null, h('th', null, 'Gerät'), h('th', null, 'Benutzer'), h('th', null, 'Zuletzt aktiv'), h('th', null, 'Läuft ab'), h('th', null, h('span', { class: 'sr-only' }, 'Aktionen')))), body)));
         card.appendChild(box);
       }).catch(function (e) { box.show(e.message); });
     }
@@ -400,7 +442,7 @@
   };
 
   VIEWS.security = function () {
-    var wrap = h('div', { class: 'page', style: 'display:grid;gap:16px' });
+    var wrap = h('div', { class: 'page' });
     var box = msgBox();
     var cur = h('input', { type: 'password', autocomplete: 'current-password' });
     var nw = h('input', { type: 'password', autocomplete: 'new-password', minlength: 10 });
@@ -413,7 +455,7 @@
     var box2 = msgBox();
     var days = h('input', { type: 'number', min: 1, max: 365 });
     var trash = h('input', { type: 'number', min: 1, max: 3650 });
-    var sv = h('button', { class: 'btn primary', type: 'submit' }, 'Speichern');
+    var sv = h('button', { class: 'btn', type: 'submit' }, 'Laufzeiten speichern');
     var setCard = h('form', { class: 'card', onsubmit: function (e) {
       e.preventDefault();
       run(sv, box2, function () { return json('PUT', '/admin/settings', { tokenDays: String(days.value), trashDays: String(trash.value) }); }, 'Gespeichert.');
@@ -428,7 +470,7 @@
   };
 
   VIEWS.users = function () {
-    var wrap = h('div', { class: 'page', style: 'display:grid;gap:16px' });
+    var wrap = h('div', { class: 'page' });
     var card = h('div', { class: 'card' });
     var box = msgBox();
     var inviteBox = h('div');
@@ -485,7 +527,7 @@
             acts));
         });
         card.appendChild(h('div', { class: 'scroll' }, h('table', null,
-          h('thead', null, h('tr', null, h('th', null, 'Name'), h('th', null, 'Benutzername'), h('th', null, 'Rolle'), h('th', null, 'Status'), h('th'))), body)));
+          h('thead', null, h('tr', null, h('th', null, 'Name'), h('th', null, 'Benutzername'), h('th', null, 'Rolle'), h('th', null, 'Status'), h('th', null, h('span', { class: 'sr-only' }, 'Aktionen')))), body)));
       }).catch(function (e) { box.show(e.message); });
     }
 
@@ -504,7 +546,8 @@
         });
       });
     } }, h('h2', null, 'Neuen Benutzer anlegen'),
-      field('Benutzername', uname), field('Anzeigename', dname), field('Rolle', role), add, addBox);
+      h('p', { class: 'muted small hint' }, 'Nach dem Anlegen bekommst du einen Einladungslink zum Weitergeben.'),
+      h('div', { class: 'form-grid' }, field('Benutzername', uname), field('Anzeigename', dname), field('Rolle', role)), add, addBox);
 
     load();
     wrap.appendChild(pageHead('Benutzer', 'Jeder Betreuer hat ein eigenes Konto. Du legst es an, die Person vergibt ihr Passwort selbst über den Einladungslink.'));
@@ -526,7 +569,7 @@
   }
 
   VIEWS.backup = function () {
-    var wrap = h('div', { class: 'page', style: 'display:grid;gap:16px' });
+    var wrap = h('div', { class: 'page' });
     wrap.appendChild(pageHead('Backup & Export', 'Der Server sichert die Datenbank täglich selbst. Hier siehst du die Sicherungen, lädst sie herunter und stellst sie wieder her.'));
 
     // --- gespeicherte Backups ---
@@ -555,8 +598,8 @@
       var body = h('tbody');
       info.items.forEach(function (b) {
         var acts = h('td', { class: 'act' },
-          h('button', { class: 'btn small', onclick: function () { download('/admin/backups/' + encodeURIComponent(b.name), b.name).catch(function (e) { box.show(e.message); }); } }, 'Laden'), ' ',
-          h('button', { class: 'btn small', onclick: function () {
+          h('button', { class: 'btn small', onclick: function () { download('/admin/backups/' + encodeURIComponent(b.name), b.name).then(noteDownload).catch(function (e) { box.show(e.message); }); } }, 'Herunterladen'), ' ',
+          h('button', { class: 'btn small warn', onclick: function () {
             confirmBox('Diesen Stand wiederherstellen?', fmt(b.createdAt) + ' (' + KIND[b.kind] + '). ' + RESTORE_WARN, 'Wiederherstellen').then(function (ok) {
               if (ok) json('POST', '/admin/backups/' + encodeURIComponent(b.name) + '/restore').then(function (r) { restoreDone(box, r); }, function (e) { box.show(e.message); });
             });
@@ -569,7 +612,7 @@
         body.appendChild(h('tr', null, h('td', null, fmt(b.createdAt)), h('td', null, h('span', { class: 'tag' }, KIND[b.kind])), h('td', { class: 'muted' }, fmtSize(b.size)), acts));
       });
       listBox.appendChild(h('div', { class: 'scroll' }, h('table', null,
-        h('thead', null, h('tr', null, h('th', null, 'Zeitpunkt'), h('th', null, 'Art'), h('th', null, 'Größe'), h('th'))), body)));
+        h('thead', null, h('tr', null, h('th', null, 'Zeitpunkt'), h('th', null, 'Art'), h('th', null, 'Größe'), h('th', null, h('span', { class: 'sr-only' }, 'Aktionen')))), body)));
     }
     function load() {
       return json('GET', '/admin/backups').then(draw).catch(function (e) { box.show(e.message); });
@@ -582,8 +625,8 @@
 
     // --- aus Datei ---
     var box2 = msgBox();
-    var file = h('input', { type: 'file', accept: '.sqlite,application/octet-stream' });
-    var up = h('button', { class: 'btn', type: 'submit' }, 'Aus Datei wiederherstellen');
+    var file = h('input', { type: 'file', accept: '.sqlite,application/octet-stream', onchange: function () { var n = document.getElementById('restore-name'); if (n) n.textContent = file.files && file.files[0] ? file.files[0].name : 'keine Datei gewählt'; } });
+    var up = h('button', { class: 'btn warn', type: 'submit' }, 'Aus Datei wiederherstellen');
     wrap.appendChild(h('form', { class: 'card', onsubmit: function (e) {
       e.preventDefault();
       var f = file.files && file.files[0];
@@ -598,11 +641,11 @@
       });
     } }, h('h2', null, 'Aus Datei wiederherstellen'),
       h('p', { class: 'muted' }, 'Eine Datei, die du über „Datenbank-Backup laden“ (oder aus dem Backup-Ordner) bekommen hast. Auch Sicherungen älterer Versionen sind möglich.'),
-      field('Backup-Datei', file), up, box2));
+      h('label', { class: 'file-pick' }, file, h('span', { class: 'btn small' }, 'Backup-Datei wählen …'), h('span', { class: 'sr-only' }, 'Backup-Datei (.sqlite)'), h('span', { class: 'file-pick__name', id: 'restore-name' }, 'keine Datei gewählt')), h('div', null, up), box2));
 
     // --- Downloads ---
     var box3 = msgBox();
-    var b1 = h('button', { class: 'btn primary', onclick: function () { run(b1, box3, function () { return download('/admin/backup', 'jf-hub-backup.sqlite'); }); } }, 'Aktuelles Datenbank-Backup laden');
+    var b1 = h('button', { class: 'btn', onclick: function () { run(b1, box3, function () { return download('/admin/backup', 'jf-hub-backup.sqlite').then(noteDownload); }); } }, 'Aktuelles Datenbank-Backup laden');
     var b2 = h('button', { class: 'btn', onclick: function () { run(b2, box3, function () { return download('/export.zip', 'protokolle.zip'); }); } }, 'Alle Protokolle als ZIP (PDF + JSON)');
     wrap.appendChild(h('div', { class: 'card' }, h('h2', null, 'Herunterladen'),
       h('p', { class: 'muted' }, 'Das Backup enthält alle Daten, auch Fotos und Anhänge. Verschlüsselt und nicht in einer fremden Cloud ablegen.'),
@@ -633,6 +676,14 @@
     }).catch(function () { setView(h('div', { class: 'center' }, h('div', { class: 'msg err' }, 'Server nicht erreichbar.'))); });
   }
   function setView(el) { root.textContent = ''; root.appendChild(el); }
+  /** Schmale Bildschirme: Tabellenzeilen werden zu Karten; jede Zelle trägt dazu ihre Spaltenüberschrift. */
+  function labelCells(table) {
+    var heads = [].map.call(table.querySelectorAll('thead th'), function (th) { return th.textContent.trim(); });
+    [].forEach.call(table.querySelectorAll('tbody tr'), function (tr) {
+      [].forEach.call(tr.children, function (td, i) { if (heads[i] && heads[i] !== 'Aktionen') td.setAttribute('data-label', heads[i]); });
+    });
+  }
+  new MutationObserver(function () { [].forEach.call(root.querySelectorAll('table'), labelCells); }).observe(root, { childList: true, subtree: true });
   window.addEventListener('hashchange', render);
   render();
 })();

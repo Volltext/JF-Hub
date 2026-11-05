@@ -47,7 +47,7 @@ export function ServiceCard() {
     <Card title="Wöchentlicher Dienst">
       <div className="stack">
         <button
-          className="toggle"
+          className="toggle toggle--switch"
           aria-pressed={s.serviceReminderEnabled}
           onClick={async () => {
             const enabled = !s.serviceReminderEnabled;
@@ -56,7 +56,8 @@ export function ServiceCard() {
               setMsg('Benachrichtigungen sind in den Android-Einstellungen nicht erlaubt.');
           }}
         >
-          <span className="toggle__box">{s.serviceReminderEnabled && '✓'}</span> Erinnerung zum Teilnehmer-Eintragen
+          Ans Eintragen der Anwesenheit erinnern
+          <span className="switch" aria-hidden="true" />
         </button>
         <SelectField
           label="Wochentag"
@@ -64,8 +65,8 @@ export function ServiceCard() {
           options={WEEKDAYS}
           onChange={(v) => patch({ serviceWeekday: Number(v) })}
         />
-        <TimeField label="Beginn zwischen Osterferien und Herbstferien" value={s.serviceTimeSeason} onChange={(v) => patch({ serviceTimeSeason: v })} />
-        <TimeField label="Beginn sonst" value={s.serviceTimeOffSeason} onChange={(v) => patch({ serviceTimeOffSeason: v })} />
+        <TimeField label="Beginn im Sommerhalbjahr (Ostern bis Herbstferien)" value={s.serviceTimeSeason} onChange={(v) => patch({ serviceTimeSeason: v })} />
+        <TimeField label="Beginn im Winterhalbjahr" value={s.serviceTimeOffSeason} onChange={(v) => patch({ serviceTimeOffSeason: v })} />
         <SelectField
           label="Erinnerung"
           value={String(s.serviceReminderLead)}
@@ -73,33 +74,39 @@ export function ServiceCard() {
           onChange={(v) => patch({ serviceReminderLead: Number(v) })}
         />
         <SelectField label="Bundesland (Ferientermine)" value={s.serviceState} options={STATES} onChange={(v) => patch({ serviceState: v })} />
-        <button className="toggle" aria-pressed={s.serviceSkipHolidays} onClick={() => patch({ serviceSkipHolidays: !s.serviceSkipHolidays })}>
-          <span className="toggle__box">{s.serviceSkipHolidays && '✓'}</span> In den Schulferien nicht erinnern
+        <button className="toggle toggle--switch" aria-pressed={s.serviceSkipHolidays} onClick={() => patch({ serviceSkipHolidays: !s.serviceSkipHolidays })}>
+          In den Schulferien nicht erinnern
+          <span className="switch" aria-hidden="true" />
         </button>
 
         <p className="muted">
           {win.from && win.to
-            ? `${year}: ${s.serviceTimeSeason} Uhr von ${formatDate(win.from)} (Ende Osterferien) bis ${formatDate(win.to)} (Beginn Herbstferien), sonst ${s.serviceTimeOffSeason} Uhr.`
+            ? `${year}: ${s.serviceTimeSeason} Uhr von ${formatDate(win.from)} (Ende Osterferien) bis ${formatDate(win.to)} (Beginn Herbstferien), im Winterhalbjahr ${s.serviceTimeOffSeason} Uhr.`
             : stale
-              ? 'Noch keine Ferientermine – es gilt überall die Zeit „sonst“. Bitte aktualisieren (Internet nötig).'
-              : `Für ${year} sind nicht alle Ferientermine bekannt – es gilt die Zeit „sonst“. Unten von Hand eintragen.`}
+              ? 'Noch keine Ferientermine – es gilt überall die Winterzeit. Bitte aktualisieren (Internet nötig).'
+              : `Für ${year} sind nicht alle Ferientermine bekannt – es gilt die Winterzeit. Unter „Ferien von Hand“ eintragen.`}
         </p>
+        <details className="acc" open={!win.from || !win.to}>
+          <summary>Ferien von Hand</summary>
+          <div className="stack" style={{ paddingBottom: 'var(--s-2)' }}>
         <DateField
-          label={`Ende der Osterferien ${year} (von Hand)`}
+          label={`Ende der Osterferien ${year}`}
           value={s.serviceSeasonFrom}
           clearable
           onChange={(v) => patch({ serviceSeasonFrom: v })}
         />
         <DateField
-          label={`Beginn der Herbstferien ${year} (von Hand)`}
+          label={`Beginn der Herbstferien ${year}`}
           value={s.serviceSeasonTo}
           clearable
           onChange={(v) => patch({ serviceSeasonTo: v })}
         />
         <Button onClick={() => void update()}>Ferientermine aktualisieren</Button>
         {cache && (
-          <p className="muted">Stand: {new Date(cache.fetchedAt).toLocaleDateString('de-DE')} ({cache.state}). Die App aktualisiert sich einmal pro Woche selbst.</p>
+          <p className="muted" style={{ margin: 0 }}>Stand: {new Date(cache.fetchedAt).toLocaleDateString('de-DE')} ({cache.state}). Die App aktualisiert sich einmal pro Woche selbst.</p>
         )}
+          </div>
+        </details>
         {next.length > 0 && (
           <p className="muted">Nächste Dienste: {next.map((n) => `${formatDate(n.date)} ${n.start}`).join(' · ')}</p>
         )}

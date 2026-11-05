@@ -19,7 +19,7 @@ test.describe('Demo im Browser (ohne Server)', () => {
     await expect(page.getByText('Anmeldung Kreiszeltlager abschicken')).toBeVisible();
 
     await page.goto(`${DEMO}#/dienste`);
-    await expect(page.getByText('10 erfasst')).toBeVisible();
+    await expect(page.getByText('10 Dienste erfasst')).toBeVisible();
 
     // PDFs erzeugt der Server: in der Demo eine klare Meldung statt eines Fehlers.
     await page.goto(`${DEMO}#/protokolle`);

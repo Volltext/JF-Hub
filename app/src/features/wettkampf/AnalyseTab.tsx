@@ -12,7 +12,8 @@ import {
   LSP_MINDESTPUNKTE,
   computeLspGesamt,
 } from './rules/leistungsspange';
-import { getCompetitionForMode } from './rules/modes';
+import { getCompetitionForMode, getMode } from './rules/modes';
+import { MiniLine } from '@/core/ui/charts';
 import { A_PART_POSITIONS, B_PART_POSITIONS, LSP_GRUPPE_POSITIONS, LSP_STAFFEL_POSITIONS } from './rules/positions';
 import { runTitle } from './run';
 import { runRepo, saveLsp } from './store';
@@ -55,37 +56,62 @@ function runSummary(r: Run): string {
   return '';
 }
 
-function Verlauf({ runs }: { runs: Run[] }) {
+function Verlauf({ runs: all }: { runs: Run[] }) {
   const [open, setOpen] = useState<string | null>(null);
-  if (runs.length === 0)
+  const modes = [...new Set(all.map((r) => r.mode))];
+  const [picked, setPicked] = useState<string>('');
+  const mode = modes.includes(picked) ? picked : (modes[0] ?? '');
+  if (all.length === 0)
     return (
       <Card>
         <p className="muted">Noch keine Läufe gespeichert. Auf dem Reiter „Stoppuhr“ einen Lauf messen und speichern.</p>
       </Card>
     );
 
+  const runs = modes.length > 1 ? all.filter((r) => r.mode === mode) : all;
+  const timed = runs.filter((r) => r.totalMs > 0).slice(0, 15).reverse();
+  const day = (r: Run) => new Date(r.createdAt).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
+  const label = mode ? getMode(mode).label : '';
+
   return (
     <>
+      {modes.length > 1 && (
+        <div className="chips-row chips-row--compact" role="group" aria-label="Läufe zeigen für">
+          {modes.map((m) => (
+            <button key={m} type="button" className="chip-btn" aria-pressed={m === mode} onClick={() => setPicked(m)}>
+              {getMode(m).label}
+            </button>
+          ))}
+        </div>
+      )}
+      {timed.length >= 2 && (
+        <Card title={`Zeiten · ${label}`}>
+          <MiniLine
+            summary={`Zeitverlauf ${label} über ${timed.length} Läufe`}
+            format={(ms) => formatClock(ms)}
+            points={timed.map((r) => ({ label: day(r), value: r.totalMs, title: `${day(r)}: ${formatClock(r.totalMs)}` }))}
+          />
+          <p className="muted chart__hint">Oben ist schneller.</p>
+        </Card>
+      )}
       <div className="list">
         {runs.map((r) => (
           <div key={r.id}>
-            <button className="item" onClick={() => setOpen(open === r.id ? null : r.id)}>
+            <button className="item" aria-expanded={open === r.id} onClick={() => setOpen(open === r.id ? null : r.id)}>
               <div className="item__main">
-                <div className="item__title">
-                  {runTitle(r)}
-                </div>
+                <div className="item__title">{runTitle(r)}</div>
                 <div className="item__sub">{new Date(r.createdAt).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' })}</div>
               </div>
-              <span className="chip">{runSummary(r)}</span>
+              {runSummary(r) && <span className="chip">{runSummary(r)}</span>}
             </button>
             {open === r.id && <RunDetail run={r} />}
           </div>
         ))}
       </div>
       <Button
-        onClick={() => shareTextFile(`jf-hub-laeufe-${new Date().toISOString().slice(0, 10)}.csv`, runsToCsv(runs), 'text/csv')}
+        onClick={() => shareTextFile(`jf-hub-laeufe-${new Date().toISOString().slice(0, 10)}.csv`, runsToCsv(all), 'text/csv')}
       >
-        Als CSV exportieren
+        Alle Läufe als CSV exportieren
       </Button>
     </>
   );

@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { Eye, EyeOff } from 'lucide-react';
 import { Button, Segmented } from '@/core/ui/components';
 import { IS_WEB } from '@/core/env';
 import { loadSettings } from '@/core/settings/settings';
@@ -30,6 +31,7 @@ export function AuthForm({ onDone, initialMode = 'login', invite }: { onDone: ()
   const [repeat, setRepeat] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [show, setShow] = useState(false);
   const demo = useDemoInfo();
 
   useEffect(() => {
@@ -89,7 +91,7 @@ export function AuthForm({ onDone, initialMode = 'login', invite }: { onDone: ()
         }}
         options={[
           { value: 'login', label: 'Anmelden' },
-          { value: 'invite', label: 'Einladung einlösen' },
+          { value: 'invite', label: 'Mit Einladung' },
         ]}
       />
       {!IS_WEB && (
@@ -108,26 +110,40 @@ export function AuthForm({ onDone, initialMode = 'login', invite }: { onDone: ()
           <input autoCapitalize="characters" autoCorrect="off" spellCheck={false} autoComplete="off" placeholder="XXXX-XXXX-XXXX-XXXX" value={code} onChange={(e) => setCode(e.target.value)} />
         </label>
       )}
-      <label className="field">
-        <span>{mode === 'invite' ? `Dein neues Passwort (mind. ${MIN_PASSWORD} Zeichen)` : 'Passwort'}</span>
-        <input type="password" autoComplete={mode === 'invite' ? 'new-password' : 'current-password'} value={password} onChange={(e) => setPassword(e.target.value)} />
-      </label>
+      <div className="field">
+        <label htmlFor="auth-password">{mode === 'invite' ? `Dein neues Passwort (mind. ${MIN_PASSWORD} Zeichen)` : 'Passwort'}</label>
+        <div className="pw-field">
+          <input
+            id="auth-password"
+            type={show ? 'text' : 'password'}
+            autoComplete={mode === 'invite' ? 'new-password' : 'current-password'}
+            value={password}
+            aria-invalid={!!error || tooShort}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+          <button type="button" className="pw-field__toggle" aria-label={show ? 'Passwort verbergen' : 'Passwort anzeigen'} aria-pressed={show} onClick={() => setShow(!show)}>
+            {show ? <EyeOff size={18} /> : <Eye size={18} />}
+          </button>
+        </div>
+      </div>
       {mode === 'invite' && (
         <label className="field">
           <span>Passwort wiederholen</span>
-          <input type="password" autoComplete="new-password" value={repeat} onChange={(e) => setRepeat(e.target.value)} />
+          <input type={show ? 'text' : 'password'} autoComplete="new-password" value={repeat} aria-invalid={mismatch} onChange={(e) => setRepeat(e.target.value)} />
         </label>
       )}
-      {tooShort && <p className="muted">Das Passwort braucht mindestens {MIN_PASSWORD} Zeichen.</p>}
-      {mismatch && <p className="muted">Die Passwörter stimmen nicht überein.</p>}
-      <Button variant="primary" type="submit" disabled={busy || !ready}>
-        {mode === 'invite' ? 'Passwort festlegen und anmelden' : 'Anmelden'}
-      </Button>
+      {tooShort && <p className="field__hint" style={{ margin: 0 }}>Noch {MIN_PASSWORD - password.length} Zeichen bis zur Mindestlänge.</p>}
+      {mismatch && <p className="form-error">Die beiden Passwörter stimmen nicht überein.</p>}
       {error && (
-        <p role="alert" style={{ color: 'var(--danger)', margin: 0 }}>
+        <p role="alert" className="form-error">
           {error}
         </p>
       )}
+      <Button variant="primary" type="submit" disabled={busy || !ready}>
+        {busy ? 'Einen Moment …' : mode === 'invite' ? 'Passwort festlegen und anmelden' : 'Anmelden'}
+      </Button>
+      {mode === 'login' && <p className="field__hint auth-hint">Passwort vergessen? Dein Admin kann es in der Server-Verwaltung zurücksetzen.</p>}
+      {mode === 'invite' && !invite && <p className="field__hint auth-hint">Benutzername und Code stehen in der Einladung, die du von deinem Admin bekommen hast.</p>}
     </form>
   );
 }

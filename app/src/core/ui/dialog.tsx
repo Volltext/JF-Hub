@@ -1,5 +1,5 @@
-import { useSyncExternalStore } from 'react';
-import { useOverlayClose } from './overlay';
+import { useId, useRef, useSyncExternalStore } from 'react';
+import { useFocusTrap, useOverlayClose } from './overlay';
 
 interface Request {
   message: string;
@@ -65,18 +65,39 @@ export function DialogHost() {
 
 function Dialog({ req }: { req: Request }) {
   useOverlayClose(() => close(false));
+  const box = useRef<HTMLDivElement>(null);
+  useFocusTrap(box);
+  const id = useId();
+  // Bei riskanten Aktionen (Löschen) steht der Fokus auf „Abbrechen“: Enter löscht nicht aus Versehen.
+  const focusCancel = req.danger && !req.hideCancel;
   return (
     <div className="dialog-backdrop" onClick={() => close(false)}>
-      <div className="dialog" role="alertdialog" aria-modal="true" aria-label={req.title ?? req.message} onClick={(e) => e.stopPropagation()}>
-        {req.title && <h2 className="sheet__title">{req.title}</h2>}
-        <p style={{ whiteSpace: 'pre-line' }}>{req.message}</p>
-        <div className="row" style={{ justifyContent: 'flex-end' }}>
+      <div
+        ref={box}
+        tabIndex={-1}
+        className="dialog"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby={req.title ? `${id}-t` : undefined}
+        aria-label={req.title ? undefined : req.message}
+        aria-describedby={`${id}-m`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {req.title && (
+          <h2 className="sheet__title" id={`${id}-t`}>
+            {req.title}
+          </h2>
+        )}
+        <p id={`${id}-m`} style={{ whiteSpace: 'pre-line' }}>
+          {req.message}
+        </p>
+        <div className="dialog__actions">
           {!req.hideCancel && (
-            <button className="btn" onClick={() => close(false)}>
+            <button className="btn" onClick={() => close(false)} autoFocus={focusCancel}>
               {req.cancelLabel}
             </button>
           )}
-          <button className={`btn ${req.danger ? 'btn--danger-solid' : 'btn--primary'}`} onClick={() => close(true)} autoFocus>
+          <button className={`btn ${req.danger ? 'btn--danger-solid' : 'btn--primary'}`} onClick={() => close(true)} autoFocus={!focusCancel}>
             {req.confirmLabel}
           </button>
         </div>

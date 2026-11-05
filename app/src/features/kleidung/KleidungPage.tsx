@@ -101,11 +101,13 @@ export function KleidungPage() {
       sub={requests.length ? `${teile(requests.length)} zu beschaffen` : 'Kleidergrößen der Gruppe'}
       actions={
         <>
-          <button type="button" className="icon-btn" aria-label="Kleidertabelle als PDF" title="Kleidertabelle als PDF" onClick={() => setExporting(true)}>
-            <FileText size={20} />
+          <button type="button" className="icon-btn icon-btn--label" aria-label="Kleidertabelle als PDF" title="Kleidertabelle als PDF" onClick={() => setExporting(true)}>
+            <FileText size={18} />
+            <span className="icon-btn__text">PDF</span>
           </button>
-          <button type="button" className="icon-btn" aria-label="Kleidungsstücke und Größen bearbeiten" title="Kleidungsstücke und Größen bearbeiten" onClick={() => setEditingItems(true)}>
-            <Settings2 size={20} />
+          <button type="button" className="icon-btn icon-btn--label" aria-label="Kleidungsstücke und Größen bearbeiten" title="Kleidungsstücke und Größen bearbeiten" onClick={() => setEditingItems(true)}>
+            <Settings2 size={18} />
+            <span className="icon-btn__text">Kleidungsstücke</span>
           </button>
         </>
       }
@@ -169,6 +171,9 @@ function TableView(props: {
 
   return (
     <>
+      <p className="muted kl-legend">
+        Person antippen, um Größen einzutragen · <span className="kl-new">→ 56</span> neu zu beschaffen · <span className="kl-new kl-new--passed">→ 56</span> beim Kleiderwart
+      </p>
       {jugend.length > 0 && <SizeTable members={jugend} items={items} recordOf={recordOf} onOpen={onOpen} />}
       {betreuer.length > 0 && (
         <details className="acc" open={betreuerHaveData || !jugend.length}>
@@ -176,10 +181,6 @@ function TableView(props: {
           <SizeTable members={betreuer} items={items} recordOf={recordOf} onOpen={onOpen} />
         </details>
       )}
-      <p className="muted kl-legend">
-        Person antippen, um Größen einzutragen. <span className="kl-new">→ 56</span> neu zu beschaffen,{' '}
-        <span className="kl-new kl-new--passed">→ 56</span> beim Kleiderwart.
-      </p>
     </>
   );
 }
@@ -203,7 +204,7 @@ function SizeTable({ members, items, recordOf, onOpen }: { members: Member[]; it
         {members.map((m) => {
           const rec = recordOf.get(m.id);
           return (
-            <button key={m.id} type="button" className="kl-row" style={{ gridTemplateColumns: cols }} onClick={() => onOpen(m.id)}>
+            <button key={m.id} type="button" className="kl-row" style={{ gridTemplateColumns: cols }} onClick={() => onOpen(m.id)} aria-label={`${m.name}: Größen bearbeiten`}>
               <span className="kl-name">{m.name}</span>
               {items.map((i) => {
                 const s = slotOf(rec, i.id);
@@ -238,27 +239,31 @@ function PersonSheet(props: {
   const pickedSlot = picking ? slotOf(record, picking.item.id) : null;
 
   return (
-    <Sheet title={member.name} onClose={props.onClose}>
+    <Sheet
+      title={member.name}
+      onClose={props.onClose}
+      footer={
+        <div className="kl-nav">
+          <Button className="kl-btn" disabled={!prev} aria-label={prev ? `Zurück zu ${prev.name}` : 'Zurück'} onClick={() => prev && props.onNavigate(prev.id)}>
+            <ChevronLeft size={18} />
+          </Button>
+          {next ? (
+            <Button className="kl-btn kl-nav__next" onClick={() => props.onNavigate(next.id)}>
+              <span className="kl-ellipsis">Weiter: {next.name}</span>
+              <ChevronRight size={18} />
+            </Button>
+          ) : (
+            <Button className="kl-btn kl-nav__next" variant="primary" onClick={props.onClose}>
+              Fertig
+            </Button>
+          )}
+        </div>
+      }
+    >
       <div className="stack">
         {items.map((item) => (
           <SlotEditor key={item.id} memberId={member.id} item={item} slot={slotOf(record, item.id)} onPick={(kind) => setPicking({ item, kind })} />
         ))}
-      </div>
-
-      <div className="kl-nav">
-        <Button className="kl-btn" disabled={!prev} aria-label={prev ? `Zurück zu ${prev.name}` : 'Zurück'} onClick={() => prev && props.onNavigate(prev.id)}>
-          <ChevronLeft size={18} />
-        </Button>
-        {next ? (
-          <Button className="kl-btn kl-nav__next" onClick={() => props.onNavigate(next.id)}>
-            <span className="kl-ellipsis">Weiter: {next.name}</span>
-            <ChevronRight size={18} />
-          </Button>
-        ) : (
-          <Button className="kl-btn kl-nav__next" variant="primary" onClick={props.onClose}>
-            Fertig
-          </Button>
-        )}
       </div>
 
       {picking && pickedSlot && (
@@ -409,7 +414,7 @@ function ProcurementView({ requests, onOpen, onExport }: { requests: OpenRequest
       {byMember(requests).map(({ member, requests: rs }) => (
         <section key={member.id} className="card">
           <div className="card__head">
-            <h2 className="card__title">{member.name}</h2>
+            <h2 className="kl-person">{member.name}</h2>
             <button type="button" className="card__link kl-linkbtn" onClick={() => onOpen(member.id)}>
               Bearbeiten
             </button>

@@ -1,4 +1,5 @@
-import { Route, Routes } from 'react-router-dom';
+import { useEffect } from 'react';
+import { Route, Routes, useLocation } from 'react-router-dom';
 import { LogOut, Server } from 'lucide-react';
 import { useAccount } from '@/core/account/account';
 import { IS_DEMO, IS_WEB } from '@/core/env';
@@ -15,7 +16,17 @@ const bottom = features
 
 const sections = featureGroups().map(({ group, items }) => ({ label: GROUP_LABEL[group], items: items.map(toEntry) }));
 
+/** Titel im Browser-Tab je Bereich („Dienste · JF Hub“): hilft beim Wechseln zwischen Tabs und Screenreadern beim Seitenwechsel. */
+function useDocumentTitle() {
+  const { pathname } = useLocation();
+  useEffect(() => {
+    const f = features.find((x) => (routePath(x) === '/' ? pathname === '/' : pathname.startsWith(routePath(x))));
+    document.title = f && f.id !== 'home' ? `${f.label} · JF Hub` : 'JF Hub';
+  }, [pathname]);
+}
+
 export function AppShell() {
+  useDocumentTitle();
   const account = useAccount();
   // Im Browser gibt es keine Android-App-Hülle: Abmelden und (für Admins) die Server-Verwaltung stehen unten in der Seitenleiste.
   // Die Browser-Demo hat weder Konto noch Server.

@@ -1,16 +1,11 @@
+import { useId, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, type LucideIcon } from 'lucide-react';
-import { useOverlayClose } from './overlay';
+import { ChevronLeft, ChevronRight, Plus, X, type LucideIcon } from 'lucide-react';
+import { useFocusTrap, useOverlayClose } from './overlay';
+import { confirmDialog } from './dialog';
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
 
-export function Page({
-  title,
-  sub,
-  back,
-  fromMore,
-  actions,
-  children,
-}: {
+export function Page(props: {
   title: string;
   sub?: string;
   /** Übergeordnete Seite: zeigt oben einen Zurück-Link. */
@@ -19,8 +14,11 @@ export function Page({
   fromMore?: boolean;
   /** Schaltflächen rechts neben dem Titel. */
   actions?: ReactNode;
+  /** Wichtigste Neu-Aktion der Seite: am Handy runder Knopf unten rechts, am Laptop beschrifteter Knopf im Kopf. */
+  create?: { label: string; onClick: () => void };
   children?: ReactNode;
 }) {
+  const { create, title, sub, back, fromMore, actions, children } = props;
   return (
     <div className="page">
       {(back || fromMore) && (
@@ -34,9 +32,23 @@ export function Page({
           <h1 className="page__title">{title}</h1>
           {sub && <p className="page__sub">{sub}</p>}
         </div>
-        {actions && <div className="page__actions">{actions}</div>}
+        {(actions || create) && (
+          <div className="page__actions">
+            {actions}
+            {create && (
+              <button type="button" className="btn btn--primary page-cta" onClick={create.onClick}>
+                <Plus size={18} /> {create.label}
+              </button>
+            )}
+          </div>
+        )}
       </header>
       {children}
+      {create && (
+        <button type="button" className="fab fab--page" aria-label={create.label} onClick={create.onClick}>
+          <Plus />
+        </button>
+      )}
     </div>
   );
 }
@@ -154,19 +166,56 @@ export function Segmented<T extends string>(props: {
   );
 }
 
-export function Sheet({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
-  useOverlayClose(onClose);
+export function Sheet({
+  title,
+  onClose,
+  children,
+  footer,
+  dirty,
+  wide,
+}: {
+  title: string;
+  onClose: () => void;
+  children: ReactNode;
+  /** Bleibt unten sichtbar (Speichern, Löschen), auch wenn der Inhalt scrollt. */
+  footer?: ReactNode;
+  /** Ungespeicherte Änderungen: vor dem Schließen nachfragen. */
+  dirty?: boolean;
+  /** Breiter auf Laptop/Tablet (lange Listen in zwei Spalten). */
+  wide?: boolean;
+}) {
+  const box = useRef<HTMLDivElement>(null);
+  const titleId = useId();
+  const dirtyRef = useRef(dirty);
+  dirtyRef.current = dirty;
+  const requestClose = async () => {
+    if (dirtyRef.current && !(await confirmDialog('Deine Änderungen sind noch nicht gespeichert.', { title: 'Änderungen verwerfen?', confirmLabel: 'Verwerfen', cancelLabel: 'Weiter bearbeiten', danger: true }))) return;
+    onClose();
+  };
+  useOverlayClose(() => void requestClose());
+  useFocusTrap(box);
 
   return (
-    <div className="sheet-backdrop" onClick={onClose}>
-      <div className="sheet" role="dialog" aria-modal="true" aria-label={title} onClick={(e) => e.stopPropagation()}>
+    <div className="sheet-backdrop" onClick={() => void requestClose()}>
+      <div
+        ref={box}
+        tabIndex={-1}
+        className={`sheet${footer ? ' sheet--has-footer' : ''}${wide ? ' sheet--wide' : ''}`}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="sheet__head">
-          <h2 className="sheet__title">{title}</h2>
-          <button className="btn" onClick={onClose} aria-label="Schließen">
-            ✕
+          <h2 className="sheet__title" id={titleId}>
+            {title}
+          </h2>
+          <button type="button" className="btn sheet__close" onClick={() => void requestClose()} aria-label="Schließen">
+            <X size={20} />
           </button>
         </div>
-        {children}
+        <div className="sheet__body">{children}</div>
+        {footer && <div className="sheet__footer">{footer}</div>}
       </div>
     </div>
   );
