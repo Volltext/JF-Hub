@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { Inbox, Paperclip, PenSquare, RefreshCw, Settings } from 'lucide-react';
+import { Inbox, Paperclip, RefreshCw, Settings } from 'lucide-react';
 import { Button, EmptyState, Page } from '@/core/ui/components';
 import { SelectField } from '@/core/ui/pickers';
 import { mailApi, type MailAccount, type MailFolder, type MailSummary } from './api';
@@ -89,6 +89,7 @@ export function MailList({ account }: { account: MailAccount }) {
       title={current?.name ?? 'Posteingang'}
       sub={account.email}
       fromMore
+      create={{ label: 'Neue Mail', onClick: () => navigate('/mail/neu') }}
       actions={
         <>
           <button type="button" className="icon-btn" aria-label="Neu laden" title="Neu laden" onClick={() => void load(1, false)} disabled={loading}>
@@ -138,9 +139,6 @@ export function MailList({ account }: { account: MailAccount }) {
         <Button onClick={() => void load(Math.floor(items.length / pageSize) + 1, true)}>Ältere Mails laden ({total - items.length})</Button>
       )}
 
-      <button className="fab" aria-label="Neue Mail schreiben" onClick={() => navigate('/mail/neu')}>
-        <PenSquare />
-      </button>
     </Page>
   );
 }

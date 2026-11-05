@@ -46,12 +46,12 @@ export function WissenPage() {
         onChange={(id) => void db.kv.put({ key: 'wettkampf.competition', value: id })}
         options={COMPETITIONS.map((c) => ({ value: c.id, label: c.label }))}
       />
-      <Segmented<Section> value={current} onChange={setSection} options={sections} />
+      <Segmented<Section> tabs value={current} onChange={setSection} options={sections} />
       <input
         className="search"
         type="search"
-        placeholder="Suchen …"
-        aria-label="Suchen"
+        placeholder={`${sections.find((x) => x.value === current)?.label ?? 'Wissen'} durchsuchen`}
+        aria-label="Wissen durchsuchen"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
       />
@@ -85,11 +85,11 @@ function Rules({ list }: { list: RuleEntry[] }) {
     <div className="stack">
       {categories.map((c) => (
         <div key={c} className="stack">
-          <div className="group-label">{c}</div>
+          <h2 className="group-label">{c}</h2>
           {list
             .filter((r) => r.category === c)
             .map((r) => (
-              <details key={r.id} className="acc">
+              <details key={r.id} className="acc acc--card">
                 <summary>{r.title}</summary>
                 <p>{r.summary}</p>
                 <ul className="muted" style={{ paddingLeft: 20 }}>
@@ -112,11 +112,11 @@ function Positions({ list }: { list: PositionGuide[] }) {
     <div className="stack">
       {sections.map((s) => (
         <div key={s} className="stack">
-          <div className="group-label">{s}</div>
+          <h2 className="group-label">{s}</h2>
           {list
             .filter((p) => p.section === s)
             .map((p) => (
-              <details key={p.id} className="acc">
+              <details key={p.id} className="acc acc--card">
                 <summary>
                   <span className="pos-badge">{p.shortLabel}</span> {p.title}
                 </summary>
@@ -146,7 +146,7 @@ function Knots({ query }: { query: string }) {
   return (
     <div className="stack">
       {list.map((k) => (
-        <details key={k.id} className="acc">
+        <details key={k.id} className="acc acc--card">
           <summary>{k.title}</summary>
           <ol style={{ paddingLeft: 20 }}>
             {k.steps.map((s) => (
@@ -182,7 +182,7 @@ function Errors({ query }: { query: string }) {
         <div key={s.title} className="stack">
           <div className="group-label">{s.title}</div>
           {s.groups.map((g) => (
-            <details key={g.id} className="acc" open={query.trim().length > 0}>
+            <details key={g.id} className="acc acc--card" open={query.trim().length > 0}>
               <summary>{g.title}</summary>
               <div className="list">
                 {g.errors.map((e) => (
@@ -213,7 +213,7 @@ function Disziplinen({ query }: { query: string }) {
   return (
     <div className="stack">
       {list.map((d) => (
-        <details key={d.id} className="acc">
+        <details key={d.id} className="acc acc--card">
           <summary>{d.label}</summary>
           <p>{d.kurz}</p>
           <div className="group-label">Hinweise</div>
@@ -243,7 +243,7 @@ function Fragen({ query }: { query: string }) {
       </Card>
       {list.length === 0 && <Empty />}
       {list.map((g) => (
-        <details key={g.id} className="acc">
+        <details key={g.id} className="acc acc--card">
           <summary>{g.label}</summary>
           <ul style={{ paddingLeft: 20 }}>
             {g.impulse.map((i) => (

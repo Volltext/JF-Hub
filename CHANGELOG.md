@@ -4,6 +4,24 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/). Versionen 
 
 ## [Unreleased]
 
+### Geändert
+
+- **Bedienung und Barrierefreiheit überarbeitet** (App und Server-Verwaltung, nach einem UI/UX-Audit aller Seiten):
+  - **Fenster:** „Speichern“ und „Löschen“ stehen fest unten und sind ohne Scrollen sichtbar. Wer Änderungen nicht gespeichert hat und das Fenster schließt, wird gefragt. Der Tastaturfokus bleibt im Fenster und springt beim Schließen zurück. Bei Lösch-Rückfragen steht der Fokus auf „Abbrechen“.
+  - **Kontraste nach WCAG AA:** Rot im Dunkelmodus (Knöpfe und Links), grüne und orange Hinweise im Hellmodus. Der Fokusrahmen ist blau statt rot, damit er nicht wie ein Fehler aussieht. Jede Seite hat einen eigenen Titel im Browser-Tab.
+  - **Dienste:** Anwesenheits-Verlauf der letzten Dienste, Liste nach Monaten. „Dienst erfassen“ schlägt den letzten Diensttag vor, solange er noch fehlt. Beim Wechsel des Datums bleiben die Häkchen erhalten. Am Laptop zwei Spalten.
+  - **Aufgaben:** gruppiert nach Überfällig, Nächste 7 Tage, Später und Ohne Fälligkeit. Filter „Meine / Veröffentlicht“, mehrzeilige Notiz, Pflichtfeld-Hinweis beim Titel.
+  - **Heute:** Aufgaben direkt abhaken, ein Tipp öffnet genau diese Aufgabe. Einheitliche Datumsangaben. Bei einer frischen Installation steht „Gruppe anlegen“ ganz oben.
+  - **Mitglieder:** Suche ab neun Personen, Schalter für „aktiv“ mit Erklärung.
+  - **Kleidung:** Tabellenkopf und Namensspalte bleiben beim Scrollen stehen, die Legende steht über der Tabelle, und „Weiter: Name“ bleibt unten sichtbar.
+  - **Wettkampf:** Modus als „A-Teil/B-Teil“ ausgeschrieben, „Stopp“ deutlich rot. In der Aufstellung steht die Position vorne. Die Analyse zeigt den Zeitverlauf je Modus als Diagramm.
+  - **Wissen:** Reiter statt eines zweiten Umschalters, aufklappbare Einträge mit Pfeil.
+  - **Protokolle:** Werkzeugleiste am Laptop vollständig sichtbar. „PDF“ und „Privat/Für alle“ sind beschriftet, und „Neu“ steht als Knopf in der Liste.
+  - **Anmeldung:** Passwort einblendbar, Hinweis bei vergessenem Passwort, ohne doppelte Überschriften.
+  - **Einstellungen:** Schalter statt Kästchen, klarere Begriffe (Sommer- und Winterhalbjahr), „Ferien von Hand“ eingeklappt.
+  - **Neu-Knöpfe:** am Handy weiter rund unten rechts, am Laptop beschriftet im Seitenkopf.
+  - **Server-Verwaltung:** auf dem Handy ohne seitliches Scrollen (Tabellen werden zu Karten) und mit kürzeren Eingabefeldern. Je Seite gibt es nur noch einen Hauptknopf, „Wiederherstellen“ ist als riskant markiert. Das PDF-Layout zeigt eine Live-Skizze, Datei-Felder sind gestaltet und beschriftet. Die Übersicht zeigt „Als Nächstes“ statt doppelter Kacheln, und die Anmeldung sieht aus wie in der App.
+
 ## [3.2.1] – 2026-11-05
 
 ### Behoben

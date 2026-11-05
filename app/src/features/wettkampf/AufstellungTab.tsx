@@ -79,11 +79,11 @@ export function AufstellungTab({ competition, lsp }: { competition: string; lsp:
           const memberId = lineup[p.id];
           const name = memberId ? nameOf.get(memberId) : null;
           return (
-            <button key={p.id} className="item" onClick={() => setPicking(p)}>
+            <button key={p.id} className={`item${memberId ? '' : ' item--empty'}`} onClick={() => setPicking(p)}>
               <span className="pos-badge">{p.shortLabel}</span>
               <div className="item__main">
-                <div className="item__title">{name ?? <span className="muted">frei</span>}</div>
-                <div className="item__sub">{p.label}</div>
+                <div className="item__title">{p.label}</div>
+                <div className={`item__sub${name ? ' item__sub--strong' : ''}`}>{name ?? 'frei'}</div>
               </div>
             </button>
           );

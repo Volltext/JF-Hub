@@ -1,6 +1,7 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { CalendarCheck, FileText, ListTodo, Shirt, Timer, type LucideIcon } from 'lucide-react';
+import { CalendarCheck, Check, FileText, ListTodo, Shirt, Timer, Users, type LucideIcon } from 'lucide-react';
+import { taskRepo } from '@/core/db/repos';
 import { db } from '@/core/db/db';
 import { formatDate, formatDateShort } from '@/core/domain/format';
 import { todayIso } from '@/core/domain/id';
@@ -56,9 +57,25 @@ export function HomePage() {
     const p = await protokolleRepo.create('');
     navigate(`/protokolle/${p.id}`);
   }
+  const isoOf = (ts: string) => {
+    const d = new Date(ts);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+  const fresh = data.memberCount === 0;
 
   return (
     <Page title="Heute" sub={formatDate(today, true)}>
+      {fresh && (
+        <section className="card card--accent" aria-labelledby="start-title">
+          <h2 id="start-title" className="onboard__title">Willkommen bei JF Hub</h2>
+          <p className="muted" style={{ margin: 'var(--s-1) 0 var(--s-3)' }}>
+            Ein Schritt, dann kannst du loslegen: Lege deine Gruppe an. Danach erfasst du Dienste mit einem Antippen je Person.
+          </p>
+          <Link to="/mitglieder" className="btn btn--primary btn--icon">
+            <Users size={18} /> Gruppe anlegen
+          </Link>
+        </section>
+      )}
       <div className="quick-grid">
         <QuickAction to="/dienste" state={{ create: true }} icon={CalendarCheck} label="Dienst erfassen" primary />
         <QuickAction icon={FileText} label="Neues Protokoll" onClick={() => void newProtocol()} />
@@ -67,7 +84,7 @@ export function HomePage() {
       </div>
 
       <div className="home-grid">
-        {nextService && (
+        {nextService && !fresh && (
           <Card title="Nächster Dienst">
             <div className="item__title">{formatDate(nextService.date, true)}</div>
             <div className="item__sub">
@@ -78,16 +95,22 @@ export function HomePage() {
 
         <Card title="Aufgaben" link={{ to: '/aufgaben', label: 'Alle' }}>
           {openTasks.length === 0 ? (
-            <p className="muted">Keine offenen Aufgaben.</p>
+            <p className="muted" style={{ margin: 0 }}>Keine offenen Aufgaben. <Link to="/aufgaben" state={{ create: true }}>Aufgabe anlegen</Link></p>
           ) : (
             <div className="stack">
               {overdue > 0 && <span className="chip chip--danger">{overdue} überfällig</span>}
               {openTasks.slice(0, 5).map((t) => (
-                <Link key={t.id} to="/aufgaben" className="line" style={linkStyle}>
-                  <span className="line__title">{t.title}</span>
-                  {t.dueDate && <span className={`line__meta${t.dueDate < today ? ' line__meta--late' : ''}`}>{formatDateShort(t.dueDate)}</span>}
-                </Link>
+                <div key={t.id} className="line line--task">
+                  <button type="button" className="check check--sm" aria-label={`„${t.title}“ als erledigt markieren`} onClick={() => void taskRepo.setCompleted(t.id, true)}>
+                    <Check size={14} strokeWidth={3} className="check__hover" />
+                  </button>
+                  <Link to="/aufgaben" state={{ edit: t.id }} className="line__title" style={linkStyle}>
+                    {t.title}
+                  </Link>
+                  {t.dueDate && <span className={`line__meta${t.dueDate < today ? ' line__meta--late' : ''}`}>{t.dueDate < today ? 'überfällig · ' : ''}{formatDateShort(t.dueDate)}</span>}
+                </div>
               ))}
+              {openTasks.length > 5 && <Link to="/aufgaben" className="card__link">und {openTasks.length - 5} weitere</Link>}
             </div>
           )}
         </Card>
@@ -101,19 +124,19 @@ export function HomePage() {
               </div>
             </div>
           ) : (
-            <p className="muted">Noch kein Dienst erfasst.</p>
+            <p className="muted" style={{ margin: 0 }}>Noch kein Dienst erfasst.</p>
           )}
         </Card>
 
         <Card title="Zuletzt bearbeitet" link={{ to: '/protokolle', label: 'Alle' }}>
           {protocols.length === 0 ? (
-            <p className="muted">Noch keine Protokolle.</p>
+            <p className="muted" style={{ margin: 0 }}>Noch keine Protokolle.</p>
           ) : (
             <div className="stack">
               {protocols.map((p) => (
                 <Link key={p.id} to={`/protokolle/${p.id}`} style={linkStyle}>
                   <div className="item__title">{p.title || 'Ohne Titel'}</div>
-                  <div className="item__sub">{[p.datum && formatDate(p.datum), p.ort].filter(Boolean).join(' · ') || 'Protokoll'}</div>
+                  <div className="item__sub">{[p.datum && formatDateShort(p.datum), p.ort].filter(Boolean).join(' · ') || 'Protokoll'}</div>
                 </Link>
               ))}
             </div>
@@ -138,21 +161,11 @@ export function HomePage() {
         {lastRun && (
           <Card title="Letzter Lauf" link={{ to: '/wettkampf', label: 'Wettkampf' }}>
             <div className="item__title">{runTitle(lastRun)}</div>
-            <div className="item__sub">{new Date(lastRun.createdAt).toLocaleDateString('de-DE', { dateStyle: 'medium' })}</div>
+            <div className="item__sub">{formatDateShort(isoOf(lastRun.createdAt))}</div>
           </Card>
         )}
       </div>
 
-      {data.memberCount === 0 && (
-        <Card title="Erste Schritte">
-          <p className="muted">
-            Lege unter „Mitglieder“ deine Gruppe an.
-          </p>
-          <p style={{ marginTop: 'var(--s-3)' }}>
-            <Link to="/mitglieder">Zu den Mitgliedern</Link>
-          </p>
-        </Card>
-      )}
     </Page>
   );
 }

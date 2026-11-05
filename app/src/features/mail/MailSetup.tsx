@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Mail } from 'lucide-react';
-import { Button, Card, EmptyState, Page } from '@/core/ui/components';
+import { Button, Card, Page } from '@/core/ui/components';
 import { SelectField } from '@/core/ui/pickers';
 import { confirmDialog } from '@/core/ui/dialog';
 import { IS_WEB } from '@/core/env';
@@ -92,9 +92,23 @@ export function MailSetup({ account, onSaved }: { account: MailAccount | null | 
   return (
     <Page title={editing ? 'Postfach' : 'E-Mail verbinden'} sub={editing ? account!.email : 'Optional: Mails in JF Hub lesen und schreiben'} back={editing ? { to: '/mail', label: 'Posteingang' } : undefined} fromMore={!editing}>
       {!editing && (
-        <EmptyState icon={Mail} title="Dein Postfach in JF Hub">
-          Verbinde dein Postfach (zum Beispiel GMX), um Mails zu lesen und zu schreiben, Anhänge ins Protokoll zu übernehmen, Protokolle als PDF zu verschicken und aus Mails Aufgaben zu machen. Das Postfach ist nur für dich sichtbar.
-        </EmptyState>
+        <section className="card intro" aria-labelledby="mail-intro">
+          <div className="intro__head">
+            <span className="intro__icon" aria-hidden="true">
+              <Mail size={22} />
+            </span>
+            <h2 id="mail-intro" className="onboard__title">
+              Dein Postfach in JF Hub
+            </h2>
+          </div>
+          <ul className="intro__list">
+            <li>Mails lesen und schreiben, z. B. mit GMX, WEB.DE oder Posteo</li>
+            <li>Anhänge direkt ins Protokoll übernehmen</li>
+            <li>Protokolle als PDF verschicken</li>
+            <li>Aus einer Mail eine Aufgabe machen</li>
+          </ul>
+          <p className="field__hint" style={{ margin: 0 }}>Das Postfach sieht nur du.</p>
+        </section>
       )}
       <Card title="Zugangsdaten">
         <form

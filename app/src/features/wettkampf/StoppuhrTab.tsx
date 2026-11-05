@@ -81,8 +81,8 @@ export function StoppuhrTab({ competition, mode, onMode, onShow, lsp, defaultVar
     <>
       <div className="chips-row chips-row--compact" role="group" aria-label="Modus">
         {getModesForCompetition(competition).map((m) => (
-          <button key={m.id} className="chip-btn" aria-pressed={m.id === mode} onClick={() => onMode(m.id)}>
-            {m.shortLabel}
+          <button key={m.id} className="chip-btn" aria-pressed={m.id === mode} title={m.label} onClick={() => onMode(m.id)}>
+            {m.label.length <= 10 ? m.label : m.shortLabel}
             {running.includes(m.id) && m.id !== mode && <span className="chip-btn__dot" aria-label="(läuft)" />}
           </button>
         ))}
@@ -152,8 +152,7 @@ export function StoppuhrTab({ competition, mode, onMode, onShow, lsp, defaultVar
           <div className="row" style={{ gap: 'var(--s-3)' }}>
             {draft.isRunning ? (
               <Button
-                variant="danger"
-                className="clock__main"
+                className="clock__main btn--danger-solid"
                 onClick={() => {
                   void tap('heavy');
                   dispatch({ type: 'stop' });
@@ -175,6 +174,8 @@ export function StoppuhrTab({ competition, mode, onMode, onShow, lsp, defaultVar
             )}
             <Button
               aria-label="Zurücksetzen"
+              title="Zurücksetzen"
+              className="clock__reset"
               disabled={!hasData(draft, now)}
               onClick={async () => {
                 // An den angezeigten Lauf gebunden: startet während der Rückfrage jemand einen neuen, bleibt der.

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Delete } from 'lucide-react';
 import { pin } from '@/core/settings/pin';
 
 const MAX = 6;
@@ -21,11 +22,13 @@ export function LockScreen({ onUnlock }: { onUnlock: () => void }) {
     if (next.length >= 4) void pin.verify(next).then((ok) => ok && onUnlock());
   }
 
+  const dots = Math.max(4, value.length);
   return (
-    <div className="lock">
+    <main className="lock">
       <h1>JF Hub</h1>
-      <div className="lock__dots" aria-label={`${value.length} Ziffern eingegeben`}>
-        {Array.from({ length: MAX }, (_, i) => (
+      <p className="muted" style={{ margin: 0 }}>PIN eingeben</p>
+      <div className="lock__dots" role="img" aria-label={`${value.length} Ziffern eingegeben`}>
+        {Array.from({ length: dots }, (_, i) => (
           <span key={i} className={`lock__dot ${i < value.length ? 'lock__dot--on' : ''}`} />
         ))}
       </div>
@@ -38,14 +41,17 @@ export function LockScreen({ onUnlock }: { onUnlock: () => void }) {
             {d}
           </button>
         ))}
-        <button onClick={() => setValue(value.slice(0, -1))} aria-label="Löschen">
-          ⌫
+        <button onClick={() => setValue(value.slice(0, -1))} aria-label="Letzte Ziffer löschen" disabled={!value}>
+          <Delete size={24} />
         </button>
         <button onClick={() => press('0')}>0</button>
-        <button onClick={submit} aria-label="Bestätigen">
+        <button onClick={submit} aria-label="PIN bestätigen" disabled={value.length < 4} className="lock__ok">
           OK
         </button>
       </div>
-    </div>
+      <p className="muted lock__hint">
+        PIN vergessen? In den Android-Einstellungen bei „JF Hub“ den Speicher leeren und neu anmelden. Was schon auf dem Server liegt, ist danach wieder da; noch nicht abgeglichene Änderungen gehen verloren.
+      </p>
+    </main>
   );
 }

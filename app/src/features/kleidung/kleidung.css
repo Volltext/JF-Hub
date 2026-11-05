@@ -1,7 +1,12 @@
 /* ---- Kleidung ---- */
 
 /* Kleidertabelle: Name links, je Kleidungsstück eine Spalte; bei vielen Spalten seitlich scrollbar. */
-.kl-table { overflow-x: auto; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); }
+.kl-table { overflow: auto; max-height: max(360px, calc(100dvh - 300px)); overscroll-behavior: contain; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); }
+/* Kopfzeile und Namensspalte bleiben beim Scrollen stehen */
+.kl-row--head { position: sticky; top: 0; z-index: 2; background: var(--surface); border-bottom: 1px solid var(--border); }
+.kl-row > :first-child { position: sticky; left: 0; z-index: 1; background: var(--surface); align-self: stretch; display: flex; align-items: center; }
+.kl-row:hover > :first-child { background: var(--surface-2); }
+.kl-row--head:hover > :first-child { background: var(--surface); }
 .acc .kl-table { margin-bottom: var(--s-2); }
 .kl-table__inner { display: flex; flex-direction: column; }
 .kl-row {
@@ -9,15 +14,17 @@
   border: 0; border-top: 1px solid var(--border); background: transparent; color: inherit; text-align: left; cursor: pointer;
 }
 .kl-row:hover { background: var(--surface-2); }
-.kl-row--head { min-height: 40px; border-top: 0; cursor: default; color: var(--muted); font-size: 0.74rem; font-weight: 700; line-height: 1.15; }
+.kl-row--head { min-height: 44px; border-top: 0; cursor: default; color: var(--muted); font-size: 0.8rem; font-weight: 700; line-height: 1.15; }
 .kl-row--head:hover { background: transparent; }
 .kl-row--head > span { overflow-wrap: anywhere; hyphens: auto; }
 .kl-row--head > span:not(:first-child) { text-align: center; }
+.kl-row--head + .kl-row { border-top: 0; }
 .kl-name { font-weight: 600; line-height: 1.2; overflow-wrap: anywhere; }
 .kl-cell { display: flex; flex-direction: column; align-items: center; text-align: center; line-height: 1.2; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .kl-new { color: var(--accent); font-weight: 700; font-size: 0.85rem; white-space: nowrap; }
 .kl-new--passed { color: var(--muted); }
 .kl-legend { margin: 0; font-size: 0.85rem; }
+.kl-person { font-size: var(--t-md); font-weight: 700; margin: 0; }
 
 /* Eine Person: je Kleidungsstück ein Block mit aktueller Größe und Beschaffung. */
 .kl-slot { display: flex; flex-direction: column; gap: var(--s-2); padding: var(--s-3); background: var(--surface-2); border-radius: var(--r-md); }
@@ -30,7 +37,7 @@
 .kl-size__value { font-weight: 700; font-variant-numeric: tabular-nums; }
 .kl-slot__req { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s-2); }
 .kl-req-tag { color: var(--accent); font-weight: 700; }
-.kl-slot__req .stepper-btn { width: 36px; height: 36px; }
+.kl-slot__req .stepper-btn { width: 40px; height: 40px; }
 /* „Erhalten“ und ✕ bleiben zusammen und rücken nach rechts; auf sehr schmalen Geräten gemeinsam in die nächste Zeile. */
 .kl-req-actions { display: flex; align-items: center; gap: var(--s-2); margin-left: auto; }
 .kl-req-size {

@@ -67,10 +67,10 @@ test('Live-Stoppuhr: zwei Betreuer sehen dieselbe Stoppuhr', async ({ browser, r
   await expect(admin.getByPlaceholder('Was lief gut, was nicht?')).toHaveValue('');
 
   // Läuft die Stoppuhr in einem anderen Modus, zeigt die App das an und wechselt auf Wunsch dorthin.
-  await tobias.getByRole('button', { name: 'B', exact: true }).click();
+  await tobias.getByRole('button', { name: 'B-Teil', exact: true }).click();
   await tobias.getByRole('button', { name: 'Start', exact: true }).click();
   await admin.getByRole('button', { name: /Stoppuhr läuft gerade: B-Teil/ }).click();
-  await expect(admin.getByRole('button', { name: 'B', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(admin.getByRole('button', { name: 'B-Teil', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(admin.getByRole('button', { name: 'Stopp', exact: true })).toBeVisible();
   await admin.getByRole('button', { name: 'Stopp', exact: true }).click();
   await expect(tobias.getByRole('button', { name: 'Weiter', exact: true })).toBeVisible();

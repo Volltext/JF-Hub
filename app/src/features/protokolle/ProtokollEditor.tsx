@@ -315,8 +315,9 @@ function EditorInner({ initial, session, editorRef }: { initial: Protokoll; sess
           {saved ? 'Gespeichert' : 'Speichert …'}
         </span>
         <SyncBadge compact />
-        <button type="button" className="icon-btn" onClick={pdf} disabled={busy} aria-label="Als PDF exportieren" title="Als PDF exportieren">
-          <FileDown size={20} />
+        <button type="button" className="icon-btn icon-btn--label" onClick={pdf} disabled={busy} aria-label="Als PDF exportieren" title="Als PDF exportieren">
+          <FileDown size={18} />
+          <span className="icon-btn__text">PDF</span>
         </button>
         {!IS_DEMO && (
           <Link to={`/mail/neu?protokoll=${encodeURIComponent(initial.id)}`} className="icon-btn" aria-label="Als PDF per E-Mail senden" title="Als PDF per E-Mail senden" onClick={() => void autosave.flushIfDirty()}>
@@ -325,15 +326,16 @@ function EditorInner({ initial, session, editorRef }: { initial: Protokoll; sess
         )}
         <button
           type="button"
-          className="icon-btn"
+          className="icon-btn icon-btn--label"
           onClick={() => setSharing(true)}
           aria-label={shared ? 'Sichtbarkeit: für alle Betreuer' : 'Sichtbarkeit: privat'}
           title={shared ? 'Für alle Betreuer sichtbar' : 'Nur für dich sichtbar'}
         >
-          {shared ? <Users size={20} /> : <Lock size={20} />}
+          {shared ? <Users size={18} /> : <Lock size={18} />}
+          <span className="icon-btn__text">{shared ? 'Für alle' : 'Privat'}</span>
         </button>
         {canDelete && (
-          <button type="button" className="icon-btn" onClick={remove} aria-label="Protokoll löschen" title="Löschen">
+          <button type="button" className="icon-btn icon-btn--danger" onClick={remove} aria-label="Protokoll löschen" title="Protokoll löschen">
             <Trash2 size={20} />
           </button>
         )}
@@ -382,6 +384,7 @@ function EditorInner({ initial, session, editorRef }: { initial: Protokoll; sess
         </p>
       )}
 
+      <h1 className="sr-only">{meta.title || 'Protokoll ohne Titel'}</h1>
       <section className="proto-sheet">
         <textarea
           ref={titleRef}

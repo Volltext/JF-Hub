@@ -9,16 +9,18 @@ export function DemoBar() {
     window.location.reload();
   }
   return (
-    <div className="demo-banner" role="note">
-      <strong>Demo im Browser</strong> · Alles bleibt auf diesem Gerät.{' '}
-      <button type="button" className="demo-banner__link" onClick={() => void reset()}>
-        Zurücksetzen
-      </button>
-      {' · '}
-      {/* Die Demo liegt im Ordner demo/ der Website. */}
-      <a className="demo-banner__link" href="../">
-        Über JF Hub
-      </a>
-    </div>
+    <aside aria-label="Hinweis zur Demo">
+      <div className="demo-banner" role="note">
+        <strong>Demo im Browser</strong> · Alles bleibt auf diesem Gerät.{' '}
+        <button type="button" className="demo-banner__link" onClick={() => void reset()}>
+          Zurücksetzen
+        </button>
+        {' · '}
+        {/* Die Demo liegt im Ordner demo/ der Website. */}
+        <a className="demo-banner__link" href="../">
+          Über JF Hub
+        </a>
+      </div>
+    </aside>
   );
 }

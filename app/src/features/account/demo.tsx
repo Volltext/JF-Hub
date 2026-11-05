@@ -46,8 +46,10 @@ export function useDemoInfo(): DemoInfo | null {
 /** Schmale Leiste über der App: Das hier ist eine Demo. */
 export function DemoBanner({ info }: { info: DemoInfo }) {
   return (
-    <div className="demo-banner" role="note">
-      <strong>Demo</strong> · Bitte keine echten Daten eintragen. Alles wird täglich um {info.resetAt} Uhr zurückgesetzt.
-    </div>
+    <aside aria-label="Hinweis zur Demo">
+      <div className="demo-banner" role="note">
+        <strong>Demo</strong> · Bitte keine echten Daten eintragen. Alles wird täglich um {info.resetAt} Uhr zurückgesetzt.
+      </div>
+    </aside>
   );
 }
