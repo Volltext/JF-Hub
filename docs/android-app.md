@@ -14,6 +14,7 @@ Die **App im Browser (PWA)** deckt fast alles ab. Die Android-App ist ein Zusatz
 | Offline-Betrieb | ✓ | ✓ |
 | Installation | über den Browser, kostenlos, alle Systeme | APK, nur Android |
 | Erinnerungen | Web-Push vom Server (braucht https) | lokale Alarme, auch ohne Server |
+| E-Mail-Postfach ([E-Mail](e-mail.md)) | ✓ | ✓ (Benachrichtigung bei neuen Mails nur in der PWA) |
 | Handschrift | einfacher Editor | **Stiftdruck, niedrige Latenz, Handballen-Erkennung, Handschrift → Text** |
 | Bildschirm wach halten (Stoppuhr) | ✓ (wenn der Browser es kann) | ✓ |
 | PIN-Sperre | – | ✓ |
