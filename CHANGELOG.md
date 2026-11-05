@@ -4,6 +4,10 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/). Versionen 
 
 ## [Unreleased]
 
+### Behoben
+
+- **Docker-Image für ARM brach beim Bauen ab:** Im Web-Build lud ein Install-Skript (das alte `sharp` in `@capacitor/assets`, nur für die Android-Symbole gebraucht) libvips von GitHub nach. Hing dieser Download, scheiterte `npm ci`. Der Web-Build installiert jetzt ohne Install-Skripte, er braucht keins.
+
 ### Geändert
 
 - **Bedienung und Barrierefreiheit überarbeitet** (App und Server-Verwaltung, nach einem UI/UX-Audit aller Seiten):

@@ -6,7 +6,9 @@
 FROM node:22-alpine AS web
 WORKDIR /build/app
 COPY app/package.json app/package-lock.json ./
-RUN npm ci --no-audit --no-fund
+# Ohne Install-Skripte: Der Web-Build braucht keins. Das einzige mit Download (sharp in @capacitor/assets, nur für die
+# Android-Symbole) lädt sonst libvips von GitHub nach und brach damit den ARM-Build ab, sobald der Download hing.
+RUN npm ci --no-audit --no-fund --ignore-scripts
 COPY app/index.html app/tsconfig.json app/vite.config.ts app/.env.web ./
 COPY app/src ./src
 COPY app/public ./public
