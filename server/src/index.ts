@@ -1,7 +1,9 @@
+import { mkdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildApp, parseTrustProxy, VERSION } from './app.js';
 import { openDb } from './db.js';
+import { dataDirWarning } from './dataDir.js';
 import { loadMailKey } from './mail/crypto.js';
 import { DEMO_ACCOUNTS, formatResetAt, parseResetAt } from './demo.js';
 
@@ -11,6 +13,13 @@ const port = Number(process.env.PORT ?? 8080);
 
 const demo = ['1', 'true', 'yes', 'ja'].includes((process.env.DEMO ?? '').trim().toLowerCase());
 
+mkdirSync(dataDir, { recursive: true });
+const dataWarning = dataDirWarning(dataDir);
+if (dataWarning) {
+  console.warn('\n==================================================');
+  console.warn(` ACHTUNG: ${dataWarning}`);
+  console.warn('==================================================\n');
+}
 const db = openDb(join(dataDir, 'jf-hub.sqlite'));
 const mailOn = !['0', 'false', 'no', 'nein'].includes((process.env.MAIL_ENABLED ?? '').trim().toLowerCase());
 const mailPoll = Number(process.env.MAIL_POLL_SECONDS);
