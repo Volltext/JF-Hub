@@ -656,7 +656,12 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance & { se
     } catch (e) {
       const status = (e as { statusCode?: number }).statusCode;
       if (status === 404 || status === 410) db.prepare('DELETE FROM push_subscriptions WHERE endpoint = ?').run(row.endpoint);
-      return reply.code(502).send({ error: `Der Push-Dienst hat die Nachricht abgelehnt${status ? ` (${status})` : ''}. Bitte Benachrichtigungen aus- und wieder einschalten.` });
+      // Ohne Statuscode kam keine Antwort vom Push-Dienst: Netz des Servers (DNS, Firewall, kein IPv6), nicht das Gerät.
+      if (!status) {
+        app.log.warn({ err: e }, 'Push-Dienst nicht erreichbar');
+        return reply.code(502).send({ error: `Der Server erreicht den Push-Dienst nicht (${(e as Error).message}). Bitte prüfen, ob der Server ins Internet darf.` });
+      }
+      return reply.code(502).send({ error: `Der Push-Dienst hat die Nachricht abgelehnt (${status}). Bitte Benachrichtigungen aus- und wieder einschalten.` });
     }
   });
 

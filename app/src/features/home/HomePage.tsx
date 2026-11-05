@@ -1,6 +1,7 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { CalendarCheck, Check, FileText, ListTodo, Shirt, Timer, Users, type LucideIcon } from 'lucide-react';
+import { CalendarCheck, Check, FileText, ListTodo, Mail, Shirt, Timer, Users, type LucideIcon } from 'lucide-react';
+import { useMailShortcut } from '@/features/mail/useMailShortcut';
 import { taskRepo } from '@/core/db/repos';
 import { db } from '@/core/db/db';
 import { formatDate, formatDateShort } from '@/core/domain/format';
@@ -15,19 +16,24 @@ import { clothingCounts } from './counts';
 
 const linkStyle = { textDecoration: 'none', color: 'inherit' } as const;
 
-function QuickAction({ to, state, icon: Icon, label, onClick, primary }: { to?: string; state?: object; icon: LucideIcon; label: string; onClick?: () => void; primary?: boolean }) {
+function QuickAction({ to, state, icon: Icon, label, onClick, primary, badge, ariaLabel }: { to?: string; state?: object; icon: LucideIcon; label: string; onClick?: () => void; primary?: boolean; badge?: string; ariaLabel?: string }) {
   const cls = `quick${primary ? ' quick--primary' : ''}`;
   const body = (
     <>
-      <Icon size={24} />
+      <span className="quick__icon">
+        <Icon size={24} />
+        {badge && <span className="quick__badge" aria-hidden="true">{badge}</span>}
+      </span>
       <strong>{label}</strong>
     </>
   );
-  return to ? (
-    <Link to={to} state={state} className={cls}>
-      {body}
-    </Link>
-  ) : (
+  if (to)
+    return (
+      <Link to={to} state={state} className={cls} aria-label={ariaLabel}>
+        {body}
+      </Link>
+    );
+  return (
     <button type="button" className={cls} onClick={onClick}>
       {body}
     </button>
@@ -37,6 +43,7 @@ function QuickAction({ to, state, icon: Icon, label, onClick, primary }: { to?: 
 export function HomePage() {
   const navigate = useNavigate();
   const service = useServiceConfig();
+  const mail = useMailShortcut();
   const data = useLiveQuery(async () => ({
     last: (await db.sessions.orderBy('date').reverse().first()) ?? null,
     memberCount: await db.members.filter((m) => m.active).count(),
@@ -80,6 +87,15 @@ export function HomePage() {
         <QuickAction to="/dienste" state={{ create: true }} icon={CalendarCheck} label="Dienst erfassen" primary />
         <QuickAction icon={FileText} label="Neues Protokoll" onClick={() => void newProtocol()} />
         <QuickAction to="/aufgaben" state={{ create: true }} icon={ListTodo} label="Neue Aufgabe" />
+        {mail.configured && (
+          <QuickAction
+            to="/mail"
+            icon={Mail}
+            label="E-Mail"
+            badge={mail.unread ? (mail.unread > 99 ? '99+' : String(mail.unread)) : undefined}
+            ariaLabel={mail.unread ? `E-Mail, ${mail.unread} ungelesen` : 'E-Mail'}
+          />
+        )}
         <QuickAction to="/wettkampf" icon={Timer} label="Stoppuhr" />
       </div>
 
