@@ -4,8 +4,13 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/). Versionen 
 
 ## [Unreleased]
 
+### Neu
+
+- **E-Mail auf der Startseite:** Ist ein Postfach verbunden, steht „E-Mail“ bei den Schnellzugriffen auf „Heute“, mit der Zahl ungelesener Mails im Posteingang. Ohne Postfach bleibt die Kachel weg.
+
 ### Behoben
 
+- **Benachrichtigungen kamen nie an (auch die Testbenachrichtigung):** Der Adress-Filter beim Push-Versand (`safeLookup`) lieferte immer nur eine einzelne Adresse. Node 22 verbindet aber mit „Happy Eyeballs“ und fragt dabei nach einer Liste. Jede Verbindung zum Push-Dienst brach deshalb ab („Invalid IP address: undefined“). Der Filter beherrscht jetzt beide Formen, Tests decken das ab. Erreicht der Server den Push-Dienst nicht, sagt die Fehlermeldung das jetzt, statt eine Ablehnung zu melden.
 - **Docker-Image für ARM brach beim Bauen ab:** Im Web-Build lud ein Install-Skript (das alte `sharp` in `@capacitor/assets`, nur für die Android-Symbole gebraucht) libvips von GitHub nach. Hing dieser Download, scheiterte `npm ci`. Der Web-Build installiert jetzt ohne Install-Skripte, er braucht keins.
 
 ### Geändert

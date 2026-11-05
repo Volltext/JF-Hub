@@ -93,19 +93,31 @@ export function isBlockedAddress(ip: string, family = ip.includes(':') ? 6 : 4):
   }
 }
 
+type Resolve = (hostname: string, options: Record<string, unknown> & { all: true }, cb: (err: NodeJS.ErrnoException | null, addresses: { address: string; family: number }[]) => void) => void;
+
 /**
  * DNS-Auflösung für den Push-Versand mit Adress-Filter: schlägt die Verbindung ab, wenn der Name auf eine interne
  * Adresse zeigt (zweite SSRF-Linie, greift auch bei öffentlichen „Resolver-Tricks“ wie *.nip.io und gegen DNS-Rebinding).
+ *
+ * Hält sich an beide Aufrufformen von `lookup`: Node 20+ verbindet standardmäßig mit „Happy Eyeballs“
+ * (`autoSelectFamily`) und fragt dafür mit `all: true` nach einer Liste. Wer dann eine einzelne Adresse liefert,
+ * bricht jede Verbindung ab („Invalid IP address: undefined“) – so kam keine einzige Push-Nachricht an.
  */
-export const safeLookup: LookupFunction = (hostname, options, callback) => {
-  const opts = typeof options === 'number' ? { family: options } : options;
-  dnsLookup(hostname, { ...opts, all: true }, (err, addresses) => {
-    if (err) return callback(err, '', 0);
-    const ok = addresses.find((a) => !isBlockedAddress(a.address, a.family));
-    if (!ok) return (callback as (e: Error) => void)(new Error('Push-Ziel zeigt auf eine nicht erlaubte Adresse'));
-    callback(null, ok.address, ok.family);
-  });
-};
+export function makeSafeLookup(resolve: Resolve = dnsLookup as unknown as Resolve): LookupFunction {
+  return (hostname, options, callback) => {
+    const opts = typeof options === 'number' ? { family: options } : (options ?? {});
+    const wantsAll = (opts as { all?: boolean }).all === true;
+    resolve(hostname, { ...opts, all: true }, (err, addresses) => {
+      if (err) return (callback as (e: Error) => void)(err);
+      const allowed = addresses.filter((a) => !isBlockedAddress(a.address, a.family));
+      if (!allowed.length) return (callback as (e: Error) => void)(new Error('Push-Ziel zeigt auf eine nicht erlaubte Adresse'));
+      if (wantsAll) return (callback as unknown as (e: null, list: { address: string; family: number }[]) => void)(null, allowed);
+      callback(null, allowed[0]!.address, allowed[0]!.family);
+    });
+  };
+}
+
+export const safeLookup: LookupFunction = makeSafeLookup();
 
 export function subscribe(db: DatabaseSync, userId: string, sessionHash: string, sub: BrowserSubscription, device: string): void {
   const endpoint = checkEndpoint(sub?.endpoint);
