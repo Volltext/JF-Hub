@@ -10,6 +10,10 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/). Versionen 
 
 - **Android-APK ließ sich nicht als Update erkennen:** `versionName`/`versionCode` in `app/android/app/build.gradle` standen seit 3.0.0 unverändert auf `3.0.0`/23. Alle APKs der Releases 3.1.0 bis 3.2.0 hießen deshalb `JF-Hub-3.0.0-release.apk` und trugen dieselbe Versionsnummer, Android erkennt sie nicht zuverlässig als neuere Version. Die Nummern (App, Server, APK) stehen jetzt wieder auf der Release-Version. **Beim nächsten Release gehört die Erhöhung dazu** (siehe `docs/entwicklung.md`, Abschnitt Release).
 
+### Geändert
+
+- **Warnung beim Start ohne dauerhaften Datenordner:** Läuft der Server im Container, ohne dass `/data` eingebunden ist, steht eine deutliche Warnung in der Konsole (die Daten gingen beim nächsten Update verloren, und mit gesetztem `ADMIN_PASSWORD` fiele nur die Neuanmeldung auf). Dazu eine Anleitung in der Installation: „Nach dem Update muss ich mich neu anmelden“.
+
 ### Neu
 
 - **E-Mail (optional):** Jeder Betreuer kann sein eigenes Postfach einbinden (GMX, WEB.DE, Posteo, mailbox.org, IONOS, T-Online, Gmail mit App-Passwort oder jeder Anbieter mit IMAP/SMTP) und in der App **Mails lesen, schreiben, beantworten und weiterleiten**. Dazu: **Anhänge** speichern oder ins Protokoll übernehmen (an ein vorhandenes oder ein neues), **Protokolle als PDF im Vereins-Layout verschicken** (Umschlag-Symbol im Protokoll, auch mehrere, nur sichtbare), **Aufgabe oder Protokoll aus einer Mail** anlegen und eine **Benachrichtigung bei neuen Mails** (Web-Push, Abfrage etwa alle 2 Minuten). Ohne Postfach ändert sich nichts; `MAIL_ENABLED=0` schaltet die Funktion auf dem Server ab. Anleitung: [E-Mail](docs/e-mail.md). Technisch: `server/src/mail/`, `/api/mail/*`, Tabelle `mail_accounts`.

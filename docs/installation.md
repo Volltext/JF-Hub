@@ -165,6 +165,27 @@ Die Datenbank wird beim Start automatisch auf den neuen Stand gebracht. Mach vor
 
 Die App im Browser aktualisiert sich selbst: Beim nächsten Öffnen mit Netz wird die neue Version geladen. Die Android-App bekommt Updates über eine neue APK.
 
+### Nach dem Update muss ich mich neu anmelden
+
+Das sollte **nicht** passieren: Anmeldungen liegen in der Datenbank im Datenordner `/data` und gelten 90 Tage ab der letzten Nutzung. Ein Neustart oder Update des Containers lässt sie bestehen, solange der Datenordner erhalten bleibt (ausprobiert: anmelden, Server neu starten, mit demselben Token weiterarbeiten). Muss man sich nach einem Update neu anmelden, **ist die Datenbank weg**, das heißt, der Container läuft ohne dauerhaften Datenordner. Wenn du ein Admin-Konto über `ADMIN_USER`/`ADMIN_PASSWORD` festgelegt hast, legt der Server es auf der leeren Datenbank neu an, und es fällt nur durch die Neuanmeldung auf. Die Geräte schicken ihre lokalen Daten dann wieder hoch, aber Konten der anderen Betreuer, Einladungen und Backups sind weg.
+
+So prüfst du es:
+
+```bash
+docker inspect jf-hub --format '{{json .Mounts}}'     # muss einen Eintrag mit "Destination":"/data" zeigen
+docker volume ls                                       # das Volume (z. B. jf-hub_jf-hub-data) sollte nach dem Update dasselbe sein
+docker compose logs jf-hub | grep -i "ACHTUNG\|Ersteinrichtung"
+```
+
+Typische Ursachen:
+
+- **`docker run` ohne `-v jf-hub-data:/data`:** Docker legt ein anonymes Volume an, das beim Neuerstellen des Containers verwaist.
+- **Neuer Compose-Projektname:** Das Volume heißt `<Projekt>_jf-hub-data`. Wer den Ordner umbenennt, die Datei aus einem anderen Ordner startet oder den Stack in Portainer neu anlegt, bekommt ein neues, leeres Volume. Mit `name: jf-hub` ganz oben in der `docker-compose.yml` oder `COMPOSE_PROJECT_NAME=jf-hub` in der `.env` bleibt der Name fest.
+- **`docker compose down -v`** löscht die Volumes mit.
+- **Eigener `DATA_PATH`**, der nach dem Update nicht mehr gesetzt ist (`.env` fehlt oder liegt woanders).
+
+Seit dieser Version warnt der Server beim Start in der Konsole (`ACHTUNG: Der Datenordner /data ist kein eingebundenes Volume …`), wenn er im Container ohne eingebundenen Datenordner läuft.
+
 ## Backup und Wiederherstellung
 
 Alles liegt in `/data` (Datei `jf-hub.sqlite`). Hast du [E-Mail](e-mail.md) im Einsatz, liegt dort auch `mail.key`: der Schlüssel zu den gespeicherten Postfach-Passwörtern. Die Backups enthalten ihn bewusst **nicht**; sicher ihn getrennt (sonst verbinden die Betreuer ihr Postfach nach einer Wiederherstellung auf einem neuen Volume neu).
