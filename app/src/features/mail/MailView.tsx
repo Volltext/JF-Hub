@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ChevronLeft, Download, FileText, Forward, ListPlus, MailOpen, Paperclip, Reply, ReplyAll, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronLeft, Download, FileText, Forward, ListPlus, MailOpen, Paperclip, Reply, ReplyAll, Trash2 } from 'lucide-react';
 import { Button, Sheet } from '@/core/ui/components';
 import { DateField } from '@/core/ui/pickers';
 import { alertDialog, confirmDialog } from '@/core/ui/dialog';
@@ -8,7 +8,7 @@ import { formatBytes } from '@/features/attachments/limits';
 import { taskRepo } from '@/core/db/repos';
 import { mailApi, type MailAccount, type MailAttachment, type MailMessage } from './api';
 import { createProtocolFromMail, placeAttachments, queueForProtocol, saveAttachment } from './actions';
-import { addressList, buildForward, buildReply, formatDateTime } from './compose';
+import { addressList, buildForward, buildReply, formatDateTime, recipientSummary, shortAddress } from './compose';
 import { ProtocolPicker } from './ProtocolPicker';
 import { taskFromMail } from './toTask';
 
@@ -24,11 +24,13 @@ export function MailView({ account }: { account: MailAccount }) {
   const [busy, setBusy] = useState(false);
   const [panel, setPanel] = useState<Panel>(null);
   const [notice, setNotice] = useState('');
+  const [showAll, setShowAll] = useState(false);
 
   useEffect(() => {
     let alive = true;
     setMsg(undefined);
     setError('');
+    setShowAll(false);
     mailApi.get(folder, uid).then(
       (m) => alive && setMsg(m),
       (e) => {
@@ -95,32 +97,47 @@ export function MailView({ account }: { account: MailAccount }) {
         <ChevronLeft size={18} /> {back.label}
       </Link>
       <header className="mail-view__head">
-        <h1 className="page__title">{msg.subject || '(ohne Betreff)'}</h1>
-        <dl className="mail-meta">
-          <dt>Von</dt>
-          <dd>{msg.from ? addressList([msg.from]) : 'Unbekannt'}</dd>
-          <dt>An</dt>
-          <dd>{addressList(msg.to) || '–'}</dd>
-          {msg.cc.length > 0 && (
-            <>
-              <dt>Cc</dt>
-              <dd>{addressList(msg.cc)}</dd>
-            </>
-          )}
-          <dt>Datum</dt>
-          <dd>{formatDateTime(msg.date) || '–'}</dd>
-        </dl>
+        <h1 className="mail-view__subject">{msg.subject || '(ohne Betreff)'}</h1>
+        <div className="mail-from">
+          <span className="mail-from__who">
+            <strong>{shortAddress(msg.from)}</strong>
+            {msg.from?.name.trim() && <span className="muted"> &lt;{msg.from.address}&gt;</span>}
+          </span>
+          <span className="muted mail-from__date">{formatDateTime(msg.date)}</span>
+        </div>
+        {/* Rundmails haben oft Dutzende Empfänger: eingeklappt nur eine Zeile, die volle Liste auf Tipp. */}
+        <button type="button" className="mail-to" aria-expanded={showAll} onClick={() => setShowAll(!showAll)}>
+          <span className="muted">An:</span> <span className="mail-to__text">{recipientSummary(msg.to, msg.cc) || '–'}</span>
+          <ChevronDown size={16} className="mail-to__chevron" aria-hidden="true" />
+        </button>
+        {showAll && (
+          <dl className="mail-meta">
+            <dt>An</dt>
+            <dd>{addressList(msg.to) || '–'}</dd>
+            {msg.cc.length > 0 && (
+              <>
+                <dt>Cc</dt>
+                <dd>{addressList(msg.cc)}</dd>
+              </>
+            )}
+          </dl>
+        )}
       </header>
 
-      <div className="mail-actions" role="toolbar" aria-label="Aktionen">
-        <Button onClick={() => reply(false)}><Reply size={18} /> Antworten</Button>
-        {(msg.to.length + msg.cc.length > 1) && (
-          <Button onClick={() => reply(true)}><ReplyAll size={18} /> Allen</Button>
+      <div className="mail-actions mail-actions--icons" role="toolbar" aria-label="Aktionen">
+        <button type="button" className="icon-btn" aria-label="Antworten" title="Antworten" onClick={() => reply(false)}><Reply size={20} /></button>
+        {msg.to.length + msg.cc.length > 1 && (
+          <button type="button" className="icon-btn" aria-label="Allen antworten" title="Allen antworten" onClick={() => reply(true)}><ReplyAll size={20} /></button>
         )}
-        <Button onClick={forward}><Forward size={18} /> Weiterleiten</Button>
-        <Button onClick={() => setPanel({ kind: 'task' })}><ListPlus size={18} /> Aufgabe</Button>
-        <Button onClick={() => setPanel({ kind: 'protocol' })}><FileText size={18} /> Protokoll</Button>
-        <Button
+        <button type="button" className="icon-btn" aria-label="Weiterleiten" title="Weiterleiten" onClick={forward}><Forward size={20} /></button>
+        <button type="button" className="icon-btn" aria-label="Aufgabe aus Mail" title="Aufgabe aus Mail" onClick={() => setPanel({ kind: 'task' })}><ListPlus size={20} /></button>
+        <button type="button" className="icon-btn" aria-label="Protokoll aus Mail" title="Ins Protokoll übernehmen" onClick={() => setPanel({ kind: 'protocol' })}><FileText size={20} /></button>
+        <span className="mail-actions__spacer" />
+        <button
+          type="button"
+          className="icon-btn"
+          aria-label="Als ungelesen markieren"
+          title="Als ungelesen markieren"
           disabled={busy}
           onClick={() =>
             void guarded(async () => {
@@ -129,35 +146,29 @@ export function MailView({ account }: { account: MailAccount }) {
             })
           }
         >
-          <MailOpen size={18} /> Ungelesen
-        </Button>
-        <Button variant="danger" disabled={busy} onClick={() => void remove()}><Trash2 size={18} /> Löschen</Button>
+          <MailOpen size={20} />
+        </button>
+        <button type="button" className="icon-btn mail-actions__danger" aria-label="Löschen" title="Löschen" disabled={busy} onClick={() => void remove()}><Trash2 size={20} /></button>
       </div>
 
       {error && <p role="alert" style={{ color: 'var(--danger)' }}>{error}</p>}
       {notice && <p role="status" className="muted">{notice}</p>}
 
       {msg.attachments.length > 0 && (
-        <section className="card mail-attachments">
-          <div className="card__head">
-            <h2 className="card__title"><Paperclip size={16} /> {msg.attachments.length === 1 ? '1 Anhang' : `${msg.attachments.length} Anhänge`}</h2>
-          </div>
-          <div className="list">
-            {msg.attachments.map((a) => (
-              <div key={a.index} className="item mail-att">
-                <div className="item__main">
-                  <div className="item__title mail-att__name">{a.filename}</div>
-                  <div className="item__sub">{formatBytes(a.size)}</div>
-                </div>
-                <Button disabled={busy} aria-label={`${a.filename} speichern`} onClick={() => void guarded(() => saveAttachment(folder, uid, a))}>
-                  <Download size={18} /> Speichern
-                </Button>
-                <Button disabled={busy} aria-label={`${a.filename} ins Protokoll`} onClick={() => setPanel({ kind: 'pick', attachments: [a] })}>
-                  <FileText size={18} /> Ins Protokoll
-                </Button>
-              </div>
-            ))}
-          </div>
+        <section className="mail-attachments" aria-label="Anhänge">
+          {msg.attachments.map((a) => (
+            <div key={a.index} className="mail-att">
+              <Paperclip size={16} className="muted" aria-hidden="true" />
+              <span className="mail-att__name">{a.filename}</span>
+              <span className="muted mail-att__size">{formatBytes(a.size)}</span>
+              <button type="button" className="icon-btn" disabled={busy} aria-label={`${a.filename} speichern`} title="Speichern" onClick={() => void guarded(() => saveAttachment(folder, uid, a))}>
+                <Download size={18} />
+              </button>
+              <button type="button" className="icon-btn" disabled={busy} aria-label={`${a.filename} ins Protokoll`} title="Ins Protokoll" onClick={() => setPanel({ kind: 'pick', attachments: [a] })}>
+                <FileText size={18} />
+              </button>
+            </div>
+          ))}
         </section>
       )}
 

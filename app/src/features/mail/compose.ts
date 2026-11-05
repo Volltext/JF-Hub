@@ -14,6 +14,16 @@ export const addressList = (list: MailAddress[]): string => list.map(formatAddre
 /** Kurzform für Listen: Name, sonst Adresse. */
 export const shortAddress = (a: MailAddress | null | undefined): string => (a ? a.name.trim() || a.address : 'Unbekannt');
 
+/**
+ * Empfänger in einer Zeile für den Kopf einer Mail: die ersten Namen, dann „und 12 weitere“. So bleibt eine Rundmail mit Dutzenden
+ * Empfängern eine Zeile; die volle Liste steht eingeklappt dahinter.
+ */
+export function recipientSummary(to: MailAddress[], cc: MailAddress[] = [], show = 2): string {
+  const all = [...to, ...cc];
+  if (all.length <= show + 1) return all.map(shortAddress).join(', ');
+  return `${all.slice(0, show).map(shortAddress).join(', ')} und ${all.length - show} weitere`;
+}
+
 export function replySubject(subject: string): string {
   return /^\s*(re|aw)\s*:/i.test(subject) ? subject : `Re: ${subject}`;
 }

@@ -4,9 +4,16 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/). Versionen 
 
 ## [Unreleased]
 
+## [3.2.1] – 2026-11-05
+
+### Behoben
+
+- **Android-APK ließ sich nicht als Update erkennen:** `versionName`/`versionCode` in `app/android/app/build.gradle` standen seit 3.0.0 unverändert auf `3.0.0`/23. Alle APKs der Releases 3.1.0 bis 3.2.0 hießen deshalb `JF-Hub-3.0.0-release.apk` und trugen dieselbe Versionsnummer, Android erkennt sie nicht zuverlässig als neuere Version. Die Nummern (App, Server, APK) stehen jetzt wieder auf der Release-Version. **Beim nächsten Release gehört die Erhöhung dazu** (siehe `docs/entwicklung.md`, Abschnitt Release).
+
 ### Neu
 
 - **E-Mail (optional):** Jeder Betreuer kann sein eigenes Postfach einbinden (GMX, WEB.DE, Posteo, mailbox.org, IONOS, T-Online, Gmail mit App-Passwort oder jeder Anbieter mit IMAP/SMTP) und in der App **Mails lesen, schreiben, beantworten und weiterleiten**. Dazu: **Anhänge** speichern oder ins Protokoll übernehmen (an ein vorhandenes oder ein neues), **Protokolle als PDF im Vereins-Layout verschicken** (Umschlag-Symbol im Protokoll, auch mehrere, nur sichtbare), **Aufgabe oder Protokoll aus einer Mail** anlegen und eine **Benachrichtigung bei neuen Mails** (Web-Push, Abfrage etwa alle 2 Minuten). Ohne Postfach ändert sich nichts; `MAIL_ENABLED=0` schaltet die Funktion auf dem Server ab. Anleitung: [E-Mail](docs/e-mail.md). Technisch: `server/src/mail/`, `/api/mail/*`, Tabelle `mail_accounts`.
+  - **Kompakte Mail-Ansicht:** Absender und Datum in einer Zeile, Empfänger zusammengefasst („Anna, Ben und 28 weitere“, auf Tipp die volle Liste), Aktionen als Symbolleiste und Anhänge einzeilig. Bei Rundmails steht der Text sofort im Bild.
   - **Sicherheit:** Passwörter verschlüsselt (AES-256-GCM, Schlüssel nur in `MAIL_KEY` oder `mail.key`, nie in Datenbank oder Backup), Verbindung nur verschlüsselt und mit geprüftem Zertifikat, nur übliche Mail-Ports und öffentliche Adressen (Schutz vor Zugriffen auf das interne Netz, `MAIL_ALLOW_PRIVATE=1` hebt das auf), HTML-Mails nur als Text (nichts wird nachgeladen), Anhänge nie inline, Absender immer das eigene Postfach, in der Demo gesperrt. Mails werden nicht gespeichert.
   - **Grenzen:** nur Anmeldung mit Passwort (kein OAuth), Mails nur mit Verbindung zum Server, reiner Text beim Schreiben, ein Postfach je Betreuer. Die IMAP-Anbindung ist gegen eine Attrappe getestet, nicht gegen einen echten Anbieter.
 - **ZimaOS / CasaOS:** Fertige `docker-compose.zimaos.yml` zum Einfügen unter „Eigene App installieren“: ohne `.env` und Variablen, im Heimnetz erreichbar, Daten unter `/DATA/AppData/jf-hub/data`, mit Kachel (Name, Symbol, Beschreibung) auf dem Dashboard. Anleitung: Installation, Variante D.

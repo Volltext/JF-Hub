@@ -55,7 +55,7 @@ import { exchange, type ExchangeRequest } from './collab/exchange.js';
 import { createPeers } from './collab/peers.js';
 import { collabStats, migrateYjs } from './collab/migrate.js';
 
-export const VERSION = '3.0.0';
+export const VERSION = '3.2.1';
 /** Höchste Zahl von Einträgen in einer Austausch-Anfrage, die noch beantwortet wird. */
 const MAX_EXCHANGE_ENTRIES = 200;
 export { API_VERSION, MIN_SCHEMA };

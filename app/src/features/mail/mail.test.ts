@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '@/core/db/db';
 import type { MailMessage } from './api';
-import { addressList, buildForward, buildProtocolMail, buildReply, formatAddress, forwardSubject, looksLikeEmail, quote, replySubject, shortAddress } from './compose';
+import { addressList, recipientSummary, buildForward, buildProtocolMail, buildReply, formatAddress, forwardSubject, looksLikeEmail, quote, replySubject, shortAddress } from './compose';
 import { CUSTOM, PROVIDERS, guessProvider, providerFor } from './providers';
 import { attachmentBlocks, docFromMail, isoDay, textBlocks } from './toProtocol';
 import { taskFromMail } from './toTask';
@@ -64,6 +64,16 @@ describe('Adressen und Betreff', () => {
     expect(addressList([{ name: 'A', address: 'a@x.de' }, { name: '', address: 'b@x.de' }])).toBe('A <a@x.de>, b@x.de');
     expect(shortAddress({ name: ' ', address: 'a@x.de' })).toBe('a@x.de');
     expect(shortAddress(null)).toBe('Unbekannt');
+  });
+
+  it('fasst viele Empfänger einer Rundmail in einer Zeile zusammen', () => {
+    const many = Array.from({ length: 30 }, (_, i) => ({ name: `Person ${i + 1}`, address: `p${i + 1}@example.org` }));
+    expect(recipientSummary(many.slice(0, 1))).toBe('Person 1');
+    expect(recipientSummary(many.slice(0, 3))).toBe('Person 1, Person 2, Person 3');
+    expect(recipientSummary(many.slice(0, 4))).toBe('Person 1, Person 2 und 2 weitere');
+    expect(recipientSummary(many.slice(0, 20), many.slice(20))).toBe('Person 1, Person 2 und 28 weitere');
+    expect(recipientSummary([{ name: '', address: 'a@x.de' }])).toBe('a@x.de');
+    expect(recipientSummary([])).toBe('');
   });
 
   it('Betreffzeilen und Zitat', () => {
