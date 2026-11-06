@@ -144,17 +144,18 @@ export function ProtokollList({ split = false, folder, activeId }: { split?: boo
         >
           <ArrowDownUp size={19} />
         </button>
-        {split && (
-          <button type="button" className="btn btn--primary btn--sm btn--icon" aria-label="Neues Protokoll" title="Neues Protokoll" onClick={() => void create()}>
-            <Plus size={18} /> Neu
-          </button>
-        )}
         {syncState !== 'off' && (
           <Link to="/protokolle/papierkorb" className="icon-btn" aria-label="Papierkorb" title="Papierkorb">
             <Trash2 size={20} />
           </Link>
         )}
         <SyncBadge />
+        {/* Hauptaktion zuletzt, rechts außen */}
+        {split && (
+          <button type="button" className="btn btn--primary btn--sm btn--icon" aria-label="Neues Protokoll" title="Neues Protokoll" onClick={() => void create()}>
+            <Plus size={18} /> Neu
+          </button>
+        )}
       </div>
 
       {syncState === 'off' && !IS_WEB && (
@@ -309,6 +310,8 @@ export function ProtokollList({ split = false, folder, activeId }: { split?: boo
             {(tagged ?? protocols).map((p) => {
               const text = unsentText?.get(p.id); // undefined: nichts offen · '': ungesendet · sonst: vom Server abgelehnt
               const rejected = p.rejected || text || undefined;
+              // „nicht gesendet“ nur, wenn es einen Server gibt: Ohne Server (Demo, App ohne Anmeldung) wird nie etwas gesendet.
+              const unsent = syncState !== 'off' && (p.dirty === 1 || text !== undefined);
               const info = infos.get(p.id);
               const when = p.datum ? formatDateRelative(p.datum, today) : '';
               const where = tagged && p.folderId ? folderPathLabel(folders, p.folderId) : '';
@@ -320,7 +323,7 @@ export function ProtokollList({ split = false, folder, activeId }: { split?: boo
                       {when && <span className="note__date">{when}</span>}
                     </div>
                     {info?.preview && <div className="note__preview">{info.preview}</div>}
-                    {(info?.tags.length || p.ort || where || p.shared || !isMine(p, account) || rejected || p.dirty === 1 || text !== undefined) && (
+                    {(info?.tags.length || p.ort || where || p.shared || !isMine(p, account) || rejected || unsent) && (
                       <div className="note__meta">
                         {[p.ort, where].filter(Boolean).length > 0 && <span className="note__place">{[p.ort, where].filter(Boolean).join(' · ')}</span>}
                         {info?.tags.slice(0, 4).map((t) => (
@@ -334,7 +337,7 @@ export function ProtokollList({ split = false, folder, activeId }: { split?: boo
                             abgelehnt
                           </span>
                         ) : (
-                          (p.dirty === 1 || text !== undefined) && <span className="chip chip--warn">nicht gesendet</span>
+                          unsent && <span className="chip chip--warn">nicht gesendet</span>
                         )}
                       </div>
                     )}

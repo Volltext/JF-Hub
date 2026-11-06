@@ -108,6 +108,18 @@ e2e/              Playwright-Rauchtest (Server + gebaute Web-App)
 - Text und Oberfläche sind deutsch; Code-Kommentare ebenfalls.
 - Server-Datenbank nur über additive Migrationen in `db.ts` (`addColumn`, `CREATE TABLE IF NOT EXISTS`) ändern.
 
+### Oberfläche und Design-Tokens
+
+- **Werte nur aus `app/src/core/ui/tokens.css`:** Farben, Schriftgrößen (`--t-xs` … `--t-display`, im Protokolltext `--p-*`), Radien (`--r-xs` … `--r-lg`, `--r-pill`) und Schatten. Feste Farben, `rgba()`, Schriftgrößen in `rem`/`px` und Radien in `px` lehnt der Test `tokens.test.ts` ab; Kreise bleiben `50%`. Fehlt ein Wert, kommt er als neues Token in beide Themes.
+- **Kontrast steht im Token:** Text mindestens 4,5 : 1, Umrisse von Feldern und Schaltern (`--border-field`) mindestens 3 : 1 (WCAG 1.4.11). Neue Farbpaare vorher nachrechnen.
+- **Server-Verwaltung:** `server/public/admin/admin.css` übernimmt die Farben der App. Der Test prüft, dass beide gleich bleiben (hell und dunkel).
+- **Welche Auswahl wofür:**
+  - Reiter (`<Segmented tabs>`): Bereiche einer Seite (Aufstellung / Stoppuhr / Analyse).
+  - Segment (`<Segmented>`): zwei bis vier gleichwertige Ansichten, Filter oder Werte (Hell / Dunkel / Auto).
+  - Chips (`.chip-btn`): mehr als vier Möglichkeiten oder Mehrfachauswahl; sie dürfen umbrechen.
+  - Kästchen (`.toggle`) nur für Mehrfachauswahl, Schalter (`.toggle--switch`) für An/Aus.
+- **Rückmeldung nach Aktionen:** `showSnack()` aus `core/ui/snackbar.tsx`, bei umkehrbaren Aktionen mit „Rückgängig“ statt einer Rückfrage vorher.
+
 ## Wie der Abgleich funktioniert
 
 - Daten liegen lokal (Dexie) und auf dem Server (SQLite). Der Client **schreibt zuerst lokal** und gleicht danach ab (beim Start, nach Änderungen, bei Netzrückkehr, jede Minute).

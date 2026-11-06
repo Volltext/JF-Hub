@@ -1,11 +1,13 @@
 /* Inter (SIL OFL 1.1, siehe fonts/Inter-OFL.txt), selbst ausgeliefert wie in der App. */
 @font-face { font-family: 'Inter'; font-style: normal; font-weight: 100 900; font-display: swap; src: url('fonts/inter-latin-wght-normal.woff2') format('woff2-variations'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
-/* Gleiche Farben, Radien und Schrift wie die App – damit sich Web-App und Verwaltung wie eine Anwendung anfühlen. */
+/* Gleiche Farben, Radien und Schrift wie die App – damit sich Web-App und Verwaltung wie eine Anwendung anfühlen.
+   Die Werte stammen aus app/src/core/ui/tokens.css; ein Test (tokens.test.ts) prüft, dass beide gleich bleiben. */
 :root {
   --bg: #f5f5f7;
   --surface: #ffffff;
   --surface-2: #ededf0;
   --border: rgba(0, 0, 0, 0.1);
+  --border-field: #7d8390;
   --text: #16181d;
   --muted: #5f6672;
   --primary: #d42a22;
@@ -13,9 +15,11 @@
   --primary-text: #c4251d;
   --focus: #2563eb;
   --on-primary: #ffffff;
-  --ok: #1b8a52;
-  --warning: #9a6a00;
-  --danger: #c93028;
+  --success: #136a3d;
+  --on-success: #ffffff;
+  --warning: #8a5f00;
+  --danger: #b42a22;
+  --danger-fill: #c93028;
   --r-md: 14px;
   --r-lg: 20px;
   color-scheme: light;
@@ -26,13 +30,15 @@
     --surface: #16181d;
     --surface-2: #1e2127;
     --border: rgba(255, 255, 255, 0.09);
+    --border-field: #6b7280;
     --text: #f4f4f6;
     --muted: #9aa0ab;
     --primary: #d42a22;
     --primary-press: #b8231c;
     --primary-text: #ff6b63;
     --focus: #7aa7ff;
-    --ok: #34c27a;
+    --success: #34c27a;
+    --on-success: #0e0f12;
     --warning: #f2b441;
     --danger: #ff5d55;
     color-scheme: dark;
@@ -96,9 +102,9 @@ label > input, label > select { max-width: 520px; font-weight: 400; }
 label > input[type='number'] { max-width: 160px; }
 input[type='text'], input[type='password'], input[type='number'], input[type='search'], select {
   width: 100%; min-height: 44px; padding: 0 12px; font: inherit; color: var(--text);
-  background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--surface-2); border: 1px solid var(--border-field); border-radius: var(--r-md);
 }
-input[type='color'] { height: 44px; width: 64px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-2); padding: 2px; }
+input[type='color'] { height: 44px; width: 64px; border: 1px solid var(--border-field); border-radius: var(--r-md); background: var(--surface-2); padding: 2px; }
 .btn {
   font: inherit; font-weight: 600; min-height: 44px; padding: 0 18px; border-radius: var(--r-md); border: 1px solid var(--border);
   background: var(--surface-2); color: var(--text); cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
@@ -107,7 +113,7 @@ input[type='color'] { height: 44px; width: 64px; border: 1px solid var(--border)
 .btn.primary { background: var(--primary); border-color: transparent; color: var(--on-primary); }
 .btn.primary:hover { background: var(--primary-press); }
 .btn.danger { color: var(--danger); }
-.btn.solid-danger { background: #c93028; border-color: transparent; color: #fff; }
+.btn.solid-danger { background: var(--danger-fill); border-color: transparent; color: var(--on-primary); }
 .btn.warn { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, var(--border)); background: transparent; }
 .btn.small { min-height: 36px; padding: 0 12px; font-size: 14px; }
 .btn:disabled { opacity: 0.5; cursor: default; }
@@ -130,7 +136,7 @@ th { font-size: 12px; color: var(--muted); font-weight: 600; text-transform: upp
 td.act { text-align: right; white-space: nowrap; }
 .scroll { overflow-x: auto; }
 .msg { padding: 10px 12px; border-radius: 10px; font-size: 14px; margin-top: 10px; }
-.msg.ok { background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); }
+.msg.ok { background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success); }
 .msg.err { background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger); }
 .tag { font-size: 12px; padding: 2px 8px; border-radius: 99px; background: var(--surface-2); color: var(--muted); }
 .logo-prev { max-height: 48px; max-width: 160px; display: block; margin-bottom: 8px; background: #fff; border: 1px solid var(--border); border-radius: 6px; padding: 4px; }
@@ -170,8 +176,8 @@ dialog .row { justify-content: flex-end; }
 .meta-line { margin: 12px 0 0; color: var(--muted); font-size: 14px; }
 .next { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .next li { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: var(--r-md); background: var(--surface-2); }
-.next__check { width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--muted); flex-shrink: 0; display: grid; place-items: center; color: #fff; }
-.next li.done .next__check { background: var(--ok); border-color: var(--ok); }
+.next__check { width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--muted); flex-shrink: 0; display: grid; place-items: center; color: var(--on-success); }
+.next li.done .next__check { background: var(--success); border-color: var(--success); }
 .next li.done .next__text { color: var(--muted); text-decoration: line-through; }
 .next__text { flex: 1; min-width: 0; }
 .next__text small { display: block; color: var(--muted); font-size: 13px; }

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/core/db/db';
+import { Search } from 'lucide-react';
 import { Card, Page, Segmented } from '@/core/ui/components';
 import { B_FEHLER_GROUPS, WASSERENTNAHME_LABEL, catalogFor, type Wasserentnahme } from '@/features/wettkampf/rules/bwScoring';
 import { COMPETITIONS } from '@/features/wettkampf/rules/modes';
@@ -47,14 +48,17 @@ export function WissenPage() {
         options={COMPETITIONS.map((c) => ({ value: c.id, label: c.label }))}
       />
       <Segmented<Section> tabs value={current} onChange={setSection} options={sections} />
-      <input
-        className="search"
-        type="search"
-        placeholder={`${sections.find((x) => x.value === current)?.label ?? 'Wissen'} durchsuchen`}
-        aria-label="Wissen durchsuchen"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-      />
+      <label className="search-field">
+        <Search size={18} aria-hidden="true" />
+        <input
+          className="search"
+          type="search"
+          placeholder={`${sections.find((x) => x.value === current)?.label ?? 'Wissen'} durchsuchen`}
+          aria-label="Wissen durchsuchen"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+      </label>
 
       {current === 'regeln' && <Rules list={searchRules(competition === 'lsp' ? LSP_RULE_ENTRIES : RULE_ENTRIES, query)} />}
       {current === 'positionen' && (

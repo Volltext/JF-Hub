@@ -8,6 +8,20 @@
     });
   }
 
+  // „Kopieren“ an Befehls-Blöcken: nur sichtbar, wenn der Browser in die Zwischenablage schreiben darf.
+  document.querySelectorAll('[data-copy]').forEach(function (btn) {
+    var pre = btn.parentNode.querySelector('pre');
+    if (!pre || !navigator.clipboard) return;
+    btn.hidden = false;
+    var text = btn.textContent;
+    btn.addEventListener('click', function () {
+      navigator.clipboard.writeText(pre.textContent.trim()).then(function () {
+        btn.textContent = 'Kopiert ✓';
+        setTimeout(function () { btn.textContent = text; }, 2500);
+      });
+    });
+  });
+
   // „Link teilen“: Teilen-Menü des Handys, sonst in die Zwischenablage.
   var share = document.querySelector('[data-share]');
   if (!share) return;

@@ -47,20 +47,24 @@ interface Tool {
 const notInTable = (e: Editor) => e.isActive('table');
 
 /**
- * Die Reihenfolge richtet sich nach dem Handy, wo nur etwa sieben Knöpfe ohne Wischen sichtbar sind: Vorn stehen, was beim Notieren
- * am häufigsten gebraucht wird (Fett, Kursiv, Listen, Anhang, Einfügen), dahinter die Feinheiten, am Ende Rückgängig.
+ * Die Reihenfolge richtet sich nach dem Handy, wo nur etwa sieben Knöpfe ohne Wischen sichtbar sind: Vorn steht, was beim Notieren
+ * am häufigsten gebraucht wird (Fett, Kursiv, Aufzählung, Checkliste, Anhang, Einfügen), dann Rückgängig – auf dem Handy gibt es
+ * dafür sonst keinen Weg. Dahinter die Feinheiten. Ein Schatten am Rand zeigt, dass sich die Leiste weiterwischen lässt.
  */
 const TOOLS: (Tool | 'sep')[] = [
   { id: 'bold', label: 'Fett', keys: 'Strg+B', icon: Bold, run: (e) => e.chain().focus().toggleBold().run(), active: (e) => e.isActive('bold') },
   { id: 'italic', label: 'Kursiv', keys: 'Strg+I', icon: Italic, run: (e) => e.chain().focus().toggleItalic().run(), active: (e) => e.isActive('italic') },
   'sep',
   { id: 'ul', label: 'Aufzählung', keys: 'Strg+Umschalt+8', icon: List, run: (e) => e.chain().focus().toggleBulletList().run(), active: (e) => e.isActive('bulletList') },
-  { id: 'ol', label: 'Nummerierung', keys: 'Strg+Umschalt+7', icon: ListOrdered, run: (e) => e.chain().focus().toggleOrderedList().run(), active: (e) => e.isActive('orderedList') },
   { id: 'task', label: 'Checkliste', keys: 'Strg+Umschalt+9', icon: ListChecks, run: (e) => e.chain().focus().toggleTaskList().run(), active: (e) => e.isActive('taskList') },
   'sep',
   { id: 'attach', label: 'Foto oder Datei anhängen', icon: Paperclip, run: (_e, ui) => ui.openAttach(), dialog: true },
   { id: 'insert', label: 'Einfügen', icon: Plus, run: (_e, ui) => ui.openInsert(), dialog: true },
   'sep',
+  { id: 'undo', label: 'Rückgängig', keys: 'Strg+Z', icon: Undo2, run: (e) => e.chain().focus().undo().run(), disabled: (e) => !e.can().undo() },
+  { id: 'redo', label: 'Wiederholen', keys: 'Strg+Y', icon: Redo2, run: (e) => e.chain().focus().redo().run(), disabled: (e) => !e.can().redo() },
+  'sep',
+  { id: 'ol', label: 'Nummerierung', keys: 'Strg+Umschalt+7', icon: ListOrdered, run: (e) => e.chain().focus().toggleOrderedList().run(), active: (e) => e.isActive('orderedList') },
   { id: 'underline', label: 'Unterstrichen', keys: 'Strg+U', icon: Underline, run: (e) => e.chain().focus().toggleUnderline().run(), active: (e) => e.isActive('underline') },
   { id: 'marker', label: 'Hervorheben', keys: 'Strg+Umschalt+H', icon: Highlighter, run: (e) => e.chain().focus().toggleHighlight().run(), active: (e) => e.isActive('highlight') },
   { id: 'link', label: 'Link', icon: Link2, run: (_e, ui) => ui.openLink(), active: (e) => e.isActive('link'), dialog: true },
@@ -68,9 +72,6 @@ const TOOLS: (Tool | 'sep')[] = [
   { id: 'h1', label: 'Überschrift 1', keys: 'Strg+Alt+1', icon: Heading1, run: (e) => e.chain().focus().toggleHeading({ level: 1 }).run(), active: (e) => e.isActive('heading', { level: 1 }), disabled: notInTable },
   { id: 'h2', label: 'Überschrift 2', keys: 'Strg+Alt+2', icon: Heading2, run: (e) => e.chain().focus().toggleHeading({ level: 2 }).run(), active: (e) => e.isActive('heading', { level: 2 }), disabled: notInTable },
   { id: 'h3', label: 'Überschrift 3', keys: 'Strg+Alt+3', icon: Heading3, run: (e) => e.chain().focus().toggleHeading({ level: 3 }).run(), active: (e) => e.isActive('heading', { level: 3 }), disabled: notInTable },
-  'sep',
-  { id: 'undo', label: 'Rückgängig', keys: 'Strg+Z', icon: Undo2, run: (e) => e.chain().focus().undo().run(), disabled: (e) => !e.can().undo() },
-  { id: 'redo', label: 'Wiederholen', keys: 'Strg+Y', icon: Redo2, run: (e) => e.chain().focus().redo().run(), disabled: (e) => !e.can().redo() },
 ];
 
 /**

@@ -254,8 +254,9 @@ test.describe.serial('Protokolle: Tabellen, Links und Hervorhebung', () => {
     const { context, page } = await open(browser, ADMIN, { viewport: { width: 390, height: 780 }, hasTouch: true, isMobile: true });
     await writeProtocol(page, title, 'Kurz.');
     const editor = page.getByLabel('Protokolltext', { exact: true });
-    // Was beim Notieren gebraucht wird, steht ohne Wischen in der Leiste (sonst bliebe „Einfügen“, der einzige Weg zu Tabellen, verborgen)
-    for (const name of ['Fett', 'Kursiv', 'Aufzählung', 'Nummerierung', 'Checkliste', 'Foto oder Datei anhängen', 'Einfügen']) {
+    // Was beim Notieren gebraucht wird, steht ohne Wischen in der Leiste (sonst bliebe „Einfügen“, der einzige Weg zu Tabellen, verborgen).
+    // Rückgängig gehört dazu: Am Handy gibt es dafür keinen anderen Weg.
+    for (const name of ['Fett', 'Kursiv', 'Aufzählung', 'Checkliste', 'Foto oder Datei anhängen', 'Einfügen', 'Rückgängig']) {
       const box = await page.getByRole('toolbar', { name: 'Formatierung' }).getByRole('button', { name, exact: true }).boundingBox();
       expect(box, name).not.toBeNull();
       expect(box!.x + box!.width, `${name} ragt über den Bildschirmrand`).toBeLessThanOrEqual(390);

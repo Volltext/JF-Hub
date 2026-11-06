@@ -244,7 +244,7 @@ function PersonSheet(props: {
       onClose={props.onClose}
       footer={
         <div className="kl-nav">
-          <Button className="kl-btn" disabled={!prev} aria-label={prev ? `Zurück zu ${prev.name}` : 'Zurück'} onClick={() => prev && props.onNavigate(prev.id)}>
+          <Button className="kl-btn kl-nav__prev" disabled={!prev} aria-label={prev ? `Zurück zu ${prev.name}` : 'Zurück'} onClick={() => prev && props.onNavigate(prev.id)}>
             <ChevronLeft size={18} />
           </Button>
           {next ? (

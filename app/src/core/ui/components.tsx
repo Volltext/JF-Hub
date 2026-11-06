@@ -144,6 +144,10 @@ export function Button({ variant, block, className = '', ...rest }: BtnProps) {
   return <button className={cls} {...rest} />;
 }
 
+/**
+ * Einfachauswahl aus zwei bis vier gleichwertigen Möglichkeiten (Ansicht, Filter, Wert). Mit `tabs` als Reiter für die Bereiche einer Seite.
+ * Mehr als vier Möglichkeiten oder Mehrfachauswahl: Chips (`.chip-btn`). Regeln: docs/entwicklung.md, „Oberfläche und Design-Tokens“.
+ */
 export function Segmented<T extends string>(props: {
   disabled?: boolean;
   /** Flache Bauform für Kopfzeilen mit mehreren Schaltern. */

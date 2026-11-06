@@ -10,6 +10,12 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/). Versionen 
 
 ### Behoben
 
+- **Kleidung: „Weiter: Name“ war ein leeres Kästchen.** Im Fenster einer Person nahm der Zurück-Pfeil die ganze Breite ein. Zurück ist jetzt ein fester Pfeil, „Weiter: Name“ nimmt den Rest.
+- **Abhaken ohne Rückgängig:** Auf „Heute“ und unter „Aufgaben“ verschwand eine erledigte Aufgabe sofort, und die nächste rutschte unter den Finger. Jetzt bleibt sie vier Sekunden durchgestrichen stehen, unten erscheint „Erledigt: … · Rückgängig“. Nochmal antippen holt sie ebenfalls zurück.
+- **Untere Leiste bei großer Schrift:** Die Beschriftungen liefen ineinander („HeuteDiensteProtokolle…“). Sie trennen jetzt an festen Stellen („Proto-kolle“) und brechen höchstens zweizeilig um.
+- **Leere Protokolle blieben liegen:** Wer „Neues Protokoll“ öffnete und ohne Eingabe zurückging, hatte ein „Ohne Titel“ in der Liste. Leere neue Protokolle verschwinden jetzt beim Schließen.
+- **„nicht gesendet“ ohne Server:** In der Demo und in der App ohne Anmeldung stand das an jedem geöffneten Protokoll, obwohl es nichts zu senden gibt. Der Hinweis erscheint nur noch mit Server.
+- **Schmale Handys (320 px):** Die Reiter in „Wissen“ schoben die Seite zur Seite. Lange Wörter werden jetzt getrennt.
 - **Benachrichtigungen kamen nie an (auch die Testbenachrichtigung):** Der Adress-Filter beim Push-Versand (`safeLookup`) lieferte immer nur eine einzelne Adresse. Node 22 verbindet aber mit „Happy Eyeballs“ und fragt dabei nach einer Liste. Jede Verbindung zum Push-Dienst brach deshalb ab („Invalid IP address: undefined“). Der Filter beherrscht jetzt beide Formen, Tests decken das ab. Erreicht der Server den Push-Dienst nicht, sagt die Fehlermeldung das jetzt, statt eine Ablehnung zu melden.
 - **Docker-Image für ARM brach beim Bauen ab:** Im Web-Build lud ein Install-Skript (das alte `sharp` in `@capacitor/assets`, nur für die Android-Symbole gebraucht) libvips von GitHub nach. Hing dieser Download, scheiterte `npm ci`. Der Web-Build installiert jetzt ohne Install-Skripte, er braucht keins.
 
@@ -30,6 +36,21 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/). Versionen 
   - **Einstellungen:** Schalter statt Kästchen, klarere Begriffe (Sommer- und Winterhalbjahr), „Ferien von Hand“ eingeklappt.
   - **Neu-Knöpfe:** am Handy weiter rund unten rechts, am Laptop beschriftet im Seitenkopf.
   - **Server-Verwaltung:** auf dem Handy ohne seitliches Scrollen (Tabellen werden zu Karten) und mit kürzeren Eingabefeldern. Je Seite gibt es nur noch einen Hauptknopf, „Wiederherstellen“ ist als riskant markiert. Das PDF-Layout zeigt eine Live-Skizze, Datei-Felder sind gestaltet und beschriftet. Die Übersicht zeigt „Als Nächstes“ statt doppelter Kacheln, und die Anmeldung sieht aus wie in der App.
+
+- **Protokolle am Handy:** „Privat“ bzw. „Für alle“ steht auch am Handy als Text im Kopf, PDF, E-Mail, Verschieben und Löschen liegen unter „Weitere Aktionen“ (⋯). In der Werkzeugleiste ist „Rückgängig“ ohne Wischen erreichbar (dafür ist „Nummerierung“ nach hinten gerückt), der Schatten am Rand zeigt auch im Dunkelmodus, dass es weitergeht. Datum und Ort stehen über die volle Breite. In der Liste steht „Neu“ ganz rechts.
+- **Barrierefreiheit:**
+  - Eingabefelder und Schalter (aus) haben einen Umriss mit mindestens 3 : 1 (WCAG 1.4.11), vorher kaum sichtbar.
+  - Rote Hinweise im Hellmodus erreichen 4,5 : 1, auch auf getönten Schildchen.
+  - Checklisten-Kästchen im Protokoll sind 24 × 24 px groß (WCAG 2.5.8).
+  - Am Laptop führt „Zum Inhalt springen“ an der Seitenleiste vorbei.
+  - Auswahlfelder (Datum, Uhrzeit, Listen) nennen beim Vorlesen ihren Feldnamen („Beginn, 18:00 Uhr“).
+  - Haken auf grünen Flächen sind im Dunkelmodus dunkel (vorher Weiß auf hellem Grün, unter 3 : 1).
+  - Website: Links und Hinweise in Rot erreichen 4,5 : 1, der Befehls-Block ist per Tastatur erreichbar und hat „Kopieren“.
+- **Design-System:**
+  - Feste Farben, Schriftgrößen und Radien in den Styles sind durch Tokens ersetzt (`tokens.css`): sieben Schriftstufen statt rund 25 Einzelwerten, eigene Skala für den Protokolltext, fünf Radien. Der Test `tokens.test.ts` lehnt neue feste Werte ab.
+  - Die Server-Verwaltung nutzt dieselben Farbwerte wie die App (sie waren auseinandergelaufen). Ein Test prüft, dass das so bleibt.
+  - Ein gemeinsamer Hinweis unten mit „Rückgängig“ (`showSnack`) für Rückmeldungen nach Aktionen.
+  - Regeln für Tokens, Kontraste und die Wahl zwischen Reitern, Segment, Chips und Kästchen stehen in `docs/entwicklung.md`.
 
 ## [3.2.1] – 2026-11-05
 

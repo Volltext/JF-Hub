@@ -12,7 +12,7 @@ const toEntry = (f: (typeof features)[number]) => ({ id: f.id, label: f.label, i
 const bottom = features
   .filter((f) => f.nav)
   .sort((a, b) => a.nav!.order - b.nav!.order)
-  .map(toEntry);
+  .map((f) => ({ ...toEntry(f), label: f.nav!.label ?? f.label }));
 
 const sections = featureGroups().map(({ group, items }) => ({ label: GROUP_LABEL[group], items: items.map(toEntry) }));
 

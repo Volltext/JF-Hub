@@ -1,22 +1,22 @@
 .mail-row { display: flex; text-decoration: none; color: inherit; }
 .mail-row__head { display: flex; justify-content: space-between; align-items: baseline; gap: var(--s-3); }
 .mail-row__from { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
-.mail-row__when { display: inline-flex; align-items: center; gap: var(--s-1); flex: none; font-size: 0.8rem; }
+.mail-row__when { display: inline-flex; align-items: center; gap: var(--s-1); flex: none; font-size: var(--t-xs); }
 .mail-row__subject { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
 .mail-row--unread .mail-row__from, .mail-row--unread .mail-row__subject { font-weight: 700; color: var(--text); }
 .mail-row--unread { border-left: 4px solid var(--primary); }
 
 .mail-view__head { display: flex; flex-direction: column; gap: var(--s-1); }
-.mail-view__subject { font-size: 1.2rem; font-weight: 700; letter-spacing: -0.015em; line-height: 1.25; overflow-wrap: anywhere; margin: 0; }
-.mail-from { display: flex; justify-content: space-between; align-items: baseline; gap: var(--s-3); font-size: 0.92rem; }
+.mail-view__subject { font-size: var(--t-lg); font-weight: 700; letter-spacing: -0.015em; line-height: 1.25; overflow-wrap: anywhere; margin: 0; }
+.mail-from { display: flex; justify-content: space-between; align-items: baseline; gap: var(--s-3); font-size: var(--t-sm); }
 .mail-from__who { min-width: 0; overflow-wrap: anywhere; }
-.mail-from__date { flex: none; font-size: 0.82rem; white-space: nowrap; }
-.mail-to { display: flex; align-items: center; gap: var(--s-1); width: 100%; min-height: 32px; padding: 0; border: 0; background: none; color: inherit; font-size: 0.88rem; text-align: left; cursor: pointer; }
+.mail-from__date { flex: none; font-size: var(--t-sm); white-space: nowrap; }
+.mail-to { display: flex; align-items: center; gap: var(--s-1); width: 100%; min-height: 32px; padding: 0; border: 0; background: none; color: inherit; font-size: var(--t-sm); text-align: left; cursor: pointer; }
 .mail-to__text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mail-to__chevron { flex: none; color: var(--muted); transition: transform var(--dur) var(--ease); }
 .mail-to[aria-expanded='true'] .mail-to__chevron { transform: rotate(180deg); }
 .mail-to[aria-expanded='true'] .mail-to__text { visibility: hidden; flex: 0; width: 0; }
-.mail-meta { display: grid; grid-template-columns: auto 1fr; gap: var(--s-1) var(--s-3); margin: 0; font-size: 0.85rem; max-height: 40vh; overflow-y: auto; }
+.mail-meta { display: grid; grid-template-columns: auto 1fr; gap: var(--s-1) var(--s-3); margin: 0; font-size: var(--t-sm); max-height: 40vh; overflow-y: auto; }
 .mail-meta dt { color: var(--muted); }
 .mail-meta dd { margin: 0; overflow-wrap: anywhere; }
 .mail-actions { display: flex; flex-wrap: wrap; gap: var(--s-2); margin: var(--s-3) 0; }
@@ -29,8 +29,8 @@
 .mail-view { gap: var(--s-2); }
 .mail-body { white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; padding: var(--s-3) var(--s-4); border-radius: var(--r-md); border: 1px solid var(--border); background: var(--surface); line-height: 1.5; margin: var(--s-1) 0; }
 .mail-att { display: flex; align-items: center; gap: var(--s-2); min-height: 40px; }
-.mail-att__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; font-size: 0.92rem; }
-.mail-att__size { flex: none; font-size: 0.8rem; }
+.mail-att__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; font-size: var(--t-sm); }
+.mail-att__size { flex: none; font-size: var(--t-xs); }
 .mail-attachments { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); padding: 0 var(--s-2); }
 .mail-attachments .mail-att + .mail-att { border-top: 1px solid var(--border); }
 .mail-compose__text { width: 100%; min-height: 16rem; resize: vertical; line-height: 1.45; }
