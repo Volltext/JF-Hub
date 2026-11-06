@@ -5,7 +5,7 @@ import type { Editor } from '@tiptap/core';
 import { EditorContent, useEditor, useEditorState } from '@tiptap/react';
 import Collaboration from '@tiptap/extension-collaboration';
 import Placeholder from '@tiptap/extension-placeholder';
-import { ChevronDown, ChevronLeft, FileDown, Folder, Hash, Lock, Mail, Trash2, Users } from 'lucide-react';
+import { ChevronDown, ChevronLeft, FileDown, Folder, Hash, Lock, Mail, MoreHorizontal, Trash2, Users } from 'lucide-react';
 import { db } from '@/core/db/db';
 import { IS_DEMO } from '@/core/env';
 import { requeueBlobs } from '@/core/db/blobs';
@@ -19,7 +19,7 @@ import { createAutosave } from './autosave';
 import { Presence } from './collab/Presence';
 import { LocalTrailingNode } from './collab/localExtensions';
 import { openProtocol, type Opened } from './collab/openPlan';
-import { isEditable, type CollabSession } from './collab/session';
+import { getOpenSession, isEditable, type CollabSession } from './collab/session';
 import { EPOCH_KEY, httpExchange } from './collab/wire';
 import { FIELD } from './collab/yJson';
 import { dismissConflict, useConflicts } from './conflicts';
@@ -45,6 +45,35 @@ type MetaKey = keyof Meta;
 const META_KEYS: MetaKey[] = ['title', 'datum', 'beginn', 'ende', 'ort', 'leitung'];
 
 const metaOf = (p: Protokoll): Meta => ({ title: p.title, datum: p.datum, beginn: p.beginn, ende: p.ende, ort: p.ort, leitung: p.leitung });
+
+/**
+ * Neue Protokolle entstehen sofort beim Antippen von „Neues Protokoll“. Bleiben sie leer (kein Titel, kein Text, kein Ort, keine
+ * Protokollführung), verschwinden sie beim Schließen wieder, statt als „Ohne Titel“ liegen zu bleiben. Nie gesendete sind dann
+ * sofort weg; hat der Abgleich die Kopfdaten schon zum Server gebracht, löscht ihn der nächste Abgleich dort (wie jedes Löschen).
+ */
+const discardOnClose = new Set<string>();
+
+async function discardIfMarked(id: string): Promise<void> {
+  if (!discardOnClose.delete(id)) return;
+  // Nur beim Verlassen, nicht wenn dieselbe Ansicht das Protokoll neu lädt (neuer Versuch, Server zurückgesetzt).
+  if (getOpenSession(id) || window.location.hash.includes(`/protokolle/${id}`)) return;
+  const row = await db.protokolle.get(id);
+  if (!row || row.deleted === 1) return;
+  if (row.title.trim() || row.ort.trim() || row.leitung.trim()) return;
+  await protokolleRepo.remove(id);
+}
+
+/** Text ohne Inhalt: nur leere Absätze (Bilder, Handschrift, Tabellen, Listen usw. zählen als Inhalt). */
+function isBlankDoc(doc: Editor['state']['doc']): boolean {
+  if (doc.textContent.trim()) return false;
+  let blank = true;
+  doc.descendants((n) => {
+    if (!blank) return false;
+    if (!['doc', 'paragraph', 'text', 'hardBreak'].includes(n.type.name)) blank = false;
+    return blank;
+  });
+  return blank;
+}
 
 /** Lädt das Protokoll einmal und übergibt es dem Editor (der danach selbst den Zustand hält). */
 export function ProtokollEditor() {
@@ -117,7 +146,10 @@ function EditorShell({ initial }: { initial: Protokoll }) {
     });
     return () => {
       cancelled = true;
-      void mine?.destroy();
+      // Erst wenn die Sitzung alles geschrieben hat, darf ein leeres neues Protokoll verschwinden.
+      void Promise.resolve(mine?.destroy())
+        .catch(() => undefined)
+        .then(() => discardIfMarked(initial.id));
     };
   }, [initial.id, attempt]);
 
@@ -137,6 +169,7 @@ function EditorInner({ initial, session, editorRef }: { initial: Protokoll; sess
   const [busy, setBusy] = useState(false);
   const [picking, setPicking] = useState(false);
   const [sharing, setSharing] = useState(false);
+  const [more, setMore] = useState(false);
   const [error, setError] = useState('');
   const info = useSyncExternalStore(session.subscribe, session.getInfo);
   const saved = metaSaved && info.saved;
@@ -207,10 +240,12 @@ function EditorInner({ initial, session, editorRef }: { initial: Protokoll; sess
     editor,
     selector: ({ editor: e }) => {
       const text = e ? e.state.doc.textBetween(0, e.state.doc.content.size, '\n', ' ') : '';
-      return { words: countWords(text), tags: extractTags(text) };
+      return { words: countWords(text), tags: extractTags(text), blank: e ? isBlankDoc(e.state.doc) : true };
     },
-    equalityFn: (a, b) => !!a && !!b && a.words === b.words && a.tags.join('\u0000') === b.tags.join('\u0000'),
+    equalityFn: (a, b) => !!a && !!b && a.words === b.words && a.blank === b.blank && a.tags.join('\u0000') === b.tags.join('\u0000'),
   });
+  const blankRef = useRef(true);
+  blankRef.current = stats?.blank ?? true;
 
   // Ungespeichertes beim Verlassen/Wechseln der App sichern.
   useEffect(() => {
@@ -268,6 +303,15 @@ function EditorInner({ initial, session, editorRef }: { initial: Protokoll; sess
   const conflicts = useConflicts();
   const conflict = conflicts?.find((n) => n.id === initial.id || n.copyId === initial.id);
   const current = live ?? initial;
+  // Beim Schließen: Ist ein neu angelegtes Protokoll (beim Öffnen nie gesendet) leer geblieben, wird es verworfen (siehe `discardOnClose`).
+  const isNew = initial.rev === 0;
+  useEffect(
+    () => () => {
+      const m = metaRef.current;
+      if (isNew && blankRef.current && !m.title.trim() && !m.ort.trim() && !m.leitung.trim()) discardOnClose.add(initial.id);
+    },
+    [initial.id, isNew],
+  );
   const shared = current.shared === true;
   const mine = isMine(current, account);
   const ownerName = users.find((u) => u.id === current.ownerId)?.name ?? 'einem anderen Betreuer';
@@ -315,18 +359,19 @@ function EditorInner({ initial, session, editorRef }: { initial: Protokoll; sess
           {saved ? 'Gespeichert' : 'Speichert …'}
         </span>
         <SyncBadge compact />
-        <button type="button" className="icon-btn icon-btn--label" onClick={pdf} disabled={busy} aria-label="Als PDF exportieren" title="Als PDF exportieren">
+        <button type="button" className="icon-btn icon-btn--label proto-bar__wide" onClick={pdf} disabled={busy} aria-label="Als PDF exportieren" title="Als PDF exportieren">
           <FileDown size={18} />
           <span className="icon-btn__text">PDF</span>
         </button>
         {!IS_DEMO && (
-          <Link to={`/mail/neu?protokoll=${encodeURIComponent(initial.id)}`} className="icon-btn" aria-label="Als PDF per E-Mail senden" title="Als PDF per E-Mail senden" onClick={() => void autosave.flushIfDirty()}>
+          <Link to={`/mail/neu?protokoll=${encodeURIComponent(initial.id)}`} className="icon-btn proto-bar__wide" aria-label="Als PDF per E-Mail senden" title="Als PDF per E-Mail senden" onClick={() => void autosave.flushIfDirty()}>
             <Mail size={20} />
           </Link>
         )}
+        {/* Wer das Protokoll sieht, ist die folgenreichste Einstellung: auch am Handy mit Text. */}
         <button
           type="button"
-          className="icon-btn icon-btn--label"
+          className="icon-btn icon-btn--label icon-btn--keep"
           onClick={() => setSharing(true)}
           aria-label={shared ? 'Sichtbarkeit: für alle Betreuer' : 'Sichtbarkeit: privat'}
           title={shared ? 'Für alle Betreuer sichtbar' : 'Nur für dich sichtbar'}
@@ -335,11 +380,60 @@ function EditorInner({ initial, session, editorRef }: { initial: Protokoll; sess
           <span className="icon-btn__text">{shared ? 'Für alle' : 'Privat'}</span>
         </button>
         {canDelete && (
-          <button type="button" className="icon-btn icon-btn--danger" onClick={remove} aria-label="Protokoll löschen" title="Protokoll löschen">
+          <button type="button" className="icon-btn icon-btn--danger proto-bar__wide" onClick={remove} aria-label="Protokoll löschen" title="Protokoll löschen">
             <Trash2 size={20} />
           </button>
         )}
+        <button type="button" className="icon-btn proto-bar__narrow" onClick={() => setMore(true)} aria-label="Weitere Aktionen" aria-haspopup="dialog" title="Weitere Aktionen">
+          <MoreHorizontal size={20} />
+        </button>
       </div>
+
+      {more && (
+        <Sheet title="Weitere Aktionen" onClose={() => setMore(false)}>
+          <div className="stack">
+            <Button
+              block
+              className="btn--icon"
+              disabled={busy}
+              onClick={() => {
+                setMore(false);
+                void pdf();
+              }}
+            >
+              <FileDown size={18} /> Als PDF exportieren
+            </Button>
+            {!IS_DEMO && (
+              <Link to={`/mail/neu?protokoll=${encodeURIComponent(initial.id)}`} className="btn btn--block btn--icon" onClick={() => void autosave.flushIfDirty()}>
+                <Mail size={18} /> Als PDF per E-Mail senden
+              </Link>
+            )}
+            <Button
+              block
+              className="btn--icon"
+              onClick={() => {
+                setMore(false);
+                setPicking(true);
+              }}
+            >
+              <Folder size={18} /> In anderen Ordner verschieben
+            </Button>
+            {canDelete && (
+              <Button
+                block
+                variant="danger"
+                className="btn--icon"
+                onClick={() => {
+                  setMore(false);
+                  void remove();
+                }}
+              >
+                <Trash2 size={18} /> Protokoll löschen
+              </Button>
+            )}
+          </div>
+        </Sheet>
+      )}
 
       {error && (
         <p role="alert" className="proto-error">
@@ -422,10 +516,12 @@ function EditorInner({ initial, session, editorRef }: { initial: Protokoll; sess
         )}
         {headOpen && (
           <div className="proto-meta">
-            <DateField label="Datum" value={meta.datum || null} onChange={(v) => patchMeta({ datum: v ?? '' })} />
+            <div className="proto-meta__wide">
+              <DateField label="Datum" value={meta.datum || null} onChange={(v) => patchMeta({ datum: v ?? '' })} />
+            </div>
             <TimeField label="Beginn" value={meta.beginn} onChange={(v) => patchMeta({ beginn: v })} />
             <TimeField label="Ende" value={meta.ende} onChange={(v) => patchMeta({ ende: v })} />
-            <label className="field">
+            <label className="field proto-meta__wide">
               <span>Ort</span>
               <input value={meta.ort} maxLength={200} onChange={(e) => patchMeta({ ort: e.target.value })} />
             </label>

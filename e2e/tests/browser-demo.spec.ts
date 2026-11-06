@@ -77,8 +77,19 @@ test.describe('Demo im Browser (ohne Server)', () => {
         await expect(first).toBeVisible();
         const [h, f] = await Promise.all([head.boundingBox(), first.boundingBox()]);
         expect(f!.y, `${tab}: Inhalt beginnt unter der Kopfzeile`).toBeGreaterThanOrEqual(h!.y + h!.height - 0.5);
-        // … und keine Reiter- oder Wettbewerbsbeschriftung ist abgeschnitten.
-        const clipped = await head.locator('button').evaluateAll((buttons) => buttons.filter((b) => b.scrollWidth > b.clientWidth + 1).map((b) => b.textContent));
+        // … und keine Reiter- oder Wettbewerbsbeschriftung ist abgeschnitten. Gemessen wird die Textbreite gegen die Innenfläche ohne
+        // Innenabstand: Ragt der Text nur in den Rand, fällt das sonst je nach Schriftdarstellung des Rechners mal auf und mal nicht.
+        const clipped = await head.locator('button').evaluateAll((buttons) =>
+          buttons
+            .filter((b) => b.textContent?.trim())
+            .filter((b) => {
+              const cs = getComputedStyle(b);
+              const range = document.createRange();
+              range.selectNodeContents(b);
+              return range.getBoundingClientRect().width > b.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) + 0.5;
+            })
+            .map((b) => b.textContent),
+        );
         expect(clipped, `${tab}: abgeschnittene Beschriftungen`).toEqual([]);
       }
     });

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { createContext, useContext, useId, useState } from 'react';
 import { Check, ChevronDown, ChevronLeft, ChevronRight, Minus, Plus } from 'lucide-react';
 import {
   MONTH_NAMES,
@@ -20,17 +20,25 @@ interface FieldShellProps {
   label: string;
   children: React.ReactNode;
 }
-const Shell = ({ label, children }: FieldShellProps) => (
-  <div className="field">
-    <span>{label}</span>
-    {children}
-  </div>
-);
+/** Verbindet den sichtbaren Feldnamen mit dem Auswahlknopf: Screenreader lesen „Beginn, 18:00 Uhr“ statt nur „18:00 Uhr“. */
+const FieldLabel = createContext<string | undefined>(undefined);
+
+function Shell({ label, children }: FieldShellProps) {
+  const id = useId();
+  return (
+    <div className="field">
+      <span id={id}>{label}</span>
+      <FieldLabel.Provider value={id}>{children}</FieldLabel.Provider>
+    </div>
+  );
+}
 
 function PickerButton(props: { text: string; placeholder?: boolean; disabled?: boolean; onClick: () => void }) {
+  const labelId = useContext(FieldLabel);
+  const valueId = useId();
   return (
-    <button type="button" className="picker-btn" disabled={props.disabled} onClick={props.onClick} aria-haspopup="dialog">
-      <span style={props.placeholder ? { color: 'var(--muted)' } : undefined}>{props.text}</span>
+    <button type="button" className="picker-btn" disabled={props.disabled} onClick={props.onClick} aria-haspopup="dialog" aria-labelledby={labelId ? `${labelId} ${valueId}` : undefined}>
+      <span id={valueId} style={props.placeholder ? { color: 'var(--muted)' } : undefined}>{props.text}</span>
       <ChevronDown size={18} />
     </button>
   );
@@ -90,7 +98,7 @@ export function TimeField(props: { label: string; value: string; onChange: (v: s
   return (
     <Shell label={props.label}>
       <PickerButton
-        text={props.value ? `${props.value} Uhr` : 'Uhrzeit wählen'}
+        text={props.value ? `${props.value} Uhr` : 'Uhrzeit'}
         placeholder={!props.value}
         disabled={props.disabled}
         onClick={() => setOpen(true)}

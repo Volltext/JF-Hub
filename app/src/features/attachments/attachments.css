@@ -5,12 +5,12 @@
 .photo-node__img img { display: block; width: 100%; height: auto; max-height: 70vh; object-fit: contain; }
 .photo-node__bar { display: flex; gap: var(--s-2); align-items: center; margin-top: var(--s-2); }
 .photo-node__caption { flex: 1; min-width: 0; }
-.photo-node__text { margin: var(--s-1) 0 0; color: var(--muted); font-size: 0.92rem; }
+.photo-node__text { margin: var(--s-1) 0 0; color: var(--muted); font-size: var(--t-sm); }
 .file-node { display: flex; gap: var(--s-2); align-items: center; padding: var(--s-1); border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); }
 .file-node__main { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--s-3); min-height: 48px; padding: 0 var(--s-2); background: none; border: 0; color: inherit; text-align: left; cursor: pointer; }
 .file-node__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
-.photo-lightbox { position: fixed; inset: 0; z-index: 80; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--s-2); padding: var(--s-3); padding-top: calc(var(--s-3) + var(--safe-top)); background: rgba(0, 0, 0, 0.92); color: #fff; }
+.photo-lightbox { position: fixed; inset: 0; z-index: 80; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--s-2); padding: var(--s-3); padding-top: calc(var(--s-3) + var(--safe-top)); background: var(--scrim-strong); color: var(--on-scrim); }
 .photo-lightbox img { max-width: 100%; max-height: 85vh; object-fit: contain; }
 .photo-lightbox__close { position: absolute; top: calc(var(--s-3) + var(--safe-top)); right: var(--s-3); }
-.photo-node__missing { margin: 0; padding: var(--s-3); border-radius: var(--r-md); background: var(--surface-2, rgba(127, 127, 127, 0.12)); }
+.photo-node__missing { margin: 0; padding: var(--s-3); border-radius: var(--r-md); background: var(--surface-2); }
 .photo-node__missing .link-btn { display: inline; padding: 0; background: none; border: 0; color: var(--primary); font: inherit; text-decoration: underline; cursor: pointer; }

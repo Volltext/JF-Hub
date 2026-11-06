@@ -1,12 +1,12 @@
 /* ---- Handschrift: Vorschau im Text und Browser-Editor ---- */
 .ink-node { margin: var(--s-3) 0; }
-.ink-node__sheet { position: relative; display: block; width: 100%; padding: 0; border: 1px solid var(--border); border-radius: var(--r-md); background: #fff; overflow: hidden; cursor: pointer; text-align: center; color: #5f6672; }
+.ink-node__sheet { position: relative; display: block; width: 100%; padding: 0; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--paper); overflow: hidden; cursor: pointer; text-align: center; color: var(--paper-muted); }
 .ink-node__sheet:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .ink-node.is-selected .ink-node__sheet { outline: 2px solid var(--primary); }
 .ink-node__svg { display: block; line-height: 0; }
 .ink-node__svg svg { display: block; width: 100%; height: auto; }
 .ink-node--page .ink-node__svg { max-width: 640px; margin: 0 auto; }
-.ink-node__edit { position: absolute; right: var(--s-2); bottom: var(--s-2); display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px; background: rgba(22, 24, 29, 0.78); color: #fff; font-size: 0.82rem; font-weight: 600; opacity: 0; transition: opacity 0.15s; }
+.ink-node__edit { position: absolute; right: var(--s-2); bottom: var(--s-2); display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: var(--r-pill); background: var(--paper-overlay); color: var(--on-paper-overlay); font-size: var(--t-sm); font-weight: 600; opacity: 0; transition: opacity 0.15s; }
 .ink-node__sheet:hover .ink-node__edit, .ink-node__sheet:focus-visible .ink-node__edit { opacity: 1; }
 @media (pointer: coarse) { .ink-node__edit { opacity: 1; } }
 
@@ -16,7 +16,7 @@ body.ink-open { overflow: hidden; }
 .ink-ed__bar { display: flex; align-items: center; gap: var(--s-2); padding: var(--s-2) var(--s-3); background: var(--surface); border-bottom: 1px solid var(--border); }
 .ink-ed__spacer { flex: 1; }
 .ink-ed__scroll { flex: 1; overflow-y: auto; overflow-x: hidden; padding: var(--s-3); overscroll-behavior: contain; }
-.ink-ed__paper { position: relative; width: 100%; max-width: 980px; margin: 0 auto; background: #fff; border-radius: var(--r-sm); box-shadow: 0 4px 24px rgba(0, 0, 0, 0.35); }
+.ink-ed__paper { position: relative; width: 100%; max-width: 980px; margin: 0 auto; background: var(--paper); border-radius: var(--r-sm); box-shadow: var(--shadow-2); }
 .ink-ed__layer { position: absolute; inset: 0; pointer-events: none; line-height: 0; }
 .ink-ed__layer svg { display: block; width: 100%; height: 100%; }
 .ink-ed__hit { position: absolute; inset: 0; touch-action: none; cursor: crosshair; }

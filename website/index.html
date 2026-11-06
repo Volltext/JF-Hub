@@ -156,9 +156,12 @@
             <span class="way__step">2</span>
             <h3>Für eure Jugendfeuerwehr einrichten</h3>
             <p>Ihr braucht einen Rechner, der dauerhaft läuft (NAS, Raspberry Pi oder kleiner Cloud-Server), und Docker. Dann sind es drei Befehle:</p>
-            <pre><code>git clone https://github.com/Volltext/JF-Hub.git
+            <div class="code">
+              <pre tabindex="0" aria-label="Befehle zum Einrichten"><code>git clone https://github.com/Volltext/JF-Hub.git
 cd JF-Hub
 docker compose up -d</code></pre>
+              <button type="button" class="code__copy" data-copy hidden>Kopieren</button>
+            </div>
             <p class="muted">Kein Technik-Fan in der Wehr? Frag im Freundeskreis oder in der Gemeinde, wer schon ein NAS oder einen Raspberry Pi betreibt. Alle anderen nutzen einfach die App.</p>
             <a class="btn" href="https://github.com/Volltext/JF-Hub/blob/main/docs/installation.md">Installationsanleitung</a>
           </article>

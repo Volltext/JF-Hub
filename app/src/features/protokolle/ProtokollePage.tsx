@@ -55,7 +55,7 @@ function SplitEmpty() {
     <div className="proto-split__empty">
       <FileText size={34} />
       <strong>Wähle ein Protokoll</strong>
-      <p className="muted">oder beginne mit „+“ ein neues. Mit #Tags im Text findest du es später wieder.</p>
+      <p className="muted">oder lege mit „Neu“ ein neues an. Mit #Tags im Text findest du es später wieder.</p>
     </div>
   );
 }

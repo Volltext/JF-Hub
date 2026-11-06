@@ -20,7 +20,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { error: E
         <p className="muted" style={{ textAlign: 'center', maxWidth: 320 }}>
           Da ist etwas schiefgelaufen. Deine Daten sind gespeichert.
         </p>
-        <p className="muted" style={{ textAlign: 'center', maxWidth: 320, fontSize: '0.8rem' }}>
+        <p className="muted" style={{ textAlign: 'center', maxWidth: 320, fontSize: 'var(--t-xs)' }}>
           {this.state.error.message}
         </p>
         <button className="btn btn--primary" onClick={() => location.reload()}>

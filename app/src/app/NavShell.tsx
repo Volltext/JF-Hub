@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useRef, type ReactNode } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { type LucideIcon } from 'lucide-react';
 import { useAttention } from '@/features/home/useAttention';
@@ -43,11 +43,24 @@ export function NavShell({
   const { pathname } = useLocation();
   // Überfällige Aufgaben liegen unter „Mehr“: ein Punkt an der unteren Leiste macht sie sichtbar.
   const { overdueTasks } = useAttention();
+  const main = useRef<HTMLElement>(null);
   const inBottom = bottom.some((e) => e.id !== moreId && e.to && (isRoot(e.to) ? pathname === '/' : pathname.startsWith(e.to)));
 
   return (
     <div className="shell">
       <aside className="side" aria-label="Navigation">
+        {/* Tastatur: an der Seitenleiste vorbei direkt zum Inhalt (am Handy steht die Leiste ohnehin hinter dem Inhalt).
+            Das Ziel setzt das Skript: Die Adresse hinter # gehört dem Router. */}
+        <a
+          href="#inhalt"
+          className="skip-link"
+          onClick={(e) => {
+            e.preventDefault();
+            main.current?.focus();
+          }}
+        >
+          Zum Inhalt springen
+        </a>
         <div className="side__brand">
           <img className="side__logo" src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" />
           JF Hub
@@ -71,7 +84,9 @@ export function NavShell({
         )}
       </aside>
 
-      <main className="shell__main">{children}</main>
+      <main ref={main} id="inhalt" className="shell__main" tabIndex={-1}>
+        {children}
+      </main>
 
       <nav className="nav" aria-label="Hauptnavigation">
         {bottom.map(({ id, to, label, icon: Icon }) => (
@@ -85,7 +100,7 @@ export function NavShell({
               <Icon size={22} />
               {id === moreId && overdueTasks > 0 && <span className="nav__dot" role="img" aria-label={`${overdueTasks} überfällige ${overdueTasks === 1 ? 'Aufgabe' : 'Aufgaben'}`} />}
             </span>
-            {label}
+            <span className="nav__label">{label}</span>
           </NavLink>
         ))}
       </nav>

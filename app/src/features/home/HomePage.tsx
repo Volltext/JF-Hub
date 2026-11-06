@@ -2,7 +2,6 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { CalendarCheck, Check, FileText, ListTodo, Mail, Shirt, Timer, Users, type LucideIcon } from 'lucide-react';
 import { useMailShortcut } from '@/features/mail/useMailShortcut';
-import { taskRepo } from '@/core/db/repos';
 import { db } from '@/core/db/db';
 import { formatDate, formatDateShort } from '@/core/domain/format';
 import { todayIso } from '@/core/domain/id';
@@ -13,6 +12,7 @@ import { protokolleRepo } from '@/features/protokolle/repo';
 import { upcomingServices } from '@/core/domain/serviceSchedule';
 import { useServiceConfig } from '@/core/holidays/useServiceConfig';
 import { clothingCounts } from './counts';
+import { useCompleteTask } from '@/features/aufgaben/useCompleteTask';
 
 const linkStyle = { textDecoration: 'none', color: 'inherit' } as const;
 
@@ -44,6 +44,7 @@ export function HomePage() {
   const navigate = useNavigate();
   const service = useServiceConfig();
   const mail = useMailShortcut();
+  const { lingering, complete, reopen } = useCompleteTask();
   const data = useLiveQuery(async () => ({
     last: (await db.sessions.orderBy('date').reverse().first()) ?? null,
     memberCount: await db.members.filter((m) => m.active).count(),
@@ -59,6 +60,8 @@ export function HomePage() {
   // Nächster Termin unabhängig von der Erinnerungszeit: Vorlauf 0 zählt bis zum Beginn.
   const nextService = service ? upcomingServices(new Date(), { ...service.config, leadMinutes: 0 }, 1)[0] : undefined;
   const overdue = openTasks.filter((t) => t.dueDate && t.dueDate < today).length;
+  // Gerade abgehakte Aufgaben bleiben kurz durchgestrichen an ihrem Platz (Rückgängig, kein Nachrutschen unter den Finger).
+  const shownTasks = sortOpen([...openTasks.filter((t) => !lingering.has(t.id)), ...lingering.values()]);
 
   async function newProtocol() {
     const p = await protokolleRepo.create('');
@@ -110,15 +113,21 @@ export function HomePage() {
         )}
 
         <Card title="Aufgaben" link={{ to: '/aufgaben', label: 'Alle' }}>
-          {openTasks.length === 0 ? (
+          {shownTasks.length === 0 ? (
             <p className="muted" style={{ margin: 0 }}>Keine offenen Aufgaben. <Link to="/aufgaben" state={{ create: true }}>Aufgabe anlegen</Link></p>
           ) : (
             <div className="stack">
               {overdue > 0 && <span className="chip chip--danger">{overdue} überfällig</span>}
-              {openTasks.slice(0, 5).map((t) => (
-                <div key={t.id} className="line line--task">
-                  <button type="button" className="check check--sm" aria-label={`„${t.title}“ als erledigt markieren`} onClick={() => void taskRepo.setCompleted(t.id, true)}>
-                    <Check size={14} strokeWidth={3} className="check__hover" />
+              {shownTasks.slice(0, 5).map((t) => (
+                <div key={t.id} className={`line line--task${t.completed ? ' line--done' : ''}`}>
+                  <button
+                    type="button"
+                    className={`check check--sm${t.completed ? ' check--on' : ''}`}
+                    aria-label={t.completed ? `„${t.title}“ wieder öffnen` : `„${t.title}“ als erledigt markieren`}
+                    aria-pressed={t.completed}
+                    onClick={() => void (t.completed ? reopen(t) : complete(t))}
+                  >
+                    <Check size={14} strokeWidth={3} className={t.completed ? undefined : 'check__hover'} />
                   </button>
                   <Link to="/aufgaben" state={{ edit: t.id }} className="line__title" style={linkStyle}>
                     {t.title}
@@ -126,7 +135,7 @@ export function HomePage() {
                   {t.dueDate && <span className={`line__meta${t.dueDate < today ? ' line__meta--late' : ''}`}>{t.dueDate < today ? 'überfällig · ' : ''}{formatDateShort(t.dueDate)}</span>}
                 </div>
               ))}
-              {openTasks.length > 5 && <Link to="/aufgaben" className="card__link">und {openTasks.length - 5} weitere</Link>}
+              {shownTasks.length > 5 && <Link to="/aufgaben" className="card__link">und {shownTasks.length - 5} weitere</Link>}
             </div>
           )}
         </Card>

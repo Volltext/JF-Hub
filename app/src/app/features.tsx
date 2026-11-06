@@ -46,8 +46,11 @@ export interface Feature {
   group: FeatureGroup;
   /** Kurzbeschreibung (Mehr-Seite). */
   description: string;
-  /** Wenn gesetzt, erscheint das Feature in der unteren Leiste (schmale Bildschirme). */
-  nav?: { order: number };
+  /**
+   * Wenn gesetzt, erscheint das Feature in der unteren Leiste (schmale Bildschirme). `label` mit weichen Trennstellen (\u00AD):
+   * Bei großer Schrift bricht die Beschriftung dort um, auch wo das Gerät keine deutsche Silbentrennung kennt.
+   */
+  nav?: { order: number; label?: string };
   element: ReactElement;
 }
 
@@ -67,7 +70,7 @@ export const features: Feature[] = [
     icon: CalendarCheck,
     group: 'gruppe',
     description: 'Anwesenheit erfassen und nachsehen',
-    nav: { order: 2 },
+    nav: { order: 2, label: 'Diens\u00ADte' },
     element: <DienstePage />,
   },
   {
@@ -113,7 +116,7 @@ export const features: Feature[] = [
     icon: FileText,
     group: 'dokumentation',
     description: 'Protokolle schreiben, abgleichen und als PDF exportieren',
-    nav: { order: 3 },
+    nav: { order: 3, label: 'Proto\u00ADkolle' },
     element: <ProtokollePage />,
   },
   {
@@ -123,7 +126,7 @@ export const features: Feature[] = [
     icon: Timer,
     group: 'wettkampf',
     description: 'Aufstellung, Stoppuhr und Analyse',
-    nav: { order: 4 },
+    nav: { order: 4, label: 'Wett\u00ADkampf' },
     element: <WettkampfPage />,
   },
   {

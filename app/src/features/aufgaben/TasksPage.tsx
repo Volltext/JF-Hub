@@ -13,6 +13,7 @@ import { DateField, SelectField } from '@/core/ui/pickers';
 import { confirmDialog } from '@/core/ui/dialog';
 import { isMine, useAccount, useDirectory, visibilityLabel } from '@/core/account/account';
 import { loadSettings } from '@/core/settings/settings';
+import { useCompleteTask } from './useCompleteTask';
 
 const EMPTY: TaskInput = { title: '', description: '', dueDate: null, priority: 'medium', sessionId: null };
 
@@ -49,6 +50,7 @@ export function TasksPage() {
   const [filter, setFilter] = useState<Filter>('alle');
   const [error, setError] = useState('');
   const location = useLocation();
+  const { lingering, complete, reopen } = useCompleteTask();
 
   const begin = (d: Draft) => {
     setDraft(d);
@@ -89,9 +91,11 @@ export function TasksPage() {
   const visible = tasks.filter((t) =>
     filter === 'meine' ? isMine(t, account) : filter === 'geteilt' ? t.shared || !isMine(t, account) : true,
   );
-  const open = sortOpen(visible.filter((t) => !t.completed));
-  const done = visible.filter((t) => t.completed).sort((a, b) => (b.completedAt ?? '').localeCompare(a.completedAt ?? ''));
-  const overdue = open.filter((t) => t.dueDate && t.dueDate < today).length;
+  // Gerade abgehakte Aufgaben bleiben kurz durchgestrichen in ihrer Gruppe stehen (Rückgängig, kein Nachrutschen unter den Finger).
+  const open = sortOpen(visible.filter((t) => !t.completed || lingering.has(t.id)));
+  const done = visible.filter((t) => t.completed && !lingering.has(t.id)).sort((a, b) => (b.completedAt ?? '').localeCompare(a.completedAt ?? ''));
+  const openCount = open.filter((t) => !t.completed).length;
+  const overdue = open.filter((t) => !t.completed && t.dueDate && t.dueDate < today).length;
 
   async function save() {
     if (!draft) return;
@@ -120,7 +124,7 @@ export function TasksPage() {
           className={`check${t.completed ? ' check--on' : ''}`}
           aria-label={t.completed ? `„${t.title}“ wieder öffnen` : `„${t.title}“ als erledigt markieren`}
           aria-pressed={t.completed}
-          onClick={() => taskRepo.setCompleted(t.id, !t.completed)}
+          onClick={() => void (t.completed ? reopen(t) : complete(t))}
         >
           {t.completed && <Check size={18} strokeWidth={3} />}
         </button>
@@ -155,7 +159,7 @@ export function TasksPage() {
     <Page
       title="Aufgaben"
       fromMore
-      sub={open.length ? `${open.length} offen${overdue ? `, davon ${overdue} überfällig` : ''}` : 'Alles erledigt'}
+      sub={openCount ? `${openCount} offen${overdue ? `, davon ${overdue} überfällig` : ''}` : 'Alles erledigt'}
       create={{ label: 'Neue Aufgabe', onClick: create }}
     >
       {hasShared && (

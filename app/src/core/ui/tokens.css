@@ -12,6 +12,8 @@
   --surface: #16181d;
   --surface-2: #1e2127;
   --border: rgba(255, 255, 255, 0.09);
+  /* Umriss von Eingabefeldern und Schaltern: mind. 3 : 1 gegen Fläche und Hintergrund (WCAG 1.4.11) */
+  --border-field: #6b7280;
   --text: #f4f4f6;
   --muted: #9aa0ab;
   /* Flächen mit weißer Schrift (mind. 4,5 : 1) */
@@ -26,18 +28,49 @@
   --on-primary: #ffffff;
   --accent: #f97316;
   --success: #34c27a;
+  /* Haken auf grüner Fläche: dunkel, denn Weiß auf hellem Grün läge unter 3 : 1 */
+  --on-success: #0e0f12;
   --warning: #f2b441;
   --danger: #ff5d55;
+  /* Gefüllte Gefahr-Knöpfe (weiße Schrift, mind. 4,5 : 1) – in beiden Themes gleich */
+  --danger-fill: #c93028;
+  /* Schieber im Schalter */
+  --knob: #ffffff;
+  /* Abdunklung hinter Fenstern und Bildansicht */
+  --scrim: rgba(0, 0, 0, 0.55);
+  --scrim-strong: rgba(0, 0, 0, 0.92);
+  --on-scrim: #ffffff;
+  /* Hinweis unten (Rückgängig): umgekehrte Farben, hebt sich in beiden Themes ab */
+  --inverse-bg: #f4f4f6;
+  --inverse-text: #0e0f12;
+  --inverse-action: #b8231c;
+  /* Hervorhebung im Text, Links und #Tags im Protokoll */
+  --highlight: color-mix(in srgb, #facc15 38%, transparent);
+  --link-text: color-mix(in srgb, var(--primary) 72%, var(--text));
+  --tag-text: color-mix(in srgb, var(--primary) 70%, var(--text));
+  /* Rand-Schatten, solange sich eine Leiste weiterwischen lässt */
+  --edge-shade: color-mix(in srgb, var(--text) 28%, transparent);
+  /* Handschrift liegt immer auf weißem Papier (wie im PDF) */
+  --paper: #ffffff;
+  --paper-muted: #5f6672;
+  --paper-overlay: rgba(22, 24, 29, 0.78);
+  --on-paper-overlay: #ffffff;
+  --r-xs: 6px;
   --r-sm: 8px;
   --r-md: 14px;
   --r-lg: 20px;
+  --r-pill: 999px;
   --s-1: 4px; --s-2: 8px; --s-3: 12px; --s-4: 16px; --s-5: 24px; --s-6: 32px;
   --nav-h: 64px;
-  /* Schriftgrößen (Skala) */
-  --t-xs: 0.75rem; --t-sm: 0.85rem; --t-md: 1rem; --t-lg: 1.15rem; --t-xl: 1.6rem; --t-2xl: 2.2rem;
+  /* Schriftgrößen der Oberfläche (Skala, keine Zwischenwerte) */
+  --t-xs: 0.75rem; --t-sm: 0.875rem; --t-md: 1rem; --t-lg: 1.15rem; --t-xl: 1.6rem; --t-2xl: 2.4rem; --t-display: 3.6rem;
+  /* Schriftgrößen im Protokolltext (Lesetext, eigene Skala) */
+  --p-body: 1.1rem; --p-h1: 1.7rem; --p-h2: 1.35rem; --p-h3: 1.12rem; --p-title: 1.9rem; --p-title-wide: 2.2rem;
   /* Tiefe */
   --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.35);
   --shadow-2: 0 8px 28px rgba(0, 0, 0, 0.5);
+  --shadow-raised: 0 6px 18px rgba(0, 0, 0, 0.32);
+  --shadow-up: 0 -4px 14px rgba(0, 0, 0, 0.25);
   --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
   --dur: 160ms;
   --safe-top: env(safe-area-inset-top, 0px);
@@ -51,6 +84,7 @@
   --surface: #ffffff;
   --surface-2: #ededf0;
   --border: rgba(0, 0, 0, 0.1);
+  --border-field: #7d8390;
   --text: #16181d;
   --muted: #5f6672;
   --primary: #d42a22;
@@ -60,9 +94,19 @@
   --chart: #3b6fd8;
   --accent: #ad4b08;
   --success: #136a3d; /* mindestens 4,5 : 1 als Text auf --bg, --surface und getönten Chips (WCAG AA) */
+  --on-success: #ffffff;
   --warning: #8a5f00;
-  --danger: #c93028;
+  --danger: #b42a22; /* mindestens 4,5 : 1 auch auf getönten Chips */
+  --inverse-bg: #16181d;
+  --inverse-text: #f4f4f6;
+  --inverse-action: #ff8a84;
+  --highlight: #fff1a6;
+  --link-text: var(--primary);
+  --tag-text: var(--primary-text);
+  --edge-shade: color-mix(in srgb, var(--text) 22%, transparent);
   --shadow-1: 0 1px 2px rgba(20, 22, 28, 0.06), 0 1px 3px rgba(20, 22, 28, 0.05);
   --shadow-2: 0 10px 30px rgba(20, 22, 28, 0.16);
+  --shadow-raised: 0 6px 18px rgba(20, 22, 28, 0.18);
+  --shadow-up: 0 -4px 14px rgba(20, 22, 28, 0.12);
   color-scheme: light;
 }
