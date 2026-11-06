@@ -338,7 +338,9 @@ a:not([class]) { color: var(--primary-text); }
 .head-tabs .icon-btn { width: 36px; height: 36px; margin-bottom: 3px; }
 
 /* Reiter im Wettkampf-Kopf: auf schmalen Handys schrumpfen Schrift und Abstand, damit keine Beschriftung unter den Symbolen verschwindet */
-.head-tabs .segmented--tabs button { min-width: 0; white-space: nowrap; padding: 0 var(--s-2); }
+/* Die Reiter teilen sich die Breite nach ihrer Beschriftung (das lange „Aufstellung“ bekommt mehr als „Analyse“), der Rest wird gleich
+   verteilt: So passt jede Beschriftung, statt bei gleich breiten Reitern auf schmalen Handys abgeschnitten zu werden. */
+.head-tabs .segmented--tabs button { flex: 1 1 auto; min-width: 0; white-space: nowrap; padding: 0 var(--s-2); }
 @media (max-width: 419px) { .head-tabs .segmented--tabs button { font-size: var(--t-sm); padding: 0 2px; } }
 @media (max-width: 359px) { .head-tabs .segmented--tabs button { font-size: var(--t-xs); padding: 0; } .head-tabs { gap: var(--s-1); } .head-tabs .icon-btn { width: 32px; height: 32px; } }
 @media (max-width: 359px) { .head-compact .segmented--compact button { font-size: var(--t-xs); padding: 0 2px; } }
