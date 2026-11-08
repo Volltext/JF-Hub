@@ -10,15 +10,15 @@
         "typecheck": "tsc --noEmit -p ."
     },
     "dependencies": {
-        "@fastify/cookie": "^11.1.2",
-        "@fastify/rate-limit": "^11.2.0",
-        "@fastify/static": "^10.1.5",
-        "fastify": "^5.12.5",
+        "@fastify/cookie": "^11.1.5",
+        "@fastify/rate-limit": "^11.2.2",
+        "@fastify/static": "^10.1.10",
+        "fastify": "^5.12.8",
         "fflate": "^0.8.3",
         "imapflow": "^2.10.2",
         "mailparser": "^3.14.2",
         "nodemailer": "^10.3.1",
-        "pdfmake": "^0.2.23",
+        "pdfmake": "^0.3.13",
         "web-push": "^3.6.7",
         "yjs": "^13.6.33"
     },
@@ -32,7 +32,7 @@
         "smtp-server": "^3.21.3",
         "tsx": "^4.23.15",
         "typescript": "^5.9.3",
-        "vitest": "^5.0.3"
+        "vitest": "^5.1.0"
     },
     "type": "module",
     "private": true
