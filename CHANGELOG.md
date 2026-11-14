@@ -6,10 +6,18 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/). Versionen 
 
 ### Neu
 
+- **Protokolle am Tablet mit Tastatur** (zum Beispiel Android-Tablet mit Tastatur-Hülle):
+  - **Autokorrektur beim Schreiben mit Tastatur:** Satzanfänge werden groß (nicht nach „z. B.“, „ca.“ oder „3.“), häufige Tippfehler korrigiert („udn“ → „und“, „vieleicht“ → „vielleicht“, „DIenst“ → „Dienst“), dazu „deutsche“ Anführungszeichen, Gedankenstrich „ – “ und Auslassungspunkte „…“. Die Rücktaste direkt danach nimmt eine Korrektur zurück. Gilt im Text und im Titel, lässt sich je Gerät abschalten. Mit der Bildschirmtastatur bleibt alles beim Alten, dort korrigiert die Tastatur-App.
+  - **Tastatur & Schreibhilfe** (Knopf am Ende der Werkzeugleiste, `Strg+#`): alle Tastenkürzel, die Kurzschreibweisen am Zeilenanfang (`# `, `- `, `[ ] ` …), der Schalter für die Autokorrektur und unter Android, wo Layout und Korrektur der angeschlossenen Tastatur eingestellt werden.
+  - **Neue Tastenkürzel:** `Strg+K` Link, `Strg+S` sofort speichern (statt „Seite speichern“ des Browsers), `Strg+Umschalt+L` Liste daneben ein-/ausblenden. Pfeil nach unten im Titel und nach oben in der ersten Zeile wechseln zwischen Titel und Text. Ein neues Protokoll beginnt mit dem Cursor im Titel, wenn eine Tastatur benutzt wird.
+  - **Liste ausblenden:** Auf breiten Bildschirmen (Tablet quer, Laptop) lässt sich die Protokoll-Liste neben dem Editor ausblenden. Der Text steht dann mittig, und die ganze Werkzeugleiste passt ohne Wischen.
+  - **Falsches Tastaturlayout:** Tippt eine angeschlossene Tastatur unter Android im englischen Layout (y und z vertauscht, keine Umlaute), weist das Protokoll einmal darauf hin und sagt, wo man es umstellt.
+
 - **E-Mail auf der Startseite:** Ist ein Postfach verbunden, steht „E-Mail“ bei den Schnellzugriffen auf „Heute“, mit der Zahl ungelesener Mails im Posteingang. Ohne Postfach bleibt die Kachel weg.
 
 ### Behoben
 
+- **Protokolle am Tablet:** Die Wortzahl stand bei Touch-Geräten zwischen Kopf und Text statt darunter. Beim Tippen am Seitenende konnte die Zeile mit dem Cursor hinter der Werkzeugleiste verschwinden. Am Tablet hochkant passt die Werkzeugleiste jetzt ganz in eine Zeile.
 - **Kleidung: „Weiter: Name“ war ein leeres Kästchen.** Im Fenster einer Person nahm der Zurück-Pfeil die ganze Breite ein. Zurück ist jetzt ein fester Pfeil, „Weiter: Name“ nimmt den Rest.
 - **Abhaken ohne Rückgängig:** Auf „Heute“ und unter „Aufgaben“ verschwand eine erledigte Aufgabe sofort, und die nächste rutschte unter den Finger. Jetzt bleibt sie vier Sekunden durchgestrichen stehen, unten erscheint „Erledigt: … · Rückgängig“. Nochmal antippen holt sie ebenfalls zurück.
 - **Untere Leiste bei großer Schrift:** Die Beschriftungen liefen ineinander („HeuteDiensteProtokolle…“). Sie trennen jetzt an festen Stellen („Proto-kolle“) und brechen höchstens zweizeilig um.

@@ -273,3 +273,41 @@ body.web .icon-btn { cursor: pointer; }
 @media (hover: none) { .kbd-hint { display: none; } }
 .icon-btn--danger:hover { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, var(--border)); }
 .proto-bar .icon-btn--danger { margin-left: var(--s-2); }
+
+/* ----- Schreiben mit Tastatur (Tablet mit Tastatur, Laptop) ----- */
+/* Am Touch-Gerät steht die Werkzeugleiste unter dem Text: die Wortzahl gehört unter den Text, nicht zwischen Kopf und Text. */
+@media (pointer: coarse) { .ed-stats { order: 4; } }
+/* Strg+S: „Gespeichert“ leuchtet kurz auf. */
+.proto-saved--flash { color: var(--success); font-weight: 650; }
+/* Breite Ansicht: Liste ausgeblendet, der Text steht mittig mit voller Breite. */
+.proto-split__list[hidden] { display: none; }
+.proto-split--focus { grid-template-columns: minmax(0, 1fr); }
+.proto-split--focus .proto-split__main .proto { margin: 0 auto; }
+/* Tastenkürzel-Hinweise auch am Tablet, sobald dort eine echte Tastatur benutzt wurde. */
+html.hw-kbd .kbd-hint { display: inline-block; }
+
+/* Fenster „Tastatur & Schreibhilfe“ */
+.kbd-auto { display: flex; flex-direction: column; gap: 2px; text-align: left; min-width: 0; }
+.kbd-auto .muted { font-size: var(--t-sm); font-weight: 400; line-height: 1.4; }
+.kbd-note { margin: 0; font-size: var(--t-sm); line-height: 1.5; }
+.kbd-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: var(--s-4) var(--s-5); }
+.kbd-group { display: flex; flex-direction: column; gap: var(--s-2); min-width: 0; }
+.kbd-group__title { font-size: var(--t-xs); font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.kbd-list { margin: 0; display: flex; flex-direction: column; }
+.kbd-row { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); min-height: 36px; padding: 4px 0; border-bottom: 1px solid var(--border); }
+.kbd-row:last-child { border-bottom: 0; }
+.kbd-row dt { min-width: 0; font-size: var(--t-sm); }
+.kbd-row dd { margin: 0; flex-shrink: 0; }
+.kbd-keys, .kbd-keys__alt { display: inline-flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 4px; font-size: var(--t-xs); }
+.kbd-keys { gap: 6px; }
+.kbd { display: inline-block; min-width: 24px; padding: 1px 6px; border: 1px solid var(--border); border-bottom-width: 2px; border-radius: var(--r-xs); background: var(--surface-2); font: 600 var(--t-xs) / 1.5 var(--font-mono); color: var(--text); text-align: center; white-space: nowrap; }
+.kbd-code { padding: 1px 6px; border-radius: var(--r-xs); background: var(--surface-2); font: 600 var(--t-xs) / 1.5 var(--font-mono); white-space: pre; }
+.kbd-tips { margin: 0; padding-left: 1.2em; display: flex; flex-direction: column; gap: var(--s-2); font-size: var(--t-sm); line-height: 1.5; }
+/* Im Fenster nicht zusammendrücken lassen (der Fensterinhalt ist eine Flex-Spalte, die sonst Einträge staucht statt zu scrollen). */
+.kbd-toggle, .kbd-note, .kbd-groups, .sheet__body > .kbd-group { flex-shrink: 0; }
+.kbd-toggle { padding-block: var(--s-3); }
+
+/* Tablet (Touch, breit): Alle Werkzeuge passen in eine Zeile, ohne Wischen. */
+@media (pointer: coarse) and (min-width: 720px) {
+  .ed-tool { width: 40px; height: 44px; }
+}

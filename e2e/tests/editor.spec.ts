@@ -277,6 +277,63 @@ test.describe.serial('Protokolle: Tabellen, Links und Hervorhebung', () => {
     await page.screenshot({ path: 'test-results/tabelle-am-handy.png' });
     await context.close();
   });
+
+  test('am Tablet mit Tastatur: Autokorrektur, Tastenkürzel und Liste ausblenden', async ({ browser, request }) => {
+    await adminToken(request);
+    // Wie ein Android-Tablet quer (Touch), geschrieben wird mit angeschlossener Tastatur.
+    const { context, page } = await open(browser, ADMIN, { viewport: { width: 1280, height: 800 }, hasTouch: true, isMobile: true });
+    await writeProtocol(page, 'Tablet mit Tastatur', 'Erste Zeile.');
+    const editor = page.getByLabel('Protokolltext', { exact: true });
+
+    // Autokorrektur beim Tippen: Satzanfang, Tippfehler, Anführungszeichen, Gedankenstrich, Auslassungspunkte; Enter prüft das letzte Wort.
+    await page.keyboard.type(' heute udn morgen. danach "gut" - fertig... ende udn');
+    await page.keyboard.press('Enter');
+    await expect(editor).toContainText('Erste Zeile. Heute und morgen. Danach „gut“ – fertig… Ende und');
+    // Die Rücktaste direkt nach einer Korrektur nimmt sie zurück.
+    await page.keyboard.type('Wir nciht ');
+    await page.keyboard.press('Backspace');
+    await expect(editor).toContainText('Wir nciht');
+
+    // Strg+# öffnet die Übersicht; dort lässt sich die Autokorrektur ausschalten.
+    await page.keyboard.press('Control+#');
+    const sheet = page.getByRole('dialog', { name: 'Tastatur & Schreibhilfe' });
+    await expect(sheet).toBeVisible();
+    await sheet.getByRole('button', { name: /Autokorrektur/ }).click();
+    await expect(sheet.getByRole('button', { name: /Autokorrektur/ })).toHaveAttribute('aria-pressed', 'false');
+    await page.keyboard.press('Escape');
+    await expect(sheet).toHaveCount(0);
+    await expect(editor).toBeFocused();
+    await page.keyboard.type('und udn ');
+    await expect(editor).toContainText('und udn');
+
+    // Strg+K öffnet das Link-Fenster, Strg+S speichert sofort (statt „Seite speichern“).
+    await page.keyboard.press('Control+k');
+    await expect(page.getByRole('dialog', { name: 'Link' })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('Control+s');
+    await expect(page.getByText('Gespeichert')).toBeVisible();
+
+    // Pfeiltasten wechseln zwischen Titel und erster Zeile.
+    await editor.locator('p').first().click({ position: { x: 2, y: 4 } });
+    // Erst weiter, wenn der Editor den Cursor am Anfang kennt (er übernimmt die Auswahl des Browsers einen Moment später).
+    await expect
+      .poll(() => page.evaluate(() => (document.querySelector('.ProseMirror') as unknown as { editor?: { state: { selection: { from: number } } } }).editor?.state.selection.from))
+      .toBe(1);
+    await page.keyboard.press('ArrowUp');
+    await expect(page.getByLabel('Titel', { exact: true })).toBeFocused();
+    await page.keyboard.press('ArrowDown');
+    await expect(editor).toBeFocused();
+
+    // Breit genug für Liste und Editor: Die Liste lässt sich zum Schreiben ausblenden, dann passt die ganze Werkzeugleiste.
+    await page.getByRole('button', { name: 'Protokoll-Liste ausblenden' }).click();
+    await expect(page.getByRole('complementary', { name: 'Protokolle' })).toBeHidden();
+    const overflow = await page.getByRole('toolbar', { name: 'Formatierung' }).evaluate((el) => el.scrollWidth - el.clientWidth);
+    expect(overflow).toBeLessThanOrEqual(0);
+    await page.getByRole('button', { name: 'Protokoll-Liste einblenden' }).click();
+    await expect(page.getByRole('complementary', { name: 'Protokolle' })).toBeVisible();
+    await page.screenshot({ path: 'test-results/tablet-mit-tastatur.png' });
+    await context.close();
+  });
 });
 
 test.describe.serial('Protokolle: feindliche Tabellen', () => {
