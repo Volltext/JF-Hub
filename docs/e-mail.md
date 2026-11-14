@@ -38,6 +38,7 @@ In den Postfach-Einstellungen ist „Bei neuen Mails benachrichtigen“ standard
 
 - Der Server schaut **etwa alle 2 Minuten** in deinen Posteingang (nur wenn mindestens ein Gerät von dir für Benachrichtigungen angemeldet ist, siehe [Erste Schritte](erste-schritte.md)). Das ist keine Sofort-Zustellung.
 - Die erste Prüfung meldet nichts. Du wirst nicht mit deinen ungelesenen Mails überschüttet, sondern nur mit dem, was danach neu eintrifft. Mehr als drei neue Mails auf einmal werden zusammengefasst.
+- **Jede neue Mail wird gemeldet**, auch wenn du sie zwischen zwei Prüfungen schon woanders gelesen hast (etwa in der Mail-App am Handy).
 - **Absender und Betreff stehen in der Benachrichtigung** (und damit auf dem Sperrbildschirm). Wer das nicht möchte, schaltet sie aus.
 - Das geht über die Browser-App (PWA, auch installiert). Die Android-App zeigt keine Mail-Benachrichtigungen.
 

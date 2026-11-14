@@ -104,7 +104,7 @@ export class FakeMailBackend implements MailBackend {
     const maxUid = inbox.reduce((n, m) => Math.max(n, m.uid), 0);
     if (state.lastUid === null || state.uidValidity !== this.uidValidity) return { uidValidity: this.uidValidity, maxUid, fresh: [] };
     const fresh = inbox
-      .filter((m) => m.uid > state.lastUid! && !m.seen)
+      .filter((m) => m.uid > state.lastUid!)
       .map((m) => ({ uid: m.uid, from: m.from?.name || m.from?.address || '', subject: m.subject }));
     return { uidValidity: this.uidValidity, maxUid, fresh };
   }
