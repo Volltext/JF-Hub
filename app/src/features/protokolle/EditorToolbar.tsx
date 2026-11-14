@@ -1,6 +1,6 @@
 import type { Editor } from '@tiptap/core';
 import { useEditorState } from '@tiptap/react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AttachSheet } from '@/features/attachments/AttachSheet';
 import {
   Bold,
@@ -79,6 +79,18 @@ const TOOLS: (Tool | 'sep')[] = [
   { id: 'keys', label: 'Tastatur & Autokorrektur', keys: 'Strg+#', icon: Keyboard, run: (_e, ui) => ui.openKeys(), dialog: true },
 ];
 
+/** Abstand der Cursorzeile zu den Rändern beim Scrollen (ProseMirror `scrollMargin`/`scrollThreshold`); die Leiste passt ihn an. */
+export interface ScrollMargins {
+  top: number;
+  bottom: number;
+  left: number;
+  right: number;
+}
+const BASE_MARGINS: ScrollMargins = { top: 88, bottom: 96, left: 8, right: 8 };
+export const defaultScrollMargins = (): ScrollMargins => ({ ...BASE_MARGINS });
+/** So viel Luft bleibt zwischen Cursorzeile und Leiste: gut eine Zeile, damit man sieht, was als Nächstes kommt. */
+const GAP = 40;
+
 /** Strg+# (deutsche Tastatur) oder Strg+/ (englische): Strg+Umschalt+7 ist die Nummerierung und bleibt unberührt. */
 const isHelpKey = (e: KeyboardEvent) => (e.key === '#' || (e.key === '/' && !e.shiftKey)) && !e.altKey;
 
@@ -86,7 +98,8 @@ const isHelpKey = (e: KeyboardEvent) => (e.key === '#' || (e.key === '/' && !e.s
  * Formatierungsleiste: am Rechner oben am Rand haftend, auf dem Handy über der Tastatur. Darüber (Handy) oder darunter (Rechner)
  * steht die Kontextzeile für Links und Tabellen.
  */
-export function EditorToolbar({ editor }: { editor: Editor }) {
+export function EditorToolbar({ editor, scrollMargins }: { editor: Editor; scrollMargins?: ScrollMargins }) {
+  const dock = useRef<HTMLDivElement>(null);
   const [sheet, setSheet] = useState<'attach' | 'insert' | 'link' | 'keys' | null>(null);
   const state = useEditorState({
     editor,
@@ -101,6 +114,51 @@ export function EditorToolbar({ editor }: { editor: Editor }) {
     equalityFn: (a, b) => !!a && !!b && Object.keys(a).every((k) => a[k]!.active === b[k]!.active && a[k]!.disabled === b[k]!.disabled),
   });
   const ui: Ui = { openAttach: () => setSheet('attach'), openInsert: () => setSheet('insert'), openLink: () => setSheet('link'), openKeys: () => setSheet('keys') };
+
+  // Die Leiste ist nicht immer gleich hoch: In der Android-App kommt ohne Tastatur der Rand der Navigationsleiste dazu, in Links und
+  // Tabellen die Kontextzeile. Fester Abstand reichte dort nicht, die Zeile mit dem Cursor verschwand halb hinter der Leiste.
+  useEffect(() => {
+    const el = dock.current;
+    if (!el || !scrollMargins || typeof ResizeObserver === 'undefined' || typeof matchMedia !== 'function') return;
+    const coarse = matchMedia('(pointer: coarse)');
+    const measure = () => {
+      const h = el.getBoundingClientRect().height;
+      // Am Handy haftet die Leiste unten, am Rechner oben (mit etwas Abstand zum Rand).
+      if (coarse.matches) Object.assign(scrollMargins, { top: BASE_MARGINS.top, bottom: Math.max(BASE_MARGINS.bottom, Math.ceil(h) + GAP) });
+      else Object.assign(scrollMargins, { top: Math.max(BASE_MARGINS.top, Math.ceil(h) + GAP), bottom: BASE_MARGINS.bottom });
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    // Die ganze Box beobachten: Der Rand der Navigationsleiste kommt als Innenabstand dazu, die Inhaltsbox bleibt gleich.
+    ro.observe(el, { box: 'border-box' });
+    coarse.addEventListener('change', measure);
+    return () => {
+      ro.disconnect();
+      coarse.removeEventListener('change', measure);
+    };
+  }, [scrollMargins]);
+
+  // Geht die Bildschirmtastatur auf (oder ändert ihre Höhe), schrumpft die Seite. Android schiebt das Eingabefeld dabei nur knapp über
+  // die Tastatur – also unter die Leiste. Danach den Cursor noch einmal mit dem richtigen Abstand ins Bild holen.
+  useEffect(() => {
+    const vp = window.visualViewport;
+    if (!vp) return;
+    let frame = 0;
+    let lastHeight = vp.height;
+    const onResize = () => {
+      if (Math.abs(vp.height - lastHeight) < 1) return;
+      lastHeight = vp.height;
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        if (editor.isFocused && !editor.isDestroyed) editor.commands.scrollIntoView();
+      });
+    };
+    vp.addEventListener('resize', onResize);
+    return () => {
+      cancelAnimationFrame(frame);
+      vp.removeEventListener('resize', onResize);
+    };
+  }, [editor]);
 
   // Tastenkürzel, die ein Fenster öffnen: Strg+K (Link, nur im Text) und Strg+# (Übersicht, auch aus dem Titel).
   useEffect(() => {
@@ -120,7 +178,7 @@ export function EditorToolbar({ editor }: { editor: Editor }) {
 
   return (
     <>
-      <div className="ed-dock">
+      <div className="ed-dock" ref={dock}>
         <div className="ed-toolbar" role="toolbar" aria-label="Formatierung">
           {TOOLS.map((t, i) => {
             if (t === 'sep') return <span key={`s${i}`} className="ed-toolbar__sep" aria-hidden />;

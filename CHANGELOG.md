@@ -23,9 +23,13 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/). Versionen 
   - **Liste ausblenden:** Auf breiten Bildschirmen (Tablet quer, Laptop) lässt sich die Protokoll-Liste neben dem Editor ausblenden. Der Text steht dann mittig, und die ganze Werkzeugleiste passt ohne Wischen.
   - **Falsches Tastaturlayout:** Tippt eine angeschlossene Tastatur unter Android im englischen Layout (y und z vertauscht, keine Umlaute), weist das Protokoll einmal darauf hin und sagt, wo man es umstellt.
 
+- **Neue Zeitauswahl** (Beginn und Ende im Protokoll, Dienstzeiten und Erinnerung in den Einstellungen): Oben steht groß die gewählte Zeit, darunter erst die Stunden, nach dem Antippen die Minuten. „Übernehmen“ schließt das Fenster; ein Tipp auf Stunde oder Minute oben springt zurück zu diesem Schritt. Statt der Minuten-Knöpfe ± gibt es „Eintippen“ („1730“, „17:30“). Schnellwahl mit einem Tipp: „Jetzt“, beim Beginn der Dienstbeginn des Tages, beim Ende „+1 Std.“, „+1½ Std.“ und „+2 Std.“ ab Beginn. Im Protokoll lässt sich eine Zeit mit „Keine Uhrzeit“ wieder entfernen.
+
 - **E-Mail auf der Startseite:** Ist ein Postfach verbunden, steht „E-Mail“ bei den Schnellzugriffen auf „Heute“, mit der Zahl ungelesener Mails im Posteingang. Ohne Postfach bleibt die Kachel weg.
 
 ### Behoben
+
+- **Android-App: Werkzeugleiste verdeckte beim Schreiben die aktuelle Zeile.** Am unteren Bildschirmrand verschwand die Zeile mit dem Cursor halb hinter der Formatierungsleiste (in der PWA nicht). Die App läuft unter Android randlos, und die Leiste war um den Rand der Navigationsleiste höher als vorgesehen. Die Ränder kommen jetzt aus der App selbst (bei offener Tastatur ohne Navigationsleiste), der Editor hält Abstand zur tatsächlichen Höhe der Leiste (auch mit Link- oder Tabellenzeile) und holt den Cursor nach dem Aufgehen der Tastatur wieder ins Bild.
 
 - **Versionsnummern standen seit 3.2.1 still:** Die Releases 3.3.0 und 3.4.0 meldeten sich in App, Server und APK weiter als 3.2.1, die APK trug denselben `versionCode`. Es gibt jetzt eine einzige Quelle (`node scripts/version.mjs X.Y.Z`), Server und APK leiten ihre Version daraus ab, und die Workflows brechen ab, wenn ein Tag nicht zur Version im Code passt. Diese Version ist **3.5.0**.
 - **Protokolle am Tablet:** Die Wortzahl stand bei Touch-Geräten zwischen Kopf und Text statt darunter. Beim Tippen am Seitenende konnte die Zeile mit dem Cursor hinter der Werkzeugleiste verschwinden. Am Tablet hochkant passt die Werkzeugleiste jetzt ganz in eine Zeile.

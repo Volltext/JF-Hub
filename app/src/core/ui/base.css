@@ -254,10 +254,33 @@ a.btn--primary { color: var(--on-primary); }
 .live-banner .chip-btn__dot { margin-left: 0; }
 
 /* ---- Uhrzeit-Auswahl ---- */
-.tp { display: flex; flex-direction: column; gap: var(--s-3); }
-.tp-display { display: flex; align-items: center; justify-content: center; gap: var(--s-4); }
-.tp-input { width: 9rem; text-align: center; font-size: var(--t-2xl); font-weight: 700; font-variant-numeric: tabular-nums; border: 0; border-bottom: 2px solid var(--border); background: transparent; outline: none; padding: var(--s-1) 0; color: var(--text); }
-.tp-input:focus { border-bottom-color: var(--focus); }
+/* Zeitauswahl: große Anzeige (Stunde | Minute), darunter ein Schritt nach dem anderen, dann Schnellwahl und Übernehmen */
+.tp { display: flex; flex-direction: column; gap: var(--s-4); }
+.tp-head { display: flex; flex-direction: column; align-items: center; gap: var(--s-2); }
+.tp-time { display: flex; align-items: center; justify-content: center; gap: 2px; }
+.tp-seg { min-width: 6.2rem; padding: var(--s-1) var(--s-2); border: 0; border-radius: var(--r-md); background: var(--surface-2); color: var(--text); font-size: var(--t-display); line-height: 1.1; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; cursor: pointer; }
+.tp-seg[aria-pressed='true'] { background: color-mix(in srgb, var(--primary) 16%, var(--surface-2)); color: var(--primary-text); box-shadow: inset 0 0 0 2px var(--primary); }
+.tp-colon { font-size: var(--t-2xl); font-weight: 700; color: var(--muted); padding: 0 2px; }
+.tp-input { width: 12.5rem; text-align: center; font-size: var(--t-display); line-height: 1.1; font-weight: 700; font-variant-numeric: tabular-nums; border: 0; border-radius: var(--r-md); background: var(--surface-2); outline: none; padding: var(--s-1) var(--s-2); color: var(--text); box-shadow: inset 0 0 0 2px var(--border-field); }
+.tp-input:focus, .tp-input:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--focus); }
+.tp-mode { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 var(--s-3); border: 0; border-radius: var(--r-pill); background: transparent; color: var(--muted); font-size: var(--t-sm); font-weight: 600; cursor: pointer; }
+.tp-hint { margin: 0; text-align: center; color: var(--muted); font-size: var(--t-sm); }
+.tp-steps { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; padding: 3px; border-radius: var(--r-md); background: var(--surface-2); }
+.tp-step { min-height: 40px; border: 0; border-radius: calc(var(--r-md) - 3px); background: transparent; color: var(--muted); font-weight: 600; font-size: var(--t-sm); cursor: pointer; }
+.tp-step[aria-selected='true'] { background: var(--surface); color: var(--text); box-shadow: var(--shadow-1); }
+.tp-pad { display: grid; gap: 4px; }
+.tp-pad--hours { grid-template-columns: repeat(6, 1fr); }
+.tp-pad--minutes { grid-template-columns: repeat(4, 1fr); }
+.tp-key { min-height: 48px; border: 0; border-radius: var(--r-md); background: transparent; color: var(--text); font-size: var(--t-lg); font-variant-numeric: tabular-nums; cursor: pointer; }
+.tp-pad--minutes .tp-key { min-height: 56px; }
+@media (hover: hover) { .tp-key:hover { background: var(--surface-2); } .tp-chip:hover { border-color: var(--muted); } .tp-mode:hover { background: var(--surface-2); color: var(--text); } }
+.tp-key[aria-pressed='true'] { background: var(--primary); color: var(--on-primary); font-weight: 700; }
+.tp-key:focus-visible, .tp-seg:focus-visible, .tp-step:focus-visible, .tp-chip:focus-visible, .tp-mode:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.tp-quick { display: flex; flex-wrap: wrap; gap: var(--s-2); padding-top: var(--s-3); border-top: 1px solid var(--border); }
+.tp-chip { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 var(--s-3); border: 1px solid var(--border); border-radius: var(--r-pill); background: var(--surface); color: var(--muted); font-size: var(--t-sm); cursor: pointer; }
+.tp-chip strong { color: var(--text); font-variant-numeric: tabular-nums; }
+.tp-actions { display: flex; gap: var(--s-2); justify-content: flex-end; flex-wrap: wrap; }
+.tp-actions .btn--primary { flex: 1 1 12rem; }
 .tp-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
 .tp-cell { min-height: 46px; border-radius: var(--r-md); border: 1px solid var(--border); background: var(--surface-2); font-size: var(--t-md); font-variant-numeric: tabular-nums; cursor: pointer; }
 .tp-cell:hover { border-color: var(--muted); }

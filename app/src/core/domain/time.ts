@@ -20,3 +20,11 @@ export function parseTypedTime(text: string): { h: number; min: number } | null 
   } else return null;
   return h < 24 && min < 60 ? { h, min } : null;
 }
+
+/** Verschiebt „HH:MM“ um `minutes` (über Mitternacht hinweg); ungültig → null. */
+export function shiftTime(value: string, minutes: number): string | null {
+  const p = parseTypedTime(value);
+  if (!p) return null;
+  const total = (((p.h * 60 + p.min + minutes) % 1440) + 1440) % 1440;
+  return formatTime(Math.floor(total / 60), total % 60);
+}

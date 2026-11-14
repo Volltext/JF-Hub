@@ -1,5 +1,5 @@
 import { createContext, useContext, useId, useState } from 'react';
-import { Check, ChevronDown, ChevronLeft, ChevronRight, Minus, Plus } from 'lucide-react';
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Clock, Keyboard } from 'lucide-react';
 import {
   MONTH_NAMES,
   WEEKDAYS,
@@ -89,11 +89,26 @@ const HOURS = Array.from({ length: 24 }, (_, i) => i);
 const MINUTES = Array.from({ length: 12 }, (_, i) => i * 5);
 const two = (n: number) => String(n).padStart(2, '0');
 
+/** Ein Vorschlag als Schnellwahl im Zeitfenster, etwa „Dienstbeginn“ oder „+1½ Std.“. */
+export interface TimeSuggestion {
+  label: string;
+  value: string;
+}
+
 /**
- * Uhrzeit wählen: Stunde antippen, dann Minute antippen – fertig. Alternativ tippen („1730“),
- * mit ± minutengenau einstellen oder „Jetzt“ übernehmen. Ohne bisherigen Wert startet die Auswahl bei der aktuellen Zeit.
+ * Uhrzeit wählen. Oben steht groß die Zeit; darunter erst die Stunden, nach dem Antippen die Minuten. „Übernehmen“ schließt.
+ * Häufige Zeiten (Jetzt, Vorschläge des Aufrufers) gibt es als Schnellwahl mit einem Tipp. Getippt werden kann auch („1730“).
  */
-export function TimeField(props: { label: string; value: string; onChange: (v: string) => void; disabled?: boolean }) {
+export function TimeField(props: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  disabled?: boolean;
+  /** Schnellwahl zusätzlich zu „Jetzt“. */
+  suggestions?: TimeSuggestion[];
+  /** Erlaubt „Keine Uhrzeit“ (setzt den Wert auf leer). */
+  clearable?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   return (
     <Shell label={props.label}>
@@ -107,6 +122,8 @@ export function TimeField(props: { label: string; value: string; onChange: (v: s
         <TimeSheet
           title={props.label}
           value={props.value}
+          suggestions={props.suggestions}
+          clearable={props.clearable}
           onPick={(v) => {
             props.onChange(v);
             setOpen(false);
@@ -118,19 +135,34 @@ export function TimeField(props: { label: string; value: string; onChange: (v: s
   );
 }
 
-function TimeSheet(props: { title: string; value: string; onPick: (v: string) => void; onClose: () => void }) {
+function TimeSheet(props: {
+  title: string;
+  value: string;
+  suggestions?: TimeSuggestion[];
+  clearable?: boolean;
+  onPick: (v: string) => void;
+  onClose: () => void;
+}) {
   const initial = props.value ? parseTime(props.value) : parseTypedTime(nowTime())!;
-  const [t, setT] = useState(initial);
-  const [text, setText] = useState(formatTime(initial.h, initial.min));
   const fine = typeof matchMedia === 'function' && matchMedia('(pointer: fine)').matches;
+  const [t, setT] = useState(initial);
+  const [step, setStep] = useState<'h' | 'm'>('h');
+  // Am Rechner gleich tippen; am Handy erst auf Wunsch (sonst verdeckt die Tastatur die Auswahl).
+  const [typing, setTyping] = useState(fine);
+  const [text, setText] = useState(formatTime(initial.h, initial.min));
+  const hintId = useId();
+  const now = nowTime();
+  const chosen = formatTime(t.h, t.min);
 
-  const set = (next: { h: number; min: number }) => {
-    setT(next);
-    setText(formatTime(next.h, next.min));
-  };
-  const step = (delta: number) => {
-    const total = (t.h * 60 + t.min + delta + 1440) % 1440;
-    set({ h: Math.floor(total / 60), min: total % 60 });
+  // Schnellwahl: „Jetzt“ und die Vorschläge, ohne doppelte Zeiten.
+  const quick: TimeSuggestion[] = [];
+  for (const s of [{ label: 'Jetzt', value: now }, ...(props.suggestions ?? [])]) {
+    if (!quick.some((q) => q.value === s.value)) quick.push(s);
+  }
+
+  const startTyping = () => {
+    setText(chosen);
+    setTyping(true);
   };
 
   return (
@@ -139,55 +171,109 @@ function TimeSheet(props: { title: string; value: string; onPick: (v: string) =>
         className="tp"
         onSubmit={(e) => {
           e.preventDefault();
-          props.onPick(formatTime(t.h, t.min));
+          props.onPick(chosen);
         }}
       >
-        <div className="tp-display">
-          <button type="button" className="stepper-btn" aria-label="Eine Minute früher" onClick={() => step(-1)}>
-            <Minus size={18} />
-          </button>
-          <input
-            className="tp-input"
-            inputMode="numeric"
-            aria-label="Uhrzeit eintippen"
-            value={text}
-            autoFocus={fine}
-            onFocus={(e) => e.target.select()}
-            onChange={(e) => {
-              setText(e.target.value);
-              const p = parseTypedTime(e.target.value);
-              if (p) setT(p);
-            }}
-          />
-          <button type="button" className="stepper-btn" aria-label="Eine Minute später" onClick={() => step(1)}>
-            <Plus size={18} />
+        <div className="tp-head">
+          {typing ? (
+            <input
+              className="tp-input"
+              inputMode="numeric"
+              aria-label="Uhrzeit eintippen"
+              aria-describedby={hintId}
+              value={text}
+              autoFocus
+              onFocus={(e) => e.target.select()}
+              onChange={(e) => {
+                setText(e.target.value);
+                const p = parseTypedTime(e.target.value);
+                if (p) setT(p);
+              }}
+            />
+          ) : (
+            <div className="tp-time" role="group" aria-label={`Gewählt: ${chosen} Uhr`}>
+              <button type="button" className="tp-seg" aria-pressed={step === 'h'} aria-label={`Stunde ${two(t.h)} ändern`} onClick={() => setStep('h')}>
+                {two(t.h)}
+              </button>
+              <span className="tp-colon" aria-hidden>
+                :
+              </span>
+              <button type="button" className="tp-seg" aria-pressed={step === 'm'} aria-label={`Minute ${two(t.min)} ändern`} onClick={() => setStep('m')}>
+                {two(t.min)}
+              </button>
+            </div>
+          )}
+          <button
+            type="button"
+            className="tp-mode"
+            aria-pressed={typing}
+            onClick={() => (typing ? setTyping(false) : startTyping())}
+          >
+            {typing ? <Clock size={18} /> : <Keyboard size={18} />}
+            {typing ? 'Auswählen' : 'Eintippen'}
           </button>
         </div>
 
-        <div className="group-label">Stunde</div>
-        <div className="tp-grid">
-          {HOURS.map((h) => (
-            <button key={h} type="button" className="tp-cell" aria-pressed={h === t.h} onClick={() => set({ h, min: t.min })}>
-              {two(h)}
+        {typing ? (
+          <p id={hintId} className="tp-hint">
+            z. B. „1730“, „17:30“ oder „9“
+          </p>
+        ) : (
+          <>
+            <div className="tp-steps" role="tablist" aria-label="Was wählen">
+              <button type="button" role="tab" aria-selected={step === 'h'} className="tp-step" onClick={() => setStep('h')}>
+                1 · Stunde
+              </button>
+              <button type="button" role="tab" aria-selected={step === 'm'} className="tp-step" onClick={() => setStep('m')}>
+                2 · Minute
+              </button>
+            </div>
+            {step === 'h' ? (
+              <div className="tp-pad tp-pad--hours" role="tabpanel" aria-label="Stunde">
+                {HOURS.map((h) => (
+                  <button
+                    key={h}
+                    type="button"
+                    className="tp-key"
+                    aria-pressed={h === t.h}
+                    onClick={() => {
+                      setT({ h, min: t.min });
+                      setStep('m');
+                    }}
+                  >
+                    {two(h)}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="tp-pad tp-pad--minutes" role="tabpanel" aria-label="Minute">
+                {MINUTES.map((min) => (
+                  <button key={min} type="button" className="tp-key" aria-pressed={min === t.min} onClick={() => setT({ h: t.h, min })}>
+                    :{two(min)}
+                  </button>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+        <div className="tp-quick" aria-label="Schnellwahl">
+          {quick.map((q) => (
+            <button key={q.value} type="button" className="tp-chip" onClick={() => props.onPick(q.value)}>
+              <span>{q.label}</span>
+              <strong>{q.value}</strong>
             </button>
           ))}
         </div>
 
-        <div className="group-label">Minute (antippen übernimmt die Zeit)</div>
-        <div className="tp-grid">
-          {MINUTES.map((min) => (
-            <button key={min} type="button" className="tp-cell" aria-pressed={min === t.min} onClick={() => props.onPick(formatTime(t.h, min))}>
-              {two(min)}
-            </button>
-          ))}
-        </div>
-
-        <div className="row" style={{ justifyContent: 'space-between' }}>
-          <Button type="button" onClick={() => props.onPick(nowTime())}>
-            Jetzt
-          </Button>
-          <Button variant="primary" type="submit">
-            {formatTime(t.h, t.min)} Uhr übernehmen
+        <div className="tp-actions">
+          {props.clearable && props.value && (
+            <Button type="button" onClick={() => props.onPick('')}>
+              Keine Uhrzeit
+            </Button>
+          )}
+          <Button variant="primary" type="submit" aria-label={`${chosen} Uhr übernehmen`}>
+            Übernehmen
           </Button>
         </div>
       </form>

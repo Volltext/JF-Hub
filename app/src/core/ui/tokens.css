@@ -73,8 +73,14 @@
   --shadow-up: 0 -4px 14px rgba(0, 0, 0, 0.25);
   --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
   --dur: 160ms;
-  --safe-top: env(safe-area-inset-top, 0px);
-  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  /* In der Android-App setzt Capacitor die Ränder selbst (`--safe-area-inset-*`) und zieht dabei die Navigationsleiste ab, solange die
+     Bildschirmtastatur offen ist. `env()` meldet sie je nach WebView-Version weiter – dann klebte ein leerer Streifen unter der
+     Werkzeugleiste und sie deckte die Zeile ab, in der man schreibt. Capacitor schreibt die Werte direkt an <html> und überschreibt
+     damit diese Vorgaben; im Browser (PWA) bleibt es bei `env()`. */
+  --safe-area-inset-top: env(safe-area-inset-top, 0px);
+  --safe-area-inset-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-top: var(--safe-area-inset-top);
+  --safe-bottom: var(--safe-area-inset-bottom);
   --font: 'Inter', system-ui, 'Segoe UI', Roboto, sans-serif;
   --font-mono: ui-monospace, 'SF Mono', 'Roboto Mono', monospace;
   color-scheme: dark;
