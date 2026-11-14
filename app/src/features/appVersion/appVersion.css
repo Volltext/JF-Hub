@@ -1,0 +1,14 @@
+/* ---- Einstellungen › App & Version, Update-Hinweis ---- */
+.app-versions { margin: 0; display: flex; flex-direction: column; }
+.app-versions > div { display: flex; justify-content: space-between; gap: var(--s-3); padding: var(--s-2) 0; border-bottom: 1px solid var(--border); }
+.app-versions > div:last-child { border-bottom: 0; }
+.app-versions dt { color: var(--muted); }
+.app-versions dd { margin: 0; font-weight: 650; font-variant-numeric: tabular-nums; }
+.app-status { margin-top: var(--s-3); }
+.app-status p { margin: 0; }
+.app-status__new { font-weight: 600; color: var(--success); }
+.app-steps { margin: 0; padding-left: 1.3em; display: flex; flex-direction: column; gap: var(--s-1); font-size: var(--t-sm); line-height: 1.5; }
+.app-note { margin: 0; font-size: var(--t-sm); line-height: 1.5; }
+.app-link { display: inline-flex; align-items: center; gap: 4px; align-self: flex-start; min-height: 40px; font-weight: 600; color: var(--primary-text); }
+.app-actions { display: flex; flex-wrap: wrap; gap: var(--s-2); margin-top: var(--s-3); }
+.app-actions > * { flex: 1 1 140px; }

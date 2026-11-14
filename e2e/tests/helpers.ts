@@ -10,6 +10,28 @@ export const SCHEMA = { 'X-JFH-Schema': '5' };
 /** Ein 1×1-Pixel-PNG: Die App macht daraus ein verkleinertes JPEG. */
 export const PNG_1X1 = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
 
+/** Eine kleine PDF mit `pages` Seiten (Text „Einladung Seite n“ und ein blaues Rechteck), zum Anhängen und Einbetten. */
+export function makePdf(pages: number): Buffer {
+  const font = 3 + pages * 2;
+  const objs = ['<< /Type /Catalog /Pages 2 0 R >>', `<< /Type /Pages /Kids [${Array.from({ length: pages }, (_, i) => `${3 + i * 2} 0 R`).join(' ')}] /Count ${pages} >>`];
+  for (let i = 0; i < pages; i++) {
+    const content = `BT /F1 36 Tf 72 700 Td (Einladung Seite ${i + 1}) Tj ET 0 0 1 rg 72 400 300 150 re f`;
+    objs.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 ${font} 0 R >> >> /Contents ${4 + i * 2} 0 R >>`);
+    objs.push(`<< /Length ${content.length} >>\nstream\n${content}\nendstream`);
+  }
+  objs.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');
+  let out = '%PDF-1.4\n';
+  const offsets: number[] = [];
+  objs.forEach((o, i) => {
+    offsets.push(out.length);
+    out += `${i + 1} 0 obj\n${o}\nendobj\n`;
+  });
+  const xref = out.length;
+  out += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n${offsets.map((o) => `${String(o).padStart(10, '0')} 00000 n \n`).join('')}`;
+  out += `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return Buffer.from(out, 'latin1');
+}
+
 export type Who = { username: string; password: string };
 
 /** Der Text eines PDFs, oder null, wenn `pdftotext` (poppler) auf diesem Rechner fehlt. */

@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Route, Routes } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { Bell, Database, Mail, Server, SlidersHorizontal, Timer, UserRound } from 'lucide-react';
+import { Bell, Database, Mail, Server, SlidersHorizontal, Smartphone, Timer, UserRound } from 'lucide-react';
 import { Button, Card, MenuGroup, MenuRow, Page, Segmented } from '@/core/ui/components';
 import { applyTheme } from '@/core/ui/theme';
 import { DEFAULT_SETTINGS, loadSettings, saveSettings, type Settings } from '@/core/settings/settings';
@@ -16,6 +16,9 @@ import { confirmDialog } from '@/core/ui/dialog';
 import { ConnectionCard, DevicesCard, PasswordCard } from '@/features/account/AccountCards';
 import { useAccount } from '@/core/account/account';
 import { IS_DEMO, IS_WEB } from '@/core/env';
+import { AppVersionPage } from '@/features/appVersion/AppVersionPage';
+import { APP_VERSION } from '@/features/appVersion/release';
+import { useAppUpdate } from '@/features/appVersion/useAppUpdate';
 import { PushCard } from './PushCard';
 import { ServiceCard } from './ServiceCard';
 import { markAllForSync } from '@/core/db/outbox';
@@ -32,12 +35,14 @@ export function SettingsPage() {
       <Route path="wettkampf" element={<Competition />} />
       <Route path="server" element={<Servers />} />
       <Route path="daten" element={<Data />} />
+      <Route path="app" element={<AppVersionPage />} />
       <Route path="*" element={<Overview />} />
     </Routes>
   );
 }
 
 function Overview() {
+  const update = useAppUpdate();
   return (
     <Page title="Einstellungen" fromMore>
       <MenuGroup>
@@ -47,6 +52,13 @@ function Overview() {
         <MenuRow to="/einstellungen/wettkampf" icon={Timer} title="Wettkampf" sub="Wasserentnahme im A-Teil" />
         <MenuRow to="/einstellungen/server" icon={IS_WEB ? UserRound : Server} title={IS_WEB ? 'Konto' : 'Server & Konto'} sub="Anmeldung, Passwort, Geräte" />
         <MenuRow to="/einstellungen/daten" icon={Database} title="Daten & Backup" sub="Sicherung dieses Geräts, Export" />
+        <MenuRow
+          to="/einstellungen/app"
+          icon={Smartphone}
+          title="App & Version"
+          sub={IS_WEB ? 'Android-App herunterladen' : update.available ? `Neue Version ${update.available} verfügbar` : `Version ${APP_VERSION}`}
+          badge={update.available ? { text: 'Update', tone: 'alert' } : undefined}
+        />
       </MenuGroup>
     </Page>
   );

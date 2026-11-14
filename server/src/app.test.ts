@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import type { FastifyInstance } from 'fastify';
 import type { DatabaseSync } from 'node:sqlite';
 import { buildApp } from './app.js';
@@ -59,6 +60,14 @@ describe('Auth', () => {
   it('lehnt Anfragen ohne Anmeldung ab', async () => {
     expect((await app.inject({ method: 'POST', url: '/api/sync', payload: {} })).statusCode).toBe(401);
     expect((await app.inject({ method: 'GET', url: '/api/health' })).statusCode).toBe(200);
+  });
+
+  it('meldet die Version aus package.json (eine Quelle für Server, PWA und APK)', async () => {
+    const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string };
+    expect((await app.inject({ method: 'GET', url: '/api/health' })).json()).toMatchObject({ version });
+    expect((await app.inject({ method: 'GET', url: '/api/status' })).json()).toMatchObject({ version });
+    // Die App trägt dieselbe Version (sonst passt der Download-Knopf der PWA nicht zum Server).
+    expect(JSON.parse(readFileSync(new URL('../../app/package.json', import.meta.url), 'utf8')).version).toBe(version);
   });
 
   it('liest JSON auch ohne passenden Content-Type (kein 415)', async () => {

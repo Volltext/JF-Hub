@@ -1,12 +1,14 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Node, NodeViewWrapper, ReactNodeViewRenderer, type NodeViewProps } from '@tiptap/react';
-import { FileText, Trash2, X } from 'lucide-react';
+import { FileText, Rows3, Trash2, X } from 'lucide-react';
 import { bytesToBase64 } from '@/core/domain/base64';
 import { shareBinaryFile } from '@/core/native/files';
 import { useOverlayClose } from '@/core/ui/overlay';
 import { alertDialog } from '@/core/ui/dialog';
+import { hideSnack, showSnack } from '@/core/ui/snackbar';
 import { ensureBlob } from '@/features/protokolle/blobSync';
+import { embedFile, embedKind } from './embed';
 import { formatBytes } from './limits';
 import { usePhoto } from './usePhoto';
 import './attachments.css';
@@ -55,7 +57,8 @@ function StoredPhoto({ blobId, caption, w, h, onOpen }: { blobId: string; captio
   if (state.status === 'unavailable') return <PhotoGap onRetry={retry}>{WHY[state.reason] ?? `Das Foto konnte nicht geladen werden (${state.message}).`}</PhotoGap>;
   return (
     <button type="button" className="photo-node__img" onClick={() => onOpen(state.url)} aria-label="Foto vergrößern">
-      <img src={state.url} alt={caption || 'Foto'} width={w || undefined} height={h || undefined} />
+      {/* Kleine Bilder nicht über ihre eigene Größe hinaus aufziehen (sonst pixelig). */}
+      <img src={state.url} alt={caption || 'Foto'} width={w || undefined} height={h || undefined} style={w ? { maxWidth: w } : undefined} />
     </button>
   );
 }
@@ -118,9 +121,35 @@ async function openFile(attrs: Record<string, unknown>, name: string, mime: stri
   }
 }
 
-function FileView({ node, editor, deleteNode, selected }: NodeViewProps) {
+/**
+ * Eine angehängte Bilddatei oder PDF nachträglich einbetten (etwa aus einer Mail übernommene Anhänge): Bild bzw. Seiten kommen an die
+ * Stelle der Karte, eine PDF bleibt als Karte dahinter.
+ */
+async function embedInPlace({ node, editor, getPos }: Pick<NodeViewProps, 'node' | 'editor' | 'getPos'>): Promise<void> {
+  const blobId = String(node.attrs.blobId ?? '');
   const name = String(node.attrs.name ?? 'Datei');
   const mime = String(node.attrs.mime ?? 'application/octet-stream');
+  try {
+    const { data } = await ensureBlob({ id: blobId, kind: 'file', mime, name, size: Number(node.attrs.size) || undefined });
+    const embedded = await embedFile({ name, mime, data }, (text) => showSnack(text, { duration: 120_000 }));
+    const pos = getPos();
+    // Inzwischen gelöscht oder verschoben (etwa von jemand anderem): nichts ersetzen.
+    if (typeof pos !== 'number' || editor.isDestroyed || editor.state.doc.nodeAt(pos)?.attrs.blobId !== blobId) return;
+    const content = embedKind(mime, name) === 'pdf' ? [...embedded.blocks, node.toJSON()] : embedded.blocks;
+    editor.chain().insertContentAt({ from: pos, to: pos + node.nodeSize }, content).run();
+    if (embedded.note) await alertDialog(embedded.note, 'Einbetten');
+  } catch (e) {
+    await alertDialog(e instanceof Error && e.message ? `Einbetten ging nicht: ${e.message}` : 'Einbetten ging nicht.', 'Einbetten');
+  } finally {
+    hideSnack();
+  }
+}
+
+function FileView({ node, editor, deleteNode, selected, getPos }: NodeViewProps) {
+  const name = String(node.attrs.name ?? 'Datei');
+  const mime = String(node.attrs.mime ?? 'application/octet-stream');
+  const [busy, setBusy] = useState(false);
+  const embeddable = !!node.attrs.blobId && embedKind(mime, name) !== null;
   return (
     <NodeViewWrapper className={`file-node${selected ? ' is-selected' : ''}`} contentEditable={false} data-drag-handle>
       <button
@@ -132,6 +161,21 @@ function FileView({ node, editor, deleteNode, selected }: NodeViewProps) {
         <span className="file-node__name">{name}</span>
         <span className="file-node__size muted">{formatBytes(Number(node.attrs.size) || 0)}</span>
       </button>
+      {editor.isEditable && embeddable && (
+        <button
+          type="button"
+          className="btn file-node__embed"
+          disabled={busy}
+          title="Im Text zeigen (auch im PDF-Export)"
+          onClick={() => {
+            setBusy(true);
+            void embedInPlace({ node, editor, getPos }).finally(() => setBusy(false));
+          }}
+        >
+          <Rows3 size={18} />
+          <span>{busy ? 'Wird eingebettet …' : 'Einbetten'}</span>
+        </button>
+      )}
       {editor.isEditable && (
         <button type="button" className="btn" aria-label="Anhang entfernen" onClick={() => deleteNode()}>
           <Trash2 size={18} />

@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import * as Y from 'yjs';
-import { ADMIN, adminTokens, BEN, createBen, foreignParagraph, PNG_1X1, putForeignText, serverDoc, serverHasText, noteLink, sessions, syncNow, writeProtocol } from './helpers';
+import { ADMIN, adminTokens, BEN, createBen, foreignParagraph, makePdf, pdfText, PNG_1X1, putForeignText, serverDoc, serverHasText, noteLink, sessions, syncNow, writeProtocol } from './helpers';
 
 // Eigener Server (siehe playwright.config.ts), damit die Anmeldungen dieser Tests das Anmelde-Limit des Rauchtests nicht aufbrauchen.
 test.use({ baseURL: 'http://127.0.0.1:8096' });
@@ -158,6 +158,59 @@ test.describe.serial('Protokolle: Fotos als Anhänge', () => {
 
     await admin.context.close();
     await ben.context.close();
+  });
+});
+
+test.describe.serial('Protokolle: Dateien einbetten oder anhängen', () => {
+  test('PDF einbetten: Seiten stehen als Bilder im Text und im PDF, die Datei bleibt angehängt; „Nur als Anhang“ lässt sich später einbetten', async ({ browser, request }) => {
+    const title = 'Einladung eingebettet';
+    const token = await adminToken(request);
+    const { context, page } = await open(browser, ADMIN);
+    await writeProtocol(page, title, 'Die Einladung:');
+    const editor = page.getByLabel('Protokolltext', { exact: true });
+
+    const attach = async (mode: RegExp) => {
+      await page.getByRole('button', { name: 'Foto oder Datei anhängen' }).click();
+      const chooser = page.waitForEvent('filechooser');
+      await page.getByRole('button', { name: 'Datei anhängen (auch PDF)' }).click();
+      await (await chooser).setFiles({ name: 'Einladung.pdf', mimeType: 'application/pdf', buffer: makePdf(2) });
+      await page.getByRole('dialog', { name: 'Wie einfügen?' }).getByRole('button', { name: mode }).click();
+    };
+
+    // Einbetten: zwei Seiten als Fotos mit Beschriftung, dahinter die PDF als Karte.
+    await attach(/Im Protokoll einbetten/);
+    await expect(editor.locator('.photo-node img')).toHaveCount(2, { timeout: 20_000 });
+    await expect(editor.locator('.photo-node__caption').nth(1)).toHaveValue('Einladung.pdf · Seite 2 von 2');
+    await expect(editor.locator('.file-node')).toHaveCount(1);
+    await expect.poll(() => editor.locator('.photo-node img').first().evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(500);
+
+    // Nur als Anhang: eine Karte, kein Bild; „Einbetten“ an der Karte holt die Seiten nach und lässt die Karte stehen.
+    await attach(/Nur als Anhang/);
+    await expect(editor.locator('.file-node')).toHaveCount(2);
+    await expect(editor.locator('.photo-node img')).toHaveCount(2);
+    await editor.locator('.file-node').last().getByRole('button', { name: /Einbetten/ }).click();
+    await expect(editor.locator('.photo-node img')).toHaveCount(4, { timeout: 20_000 });
+    await expect(editor.locator('.file-node')).toHaveCount(2);
+    await expect(page.getByText('Gespeichert')).toBeVisible();
+    await page.screenshot({ path: 'test-results/pdf-eingebettet.png', fullPage: true });
+    await syncNow(page);
+
+    // Auf dem Server: Seiten als Fotos (JPEG im PDF-Export, mit Beschriftung), die PDF als Datei.
+    const doc = await serverHasText(request, token, title, 'Seite 2 von 2');
+    expect(doc).toBeTruthy();
+    const json = JSON.stringify(doc.content);
+    expect(json.match(/"type":"photo"/g)).toHaveLength(4);
+    expect(json.match(/"type":"attachment"/g)).toHaveLength(2);
+    const pdf = await request.get(`/api/protocols/${doc.id}/pdf`, { headers: { Authorization: `Bearer ${token}` } });
+    expect(pdf.status()).toBe(200);
+    const body = await pdf.body();
+    expect(body.toString('latin1').match(/\/DCTDecode/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
+    const text = pdfText(body);
+    if (text !== null) {
+      expect(text).toContain('Einladung.pdf · Seite 2 von 2');
+      expect(text).toContain('Anhang: Einladung.pdf');
+    }
+    await context.close();
   });
 });
 

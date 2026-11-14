@@ -29,12 +29,48 @@ function serviceWorker(): Plugin {
         }
       };
       walk(outDir);
-      const precache = files.filter((f) => f !== '/sw.js').sort();
+      // Die Zusatzdateien von pdf.js (siehe `pdfjsAssets`) braucht nur das Einbetten von PDFs: geholt und gemerkt erst bei Bedarf.
+      const precache = files.filter((f) => f !== '/sw.js' && !f.startsWith(`/${PDFJS_DIR}/`)).sort();
       const hash = createHash('sha256');
       for (const f of precache) hash.update(f).update(readFileSync(join(outDir, f)));
       const template = readFileSync(new URL('./src/sw/sw.template.js', import.meta.url), 'utf8');
       const sw = template.replace('__BUILD_VERSION__', `${version}-${hash.digest('hex').slice(0, 10)}`).replace('__PRECACHE__', JSON.stringify(['/', ...precache], null, 0));
       writeFileSync(join(outDir, 'sw.js'), sw);
+    },
+  };
+}
+
+/** Ordner für die Zusatzdateien von pdf.js in der gebauten App. */
+const PDFJS_DIR = 'pdfjs';
+const pdfjsRoot = fileURLToPath(new URL('./node_modules/pdfjs-dist/', import.meta.url));
+/** Decoder für eingescannte PDFs (JBIG2, JPEG 2000, Farbprofile) samt Lizenzen, und die Standardschriften für PDFs ohne eingebettete Schrift. */
+const pdfjsFiles = (): string[] =>
+  existsSync(pdfjsRoot)
+    ? [
+        ...readdirSync(join(pdfjsRoot, 'wasm')).filter((f) => !f.startsWith('quickjs')).map((f) => `wasm/${f}`),
+        ...readdirSync(join(pdfjsRoot, 'standard_fonts')).map((f) => `standard_fonts/${f}`),
+      ]
+    : [];
+
+/**
+ * Legt die Zusatzdateien von pdf.js unter festen Namen in die App (`/pdfjs/wasm/…`, `/pdfjs/standard_fonts/…`); pdf.js erwartet dafür
+ * einen Ordner, keine einzelnen gehashten Dateien. Beim Entwickeln liefert der Dev-Server sie direkt aus node_modules.
+ */
+function pdfjsAssets(): Plugin {
+  return {
+    name: 'jfhub-pdfjs-assets',
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const path = (req.url ?? '').split('?')[0]!;
+        const at = path.indexOf(`/${PDFJS_DIR}/`);
+        const rel = at >= 0 ? path.slice(at + PDFJS_DIR.length + 2) : '';
+        if (!rel || !pdfjsFiles().includes(rel)) return next();
+        res.setHeader('Content-Type', rel.endsWith('.wasm') ? 'application/wasm' : rel.endsWith('.js') ? 'text/javascript' : 'application/octet-stream');
+        res.end(readFileSync(join(pdfjsRoot, rel)));
+      });
+    },
+    generateBundle() {
+      for (const rel of pdfjsFiles()) this.emitFile({ type: 'asset', fileName: `${PDFJS_DIR}/${rel}`, source: readFileSync(join(pdfjsRoot, rel)) });
     },
   };
 }
@@ -56,7 +92,7 @@ const demoDataOrStub = existsSync(demoData) ? demoData : fileURLToPath(new URL('
 export default defineConfig(({ mode }) => ({
   // Die Browser-Demo liegt in einem Unterordner der Website (…/JF-Hub/demo/): relative Pfade, kein Service Worker.
   base: mode === 'demo' ? './' : '/',
-  plugins: [react(), ...(mode === 'web' ? [serviceWorker()] : []), ...(mode === 'demo' ? [noManifest()] : [])],
+  plugins: [react(), pdfjsAssets(), ...(mode === 'web' ? [serviceWorker()] : []), ...(mode === 'demo' ? [noManifest()] : [])],
   define: { __APP_VERSION__: JSON.stringify(version) },
   // `dedupe`: Die Tests importieren Code aus server/src (eigene Kopie von Yjs in server/node_modules). Zwei Kopien würden sich nicht erkennen.
   resolve: { alias: { '@demo-data': demoDataOrStub, '@': fileURLToPath(new URL('./src', import.meta.url)) }, dedupe: ['yjs'] },

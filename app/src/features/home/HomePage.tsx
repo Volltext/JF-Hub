@@ -13,6 +13,7 @@ import { upcomingServices } from '@/core/domain/serviceSchedule';
 import { useServiceConfig } from '@/core/holidays/useServiceConfig';
 import { clothingCounts } from './counts';
 import { useCompleteTask } from '@/features/aufgaben/useCompleteTask';
+import { UpdateCard } from '@/features/appVersion/AppVersionPage';
 
 const linkStyle = { textDecoration: 'none', color: 'inherit' } as const;
 
@@ -75,6 +76,7 @@ export function HomePage() {
 
   return (
     <Page title="Heute" sub={formatDate(today, true)}>
+      <UpdateCard />
       {fresh && (
         <section className="card card--accent" aria-labelledby="start-title">
           <h2 id="start-title" className="onboard__title">Willkommen bei JF Hub</h2>
