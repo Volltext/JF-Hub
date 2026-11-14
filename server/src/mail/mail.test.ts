@@ -323,16 +323,16 @@ describe('Benachrichtigung bei neuen Mails', () => {
     expect(pushed).toHaveLength(1); // nicht noch einmal
   });
 
-  it('bereits gelesene Mails lösen nichts aus; viele neue werden zusammengefasst', async () => {
+  it('meldet auch Mails, die zwischen zwei Prüfungen schon gelesen wurden; viele neue werden zusammengefasst', async () => {
     await poll();
     fake.add({ seen: true });
     await poll();
-    expect(pushed).toHaveLength(0);
+    expect(pushed).toHaveLength(1);
     for (let i = 0; i < 5; i++) fake.add();
     await poll();
-    expect(pushed).toHaveLength(1);
-    expect(pushed[0]!.title).toBe('5 neue Mails');
-    expect(pushed[0]!.url).toBe('/#/mail');
+    expect(pushed).toHaveLength(2);
+    expect(pushed[1]!.title).toBe('5 neue Mails');
+    expect(pushed[1]!.url).toBe('/#/mail');
   });
 
   it('bei neuer UIDVALIDITY (Posteingang neu aufgebaut) wird neu begonnen statt alles zu melden', async () => {
