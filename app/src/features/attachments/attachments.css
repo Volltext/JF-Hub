@@ -2,7 +2,7 @@
 .photo-node, .file-node { margin: var(--s-3) 0; }
 .photo-node.is-selected .photo-node__img, .file-node.is-selected { outline: 2px solid var(--primary); }
 .photo-node__img { display: block; width: 100%; padding: 0; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); overflow: hidden; cursor: zoom-in; }
-.photo-node__img img { display: block; width: 100%; height: auto; max-height: 70vh; object-fit: contain; }
+.photo-node__img img { display: block; width: 100%; height: auto; max-height: 70vh; margin: 0 auto; object-fit: contain; }
 .photo-node__bar { display: flex; gap: var(--s-2); align-items: center; margin-top: var(--s-2); }
 .photo-node__caption { flex: 1; min-width: 0; }
 .photo-node__text { margin: var(--s-1) 0 0; color: var(--muted); font-size: var(--t-sm); }
@@ -14,3 +14,11 @@
 .photo-lightbox__close { position: absolute; top: calc(var(--s-3) + var(--safe-top)); right: var(--s-3); }
 .photo-node__missing { margin: 0; padding: var(--s-3); border-radius: var(--r-md); background: var(--surface-2); }
 .photo-node__missing .link-btn { display: inline; padding: 0; background: none; border: 0; color: var(--primary); font: inherit; text-decoration: underline; cursor: pointer; }
+.file-node__embed { display: inline-flex; align-items: center; gap: var(--s-2); padding: 0 var(--s-3); white-space: nowrap; }
+@media (max-width: 479px) { .file-node__embed span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); } .file-node__embed { padding: 0; width: 48px; justify-content: center; } }
+/* Fenster „Wie einfügen?“ */
+.attach-files { margin: 0; font-size: var(--t-sm); overflow-wrap: anywhere; }
+.attach-mode { align-items: flex-start; padding-block: var(--s-3); flex-shrink: 0; }
+.attach-mode > svg { flex-shrink: 0; margin-top: 2px; }
+.attach-mode > span { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.attach-mode .muted { font-size: var(--t-sm); line-height: 1.4; }

@@ -25,7 +25,7 @@ Fehler in den Inhalten kannst du gern als Issue melden, am besten mit Verweis au
 
 ## Drittanbieter-Software
 
-JF Hub nutzt unter anderem React, Vite, Dexie, TipTap, Capacitor, Lucide (Symbole), Fastify, pdfmake, web-push, fflate sowie in der Android-App androidx.ink und ML Kit Digital Ink Recognition. Ihre Lizenzen (überwiegend MIT, ISC, Apache-2.0) stehen in den jeweiligen Paketen (`node_modules/<paket>/LICENSE`) und lassen sich mit dem Lizenz-Werkzeug deiner Wahl auflisten, z. B. `npx license-checker --production` in `app/` und `server/`.
+JF Hub nutzt unter anderem React, Vite, Dexie, TipTap, Capacitor, Lucide (Symbole), pdf.js (Einbetten von PDF-Seiten, Apache-2.0; die mitgelieferten Decoder und Schriften liegen mit ihren Lizenztexten im gebauten Ordner `pdfjs/`), Fastify, pdfmake, web-push, fflate sowie in der Android-App androidx.ink und ML Kit Digital Ink Recognition. Ihre Lizenzen (überwiegend MIT, ISC, Apache-2.0) stehen in den jeweiligen Paketen (`node_modules/<paket>/LICENSE`) und lassen sich mit dem Lizenz-Werkzeug deiner Wahl auflisten, z. B. `npx license-checker --production` in `app/` und `server/`.
 
 Die Schrift **Inter** (© The Inter Project Authors, SIL Open Font License 1.1) liegt in `app/src/core/ui/fonts/` und `server/public/admin/fonts/`, jeweils mit Lizenztext; für den PDF-Export liegen vier Schnitte als TTF in `server/fonts/` (Lizenztext ebenfalls dort).
 

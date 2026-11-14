@@ -6,6 +6,12 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/). Versionen 
 
 ### Neu
 
+- **Dateien einbetten oder nur anhängen:** Bei „Datei anhängen (auch PDF)“ fragt die App bei Bildern und PDFs „Wie einfügen?“:
+  - **Im Protokoll einbetten:** Bilddateien stehen als Bild im Text. Bei PDFs wird jede Seite zum Bild mit der Beschriftung „Datei · Seite 2 von 5“ (höchstens 20 Seiten), die PDF selbst bleibt als Datei-Karte dahinter. Eingebettetes erscheint auch im PDF-Export, funktioniert ohne Netz und ist bei allen Betreuern zu sehen, auch mit älteren App-Versionen.
+  - **Nur als Anhang:** wie bisher als Datei-Karte zum Öffnen und Teilen, im PDF-Export nur mit Namen.
+  - Eine angehängte PDF oder Bilddatei (auch aus einer Mail übernommen) lässt sich später über **„Einbetten“** an ihrer Karte nachträglich einbetten.
+  - Andere Dateien (Word, Excel …) bleiben immer Anhang. Kleine Bilder werden nicht mehr pixelig auf volle Breite gezogen.
+
 - **Protokolle am Tablet mit Tastatur** (zum Beispiel Android-Tablet mit Tastatur-Hülle):
   - **Autokorrektur beim Schreiben mit Tastatur:** Satzanfänge werden groß (nicht nach „z. B.“, „ca.“ oder „3.“), häufige Tippfehler korrigiert („udn“ → „und“, „vieleicht“ → „vielleicht“, „DIenst“ → „Dienst“), dazu „deutsche“ Anführungszeichen, Gedankenstrich „ – “ und Auslassungspunkte „…“. Die Rücktaste direkt danach nimmt eine Korrektur zurück. Gilt im Text und im Titel, lässt sich je Gerät abschalten. Mit der Bildschirmtastatur bleibt alles beim Alten, dort korrigiert die Tastatur-App.
   - **Tastatur & Schreibhilfe** (Knopf am Ende der Werkzeugleiste, `Strg+#`): alle Tastenkürzel, die Kurzschreibweisen am Zeilenanfang (`# `, `- `, `[ ] ` …), der Schalter für die Autokorrektur und unter Android, wo Layout und Korrektur der angeschlossenen Tastatur eingestellt werden.
