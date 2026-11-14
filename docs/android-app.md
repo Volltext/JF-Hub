@@ -32,6 +32,24 @@ Die **App im Browser (PWA)** deckt fast alles ab. Die Android-App ist ein Zusatz
 
 Die App ist **nicht** im Play Store.
 
+**Echtheit prüfen:** Alle Release-APKs ab 3.5.0 sind mit demselben Schlüssel signiert. Fingerabdruck des Zertifikats (SHA-256):
+
+```
+c0abf4bdd1c5649add00cf7a9b68c446d8ea74c90298367896f1132d8efe4973
+```
+
+Der APK-Workflow schreibt ihn bei jedem Release in die Zusammenfassung des Laufs; mit `apksigner verify --print-certs <apk>` prüfst du eine heruntergeladene Datei selbst.
+
+### Umstieg von einer Debug-APK
+
+Bis 3.4.0 entstanden ohne hinterlegten Schlüssel **Debug-APKs** (Dateiname `…-debug.apk`). Sie sind bei jedem Bau anders signiert, deshalb lässt sich die Release-APK nicht über sie installieren (Android meldet „App nicht installiert“ bzw. „Paket steht in Konflikt“). Einmalig:
+
+1. In der alten App abgleichen (Symbol oben, bis „Abgeglichen“ dasteht). Was nicht beim Server ist, geht beim Deinstallieren verloren.
+2. Die alte App deinstallieren.
+3. Die Release-APK installieren und wieder anmelden (bzw. Server-Adresse eintragen). Die Daten kommen vom Server; eine PIN-Sperre musst du neu setzen.
+
+Ab dann installiert sich jedes Update über die vorhandene App.
+
 ### Updates
 
 Wird dein Server aktualisiert, zeigt die App auf „Heute“ den Hinweis **„Neue App-Version“** mit Download-Knopf (auch unter *Einstellungen › App & Version*). Die neue APK einfach drüberinstallieren. Das klappt nur, wenn sie mit **demselben Schlüssel** signiert ist. Releases dieses Projekts sind immer mit dem Schlüssel des Projekts signiert. Selbst gebaute APKs tragen deine eigene Signatur und lassen sich nicht über die Release-APK installieren (und umgekehrt). Dann vorher die Daten sichern bzw. neu anmelden (sie liegen auf dem Server).
@@ -79,7 +97,16 @@ keyPassword=…
 <summary><b>Releases per GitHub Actions</b></summary>
 <br>
 
-Der Workflow `.github/workflows/android.yml` baut die APK bei jedem Tag `v*` und hängt sie ans Release. Für signierte Release-APKs legst du vier Repository-Secrets an (Anleitung im Kopf der Workflow-Datei). Ohne Secrets entsteht eine Debug-APK.
+Der Workflow `.github/workflows/android.yml` baut die APK bei jedem Tag `v*` und hängt sie ans Release. Dafür braucht er vier Repository-Secrets (*Settings › Secrets and variables › Actions*):
+
+| Secret | Inhalt |
+| --- | --- |
+| `ANDROID_KEYSTORE_BASE64` | die Keystore-Datei, base64-kodiert (`base64 -w0 jf-hub.keystore`) |
+| `ANDROID_KEYSTORE_PASSWORD` | Passwort des Keystores |
+| `ANDROID_KEY_ALIAS` | Alias des Schlüssels (hier `jfhub`) |
+| `ANDROID_KEY_PASSWORD` | Passwort des Schlüssels (bei PKCS12 dasselbe wie oben) |
+
+Fehlen sie, **bricht ein Release ab**, statt eine Debug-APK zu veröffentlichen (die sich nicht als Update installieren ließe). Von Hand gestartet (*Actions › Android-APK › Run workflow*) entsteht ohne Secrets weiterhin eine Debug-APK zum Ausprobieren, als Artefakt des Laufs.
 
 </details>
 

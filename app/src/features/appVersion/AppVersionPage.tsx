@@ -16,7 +16,13 @@ function InstallSteps({ update }: { update?: boolean }) {
       <li>Auf dem Android-Gerät herunterladen und die Datei öffnen (Benachrichtigung „Download abgeschlossen“ oder Ordner „Downloads“).</li>
       <li>Android fragt einmalig, ob der Browser bzw. Dateimanager Apps installieren darf: erlauben.</li>
       {update ? (
-        <li>„Aktualisieren“ antippen. Die App bleibt angemeldet, deine Daten bleiben erhalten.</li>
+        <>
+          <li>„Aktualisieren“ antippen. Die App bleibt angemeldet, deine Daten bleiben erhalten.</li>
+          <li className="muted">
+            Meldet Android „App nicht installiert“ oder einen Konflikt, war die bisherige App anders signiert (ältere Test-Fassung): erst abgleichen, die alte App
+            deinstallieren, dann die neue installieren und wieder anmelden. Das ist nur einmal nötig.
+          </li>
+        </>
       ) : (
         <li>
           App öffnen, unter <em>Einstellungen › Server &amp; Konto</em> die Adresse dieses Servers eintragen und anmelden (oder eine Einladung einlösen).

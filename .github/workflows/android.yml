@@ -1,8 +1,10 @@
 name: Android-APK
 
 # Baut die APK bei einem Versions-Tag (v*) und hängt sie an das GitHub-Release.
-# Mit Signierschlüssel (Repository-Secrets) entsteht eine Release-APK, die Updates über die vorige Version erlaubt;
-# ohne Schlüssel eine Debug-APK zum Ausprobieren.
+# Releases bekommen immer eine Release-APK, signiert mit dem Schlüssel des Projekts (Repository-Secrets). Nur damit lassen sich
+# Updates über die installierte App installieren, und nur diesen Namen (JF-Hub-<Version>-release.apk) verlinkt die App.
+# Fehlt der Schlüssel, bricht ein Release ab. Von Hand gestartet (workflow_dispatch) entsteht ohne Schlüssel eine Debug-APK zum
+# Ausprobieren; sie ist bei jedem Lauf anders signiert und lässt sich nicht über eine andere installieren.
 #
 # Secrets (Settings → Secrets and variables → Actions):
 #   ANDROID_KEYSTORE_BASE64   Keystore-Datei, base64-kodiert (base64 -w0 jf-hub.keystore)
@@ -55,13 +57,25 @@ jobs:
             echo "$KEYSTORE" | base64 -d > android/keystore/jf-hub.keystore
             printf 'storeFile=keystore/jf-hub.keystore\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' "$STORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" > android/keystore.properties
             echo "variant=release" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.ref_type }}" = "tag" ]; then
+            echo "::error::Kein Signierschlüssel hinterlegt. Ein Release braucht die Secrets ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS und ANDROID_KEY_PASSWORD (siehe docs/android-app.md)."
+            exit 1
           else
             echo "variant=debug" >> "$GITHUB_OUTPUT"
-            echo "::warning::Kein Signierschlüssel hinterlegt – es entsteht eine Debug-APK."
+            echo "::warning::Kein Signierschlüssel hinterlegt – es entsteht eine Debug-APK (nur zum Ausprobieren)."
           fi
       - name: APK bauen
         run: |
           if [ "${{ steps.keys.outputs.variant }}" = "debug" ]; then npm run apk -- debug; else npm run apk; fi
+      - name: Signatur prüfen
+        # Fingerabdruck des Zertifikats in die Zusammenfassung: Er muss bei jedem Release gleich sein (steht auch in docs/android-app.md).
+        run: |
+          apksigner=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          for apk in apk/*.apk; do
+            certs=$("$apksigner" verify --print-certs "$apk")
+            echo "$certs"
+            { echo "### $(basename "$apk")"; echo "$certs" | grep -m1 'SHA-256' | sed 's/^/    /'; } >> "$GITHUB_STEP_SUMMARY"
+          done
       - uses: actions/upload-artifact@v4
         with:
           name: jf-hub-apk
