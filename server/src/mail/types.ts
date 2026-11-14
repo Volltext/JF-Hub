@@ -94,7 +94,7 @@ export interface NewMailCheck {
   uidValidity: number;
   /** Höchste UID im Posteingang (Ausgangspunkt für die nächste Prüfung). */
   maxUid: number;
-  /** Neue, ungelesene Mails seit `sinceUid` (leer bei der ersten Prüfung oder geänderter Validität). */
+  /** Neue Mails seit `sinceUid` (gelesen oder nicht) (leer bei der ersten Prüfung oder geänderter Validität). */
   fresh: NewMail[];
 }
 
