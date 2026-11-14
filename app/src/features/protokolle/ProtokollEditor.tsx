@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type MutableRefObject } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type MutableRefObject } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import type { Editor } from '@tiptap/core';
+import { Selection } from '@tiptap/pm/state';
 import { EditorContent, useEditor, useEditorState } from '@tiptap/react';
 import Collaboration from '@tiptap/extension-collaboration';
 import Placeholder from '@tiptap/extension-placeholder';
-import { ChevronDown, ChevronLeft, FileDown, Folder, Hash, Lock, Mail, MoreHorizontal, Trash2, Users } from 'lucide-react';
+import { ChevronDown, ChevronLeft, FileDown, Folder, Hash, Keyboard, Lock, Mail, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Trash2, Users } from 'lucide-react';
 import { db } from '@/core/db/db';
 import { IS_DEMO } from '@/core/env';
 import { requeueBlobs } from '@/core/db/blobs';
@@ -14,6 +15,9 @@ import { confirmDialog } from '@/core/ui/dialog';
 import { Button, Sheet } from '@/core/ui/components';
 import { isMine, useAccount, useDirectory } from '@/core/account/account';
 import { DateField, TimeField } from '@/core/ui/pickers';
+import { useMedia } from '@/core/ui/useMedia';
+import { autocorrect } from './autocorrect';
+import { Autocorrect } from './autocorrectExtension';
 import { uploadPendingBlobs } from './blobSync';
 import { createAutosave } from './autosave';
 import { Presence } from './collab/Presence';
@@ -29,6 +33,7 @@ import { FolderPicker } from './FolderPicker';
 import { folderPathLabel, liveFolders, shownFolder } from './folders';
 import { loadConn } from './http';
 import { openLink } from './openLink';
+import { KeyboardSheet, MOD } from './KeyboardSheet';
 import { flattenCellContent } from './pasteTables';
 import { SyncBadge } from './SyncBadge';
 import { countWords, readingMinutes } from './preview';
@@ -38,6 +43,7 @@ import type { Protokoll } from './model';
 import { exportPdf, protokolleRepo } from './repo';
 import { scheduleSync } from './sync';
 import { UnreadableProtokoll } from './UnreadableProtokoll';
+import { autocorrectSetting, layoutHintDismissed, listHiddenSetting, SPLIT_QUERY, typingWithKeyboard, useHardwareKeyboard, useLayoutLooksWrong } from './writing';
 import { usePendingMailAttachments } from '@/features/mail/pending';
 
 type Meta = Pick<Protokoll, 'title' | 'datum' | 'beginn' | 'ende' | 'ort' | 'leitung'>;
@@ -170,7 +176,14 @@ function EditorInner({ initial, session, editorRef }: { initial: Protokoll; sess
   const [picking, setPicking] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [more, setMore] = useState(false);
+  const [keysOpen, setKeysOpen] = useState(false);
   const [error, setError] = useState('');
+  const [flash, setFlash] = useState(false);
+  const split = useMedia(SPLIT_QUERY);
+  const listHidden = listHiddenSetting.use();
+  const keyboard = useHardwareKeyboard();
+  const layoutWrong = useLayoutLooksWrong();
+  const layoutHintGone = layoutHintDismissed.use();
   const info = useSyncExternalStore(session.subscribe, session.getInfo);
   const saved = metaSaved && info.saved;
   const account = useAccount();
@@ -182,6 +195,21 @@ function EditorInner({ initial, session, editorRef }: { initial: Protokoll; sess
   const summary = [meta.datum && formatDate(meta.datum, true), [meta.beginn, meta.ende].filter(Boolean).join('–'), meta.ort, meta.leitung]
     .filter(Boolean)
     .join(' · ');
+
+  // Neues Protokoll mit Tastatur (Rechner, Tablet mit Tastatur): gleich im Titel loslegen. Am Handy nicht, dort springt sonst
+  // ungefragt die Bildschirmtastatur auf.
+  const keyboardAtOpen = useRef(keyboard);
+  useEffect(() => {
+    if (keyboardAtOpen.current && initial.rev === 0 && !initial.title) titleRef.current?.focus({ preventScroll: true });
+  }, [initial.rev, initial.title]);
+
+  // Nach einer Korrektur im Titel steht der Cursor hinter der Korrektur, bevor das nächste Zeichen kommt.
+  const titleCaret = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    const at = titleCaret.current;
+    titleCaret.current = null;
+    if (at !== null) titleRef.current?.setSelectionRange(at, at);
+  }, [meta.title]);
 
   // Titelfeld wächst mit dem Text (kein Abschneiden auf schmalen Bildschirmen).
   useEffect(() => {
@@ -214,9 +242,33 @@ function EditorInner({ initial, session, editorRef }: { initial: Protokoll; sess
 
   const editor = useEditor({
     // Der Text kommt aus dem geteilten Dokument der Sitzung (Zusammenarbeit); der Editor schreibt hinein und liest daraus.
-    extensions: [...EXTENSIONS, LocalTrailingNode, TagHighlight, Collaboration.configure({ document: session.doc, field: FIELD }), Placeholder.configure({ placeholder: 'Schreib los … mit #Tags ordnest du dein Protokoll' })],
+    extensions: [
+      ...EXTENSIONS,
+      LocalTrailingNode,
+      TagHighlight,
+      Autocorrect,
+      Collaboration.configure({ document: session.doc, field: FIELD }),
+      Placeholder.configure({ placeholder: 'Schreib los … mit #Tags ordnest du dein Protokoll' }),
+    ],
     editorProps: {
-      attributes: { class: 'ed-content', 'aria-label': 'Protokolltext', lang: 'de', spellcheck: 'true' },
+      // Rechtschreibprüfung und Großschreibung der Tastatur-App (auch Gboard mit angeschlossener Tastatur) ausdrücklich erlauben.
+      attributes: { class: 'ed-content', 'aria-label': 'Protokolltext', lang: 'de', spellcheck: 'true', autocapitalize: 'sentences', autocorrect: 'on' },
+      // Die Zeile mit dem Cursor bleibt beim Tippen frei von der haftenden Werkzeugleiste (am Tablet unten, am Rechner oben).
+      scrollMargin: { top: 88, bottom: 96, left: 8, right: 8 },
+      scrollThreshold: { top: 88, bottom: 96, left: 8, right: 8 },
+      handleKeyDown: (view, event) => {
+        // Pfeil nach oben in der ersten Zeile führt zurück in den Titel (Pfeil nach unten im Titel führt in den Text).
+        if (event.key !== 'ArrowUp' || event.shiftKey || event.ctrlKey || event.metaKey || event.altKey) return false;
+        const { $from, empty } = view.state.selection;
+        // Nur im allerersten Textblock (nicht im zweiten Punkt einer Liste, die oben steht).
+        if (!empty || Selection.atStart(view.state.doc).$from.parent !== $from.parent || !view.endOfTextblock('up')) return false;
+        const title = titleRef.current;
+        if (!title) return false;
+        event.preventDefault();
+        title.focus();
+        title.setSelectionRange(title.value.length, title.value.length);
+        return true;
+      },
       // Eingefügte Tabellen aus anderen Programmen: Was eine Zelle nicht aufnimmt, wird zu Absätzen (sonst zerreißt die Tabelle).
       transformPastedHTML: flattenCellContent,
       handleDOMEvents: {
@@ -264,6 +316,26 @@ function EditorInner({ initial, session, editorRef }: { initial: Protokoll; sess
       if (editorRef.current === editor) editorRef.current = null;
     };
   }, [autosave, session, editor, editorRef]);
+
+  // Strg+S speichert sofort (statt „Seite speichern“ des Browsers), Strg+Umschalt+L blendet in der breiten Ansicht die Liste aus.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.defaultPrevented) return;
+      const key = e.key.toLowerCase();
+      if (key === 's' && !e.shiftKey) {
+        e.preventDefault();
+        void Promise.all([autosave.flushIfDirty(), session.flush().catch(() => undefined)]).then(() => {
+          setFlash(true);
+          window.setTimeout(() => setFlash(false), 1400);
+        });
+      } else if (key === 'l' && e.shiftKey && split) {
+        e.preventDefault();
+        listHiddenSetting.set(!listHiddenSetting.get());
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [autosave, session, split]);
 
   // Änderungen der Kopfdaten von einem anderen Gerät (per Abgleich eingegangen) übernehmen, Feld für Feld und nur, was hier nicht in Arbeit ist.
   const live = useLiveQuery(() => db.protokolle.get(initial.id), [initial.id]);
@@ -354,8 +426,20 @@ function EditorInner({ initial, session, editorRef }: { initial: Protokoll; sess
         <Link to={folderId ? `/protokolle/o/${folderId}` : '/protokolle'} className="proto-back" onClick={() => void autosave.flushIfDirty()}>
           <ChevronLeft size={20} /> <span className="proto-back__text">Protokolle</span>
         </Link>
+        {split && (
+          <button
+            type="button"
+            className="icon-btn"
+            onClick={() => listHiddenSetting.set(!listHidden)}
+            aria-pressed={listHidden}
+            aria-label={listHidden ? 'Protokoll-Liste einblenden' : 'Protokoll-Liste ausblenden'}
+            title={`${listHidden ? 'Liste einblenden' : 'Liste ausblenden, mehr Platz zum Schreiben'} (${MOD}+Umschalt+L)`}
+          >
+            {listHidden ? <PanelLeftOpen size={20} /> : <PanelLeftClose size={20} />}
+          </button>
+        )}
         <span className="proto-bar__spacer" />
-        <span className="muted proto-saved" aria-live="polite">
+        <span className={`muted proto-saved${flash ? ' proto-saved--flash' : ''}`} aria-live="polite">
           {saved ? 'Gespeichert' : 'Speichert …'}
         </span>
         <SyncBadge compact />
@@ -418,6 +502,16 @@ function EditorInner({ initial, session, editorRef }: { initial: Protokoll; sess
             >
               <Folder size={18} /> In anderen Ordner verschieben
             </Button>
+            <Button
+              block
+              className="btn--icon"
+              onClick={() => {
+                setMore(false);
+                setKeysOpen(true);
+              }}
+            >
+              <Keyboard size={18} /> Tastatur & Autokorrektur
+            </Button>
             {canDelete && (
               <Button
                 block
@@ -435,9 +529,22 @@ function EditorInner({ initial, session, editorRef }: { initial: Protokoll; sess
         </Sheet>
       )}
 
+      {keysOpen && <KeyboardSheet onClose={() => setKeysOpen(false)} />}
+
       {error && (
         <p role="alert" className="proto-error">
           {error}
+        </p>
+      )}
+      {keyboard && layoutWrong && !layoutHintGone && (
+        <p role="status" className="proto-notice">
+          <span>
+            Deine Tastatur tippt im englischen Layout (y und z vertauscht, keine Umlaute). Stell in den Android-Einstellungen unter
+            <em> Sprachen &amp; Eingabe › Physische Tastatur</em> das Layout <em>Deutsch</em> ein.
+          </span>
+          <button type="button" className="btn" onClick={() => layoutHintDismissed.set(true)}>
+            Ausblenden
+          </button>
         </p>
       )}
       {gone && (
@@ -488,9 +595,28 @@ function EditorInner({ initial, session, editorRef }: { initial: Protokoll; sess
           aria-label="Titel"
           value={meta.title}
           maxLength={200}
-          onChange={(e) => patchMeta({ title: e.target.value.replace(/\n/g, ' ') })}
+          onChange={(e) => {
+            const el = e.target;
+            let value = el.value.replace(/\n/g, ' ');
+            // Autokorrektur auch im Titel, beim Tippen einzelner Zeichen (nicht beim Einfügen oder Löschen).
+            const native = e.nativeEvent as InputEvent;
+            if (autocorrectSetting.get() && typingWithKeyboard() && native.inputType === 'insertText' && native.data?.length === 1 && el.selectionStart === el.selectionEnd) {
+              const caret = el.selectionStart;
+              const fix = autocorrect(value.slice(0, caret));
+              if (fix) {
+                value = value.slice(0, caret - fix.length) + fix.text + value.slice(caret);
+                titleCaret.current = caret - fix.length + fix.text.length;
+              }
+            }
+            patchMeta({ title: value });
+          }}
+          autoCapitalize="sentences"
+          spellCheck
+          lang="de"
           onKeyDown={(e) => {
-            if (e.key === 'Enter') {
+            const el = e.currentTarget;
+            const atEnd = el.selectionStart === el.value.length && el.selectionEnd === el.value.length;
+            if (e.key === 'Enter' || (e.key === 'ArrowDown' && atEnd && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey)) {
               e.preventDefault();
               editor?.commands.focus('start');
             }
@@ -523,11 +649,11 @@ function EditorInner({ initial, session, editorRef }: { initial: Protokoll; sess
             <TimeField label="Ende" value={meta.ende} onChange={(v) => patchMeta({ ende: v })} />
             <label className="field proto-meta__wide">
               <span>Ort</span>
-              <input value={meta.ort} maxLength={200} onChange={(e) => patchMeta({ ort: e.target.value })} />
+              <input value={meta.ort} maxLength={200} autoCapitalize="words" onChange={(e) => patchMeta({ ort: e.target.value })} />
             </label>
             <label className="field proto-meta__wide">
               <span>Protokollführung</span>
-              <input value={meta.leitung} maxLength={200} onChange={(e) => patchMeta({ leitung: e.target.value })} />
+              <input value={meta.leitung} maxLength={200} autoCapitalize="words" autoComplete="name" onChange={(e) => patchMeta({ leitung: e.target.value })} />
             </label>
           </div>
         )}

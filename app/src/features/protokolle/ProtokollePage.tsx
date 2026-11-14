@@ -5,9 +5,7 @@ import './protokolle.css';
 import { ProtokollList } from './ProtokollList';
 import { ProtokollEditor } from './ProtokollEditor';
 import { ProtokollPapierkorb } from './ProtokollPapierkorb';
-
-/** Breit genug für Liste und Editor nebeneinander (neben der Seitenleiste der App). */
-const SPLIT = '(min-width: 1240px)';
+import { listHiddenSetting, SPLIT_QUERY } from './writing';
 
 const BASE = '/protokolle';
 
@@ -16,7 +14,8 @@ const BASE = '/protokolle';
  * nebeneinander: links alle Protokolle, rechts das geöffnete. Schmal bleibt es bei einer Seite nach der anderen.
  */
 export function ProtokollePage() {
-  const split = useMedia(SPLIT);
+  const split = useMedia(SPLIT_QUERY);
+  const listHidden = listHiddenSetting.use();
   const { pathname } = useLocation();
   const folder = matchPath(`${BASE}/o/:folderId`, pathname)?.params.folderId;
   const open = matchPath(`${BASE}/:id`, pathname)?.params.id;
@@ -24,9 +23,11 @@ export function ProtokollePage() {
   const activeId = open && open !== 'o' && open !== 'papierkorb' ? open : undefined;
 
   if (split && pathname !== `${BASE}/papierkorb`) {
+    // Zum Schreiben lässt sich die Liste ausblenden (Knopf im Editor, Strg+Umschalt+L); ohne geöffnetes Protokoll ist sie immer da.
+    const focus = listHidden && !!activeId;
     return (
-      <div className="proto-split">
-        <aside className="proto-split__list" aria-label="Protokolle">
+      <div className={`proto-split${focus ? ' proto-split--focus' : ''}`}>
+        <aside className="proto-split__list" aria-label="Protokolle" hidden={focus}>
           <ProtokollList split folder={folder} activeId={activeId} />
         </aside>
         <section className="proto-split__main">
