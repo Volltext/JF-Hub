@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { nowTime, parseTypedTime } from './time';
+import { nowTime, parseTypedTime, shiftTime } from './time';
 
 describe('parseTypedTime', () => {
   it.each([
@@ -17,4 +17,15 @@ describe('parseTypedTime', () => {
 
 describe('nowTime', () => {
   it('formatiert mit führenden Nullen', () => expect(nowTime(new Date(2026, 9, 2, 7, 5))).toBe('07:05'));
+});
+
+describe('shiftTime', () => {
+  it('verschiebt um Minuten, auch über Mitternacht', () => {
+    expect(shiftTime('18:00', 90)).toBe('19:30');
+    expect(shiftTime('23:30', 60)).toBe('00:30');
+    expect(shiftTime('00:15', -30)).toBe('23:45');
+  });
+  it('ungültige Zeit → null', () => {
+    expect(shiftTime('', 60)).toBeNull();
+  });
 });

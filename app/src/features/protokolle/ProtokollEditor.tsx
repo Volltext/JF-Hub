@@ -14,7 +14,11 @@ import { formatDate } from '@/core/domain/format';
 import { confirmDialog } from '@/core/ui/dialog';
 import { Button, Sheet } from '@/core/ui/components';
 import { isMine, useAccount, useDirectory } from '@/core/account/account';
-import { DateField, TimeField } from '@/core/ui/pickers';
+import { DateField, TimeField, type TimeSuggestion } from '@/core/ui/pickers';
+import { shiftTime } from '@/core/domain/time';
+import { startTimeFor } from '@/core/domain/serviceSchedule';
+import { todayIso } from '@/core/domain/id';
+import { useServiceConfig } from '@/core/holidays/useServiceConfig';
 import { useMedia } from '@/core/ui/useMedia';
 import { autocorrect } from './autocorrect';
 import { Autocorrect } from './autocorrectExtension';
@@ -28,7 +32,7 @@ import { EPOCH_KEY, httpExchange } from './collab/wire';
 import { FIELD } from './collab/yJson';
 import { dismissConflict, useConflicts } from './conflicts';
 import { EXTENSIONS } from './editorSchema';
-import { EditorToolbar } from './EditorToolbar';
+import { defaultScrollMargins, EditorToolbar } from './EditorToolbar';
 import { FolderPicker } from './FolderPicker';
 import { folderPathLabel, liveFolders, shownFolder } from './folders';
 import { loadConn } from './http';
@@ -189,6 +193,16 @@ function EditorInner({ initial, session, editorRef }: { initial: Protokoll; sess
   const account = useAccount();
   const users = useDirectory();
 
+  // Schnellwahl in der Zeitauswahl: Beginn wie der Dienstabend an diesem Tag, Ende nach üblicher Dauer ab Beginn.
+  const service = useServiceConfig();
+  const beginnSuggestions: TimeSuggestion[] = service ? [{ label: 'Dienstbeginn', value: startTimeFor(meta.datum || todayIso(), service.config) }] : [];
+  const endeSuggestions: TimeSuggestion[] = meta.beginn
+    ? ([[60, '+1 Std.'], [90, '+1½ Std.'], [120, '+2 Std.']] as const).flatMap(([min, label]) => {
+        const value = shiftTime(meta.beginn, min);
+        return value ? [{ label, value }] : [];
+      })
+    : [];
+
   // Nur neue Protokolle zeigen die Kopfdaten offen; sonst steht eine ruhige Zeile unter dem Titel und der Text im Vordergrund.
   const [headOpen, setHeadOpen] = useState(() => !initial.title);
   const titleRef = useRef<HTMLTextAreaElement>(null);
@@ -240,6 +254,7 @@ function EditorInner({ initial, session, editorRef }: { initial: Protokoll; sess
     [initial.id],
   );
 
+  const [scrollMargins] = useState(defaultScrollMargins);
   const editor = useEditor({
     // Der Text kommt aus dem geteilten Dokument der Sitzung (Zusammenarbeit); der Editor schreibt hinein und liest daraus.
     extensions: [
@@ -253,9 +268,10 @@ function EditorInner({ initial, session, editorRef }: { initial: Protokoll; sess
     editorProps: {
       // Rechtschreibprüfung und Großschreibung der Tastatur-App (auch Gboard mit angeschlossener Tastatur) ausdrücklich erlauben.
       attributes: { class: 'ed-content', 'aria-label': 'Protokolltext', lang: 'de', spellcheck: 'true', autocapitalize: 'sentences', autocorrect: 'on' },
-      // Die Zeile mit dem Cursor bleibt beim Tippen frei von der haftenden Werkzeugleiste (am Tablet unten, am Rechner oben).
-      scrollMargin: { top: 88, bottom: 96, left: 8, right: 8 },
-      scrollThreshold: { top: 88, bottom: 96, left: 8, right: 8 },
+      // Die Zeile mit dem Cursor bleibt beim Tippen frei von der haftenden Werkzeugleiste (am Handy unten, am Rechner oben). Die
+      // Werkzeugleiste misst sich selbst und trägt ihre Höhe hier ein (ProseMirror liest die Werte bei jedem Scrollen neu).
+      scrollMargin: scrollMargins,
+      scrollThreshold: scrollMargins,
       handleKeyDown: (view, event) => {
         // Pfeil nach oben in der ersten Zeile führt zurück in den Titel (Pfeil nach unten im Titel führt in den Text).
         if (event.key !== 'ArrowUp' || event.shiftKey || event.ctrlKey || event.metaKey || event.altKey) return false;
@@ -645,8 +661,8 @@ function EditorInner({ initial, session, editorRef }: { initial: Protokoll; sess
             <div className="proto-meta__wide">
               <DateField label="Datum" value={meta.datum || null} onChange={(v) => patchMeta({ datum: v ?? '' })} />
             </div>
-            <TimeField label="Beginn" value={meta.beginn} onChange={(v) => patchMeta({ beginn: v })} />
-            <TimeField label="Ende" value={meta.ende} onChange={(v) => patchMeta({ ende: v })} />
+            <TimeField label="Beginn" value={meta.beginn} clearable suggestions={beginnSuggestions} onChange={(v) => patchMeta({ beginn: v })} />
+            <TimeField label="Ende" value={meta.ende} clearable suggestions={endeSuggestions} onChange={(v) => patchMeta({ ende: v })} />
             <label className="field proto-meta__wide">
               <span>Ort</span>
               <input value={meta.ort} maxLength={200} autoCapitalize="words" onChange={(e) => patchMeta({ ort: e.target.value })} />
@@ -699,7 +715,7 @@ function EditorInner({ initial, session, editorRef }: { initial: Protokoll; sess
         />
       )}
 
-      {editor && editable && <EditorToolbar editor={editor} />}
+      {editor && editable && <EditorToolbar editor={editor} scrollMargins={scrollMargins} />}
 
       <div className="proto-sheet proto-sheet--body" onClick={(e) => e.target === e.currentTarget && editor?.commands.focus('end')}>
         <EditorContent editor={editor} />

@@ -4,6 +4,20 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/). Versionen 
 
 ## [Unreleased]
 
+## [3.5.1] – 2026-11-14
+
+### Neu
+
+- **Neue Zeitauswahl** (Beginn und Ende im Protokoll, Dienstzeiten und Erinnerung in den Einstellungen): Oben steht groß die gewählte Zeit, darunter erst die Stunden, nach dem Antippen die Minuten. „Übernehmen“ schließt das Fenster; ein Tipp auf Stunde oder Minute oben springt zurück zu diesem Schritt. Statt der Minuten-Knöpfe ± gibt es „Eintippen“ („1730“, „17:30“). Schnellwahl mit einem Tipp: „Jetzt“, beim Beginn der Dienstbeginn des Tages, beim Ende „+1 Std.“, „+1½ Std.“ und „+2 Std.“ ab Beginn. Im Protokoll lässt sich eine Zeit mit „Keine Uhrzeit“ wieder entfernen.
+
+### Behoben
+
+- **Android-App: Werkzeugleiste verdeckte beim Schreiben die aktuelle Zeile.** Am unteren Bildschirmrand verschwand die Zeile mit dem Cursor halb hinter der Formatierungsleiste (in der PWA nicht). Die App läuft unter Android randlos, und die Leiste war um den Rand der Navigationsleiste höher als vorgesehen. Die Ränder kommen jetzt aus der App selbst (bei offener Tastatur ohne Navigationsleiste), der Editor hält Abstand zur tatsächlichen Höhe der Leiste (auch mit Link- oder Tabellenzeile) und holt den Cursor nach dem Aufgehen der Tastatur wieder ins Bild.
+
+- **Mail-Benachrichtigung fehlte bei schnell gelesenen Mails:** Wer eine neue Mail woanders öffnete (Mail-App am Handy, Webmail), bevor der Server nach bis zu 2 Minuten prüfte, bekam keine Benachrichtigung. Jetzt wird jede neu eingetroffene Mail gemeldet, ob gelesen oder nicht.
+
+## [3.5.0] – 2026-11-14
+
 ### Neu
 
 - **Android-App herunterladen und aktuell halten:**
