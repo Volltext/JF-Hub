@@ -20,8 +20,8 @@ export interface PollResult {
 
 /**
  * Prüft die Posteingänge aller Betreuer, die Mail-Benachrichtigungen an haben und mindestens ein Gerät für Push angemeldet haben,
- * und meldet neue, ungelesene Mails. Der Ausgangspunkt ist die höchste UID: Die erste Prüfung meldet nichts (sonst käme der ganze
- * ungelesene Bestand), danach nur, was neu dazukommt. Eine Verbindung je Betreuer und Prüfung, nacheinander.
+ * und meldet jede neu eingetroffene Mail, auch wenn sie inzwischen woanders gelesen wurde. Der Ausgangspunkt ist die höchste UID:
+ * Die erste Prüfung meldet nichts (sonst käme der ganze Bestand), danach nur, was neu dazukommt. Eine Verbindung je Betreuer und Prüfung, nacheinander.
  */
 export async function pollMail(db: DatabaseSync, key: Buffer, backend: MailBackend, send: PushSender, now = Date.now()): Promise<PollResult> {
   const rows = db.prepare('SELECT * FROM mail_accounts WHERE notify = 1').all() as unknown as MailAccountRow[];

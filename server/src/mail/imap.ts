@@ -282,8 +282,9 @@ export class ImapBackend implements MailBackend {
       if (state.lastUid === null || state.uidValidity !== uidValidity) return { uidValidity, maxUid, fresh: [] };
       if (maxUid <= state.lastUid) return { uidValidity, maxUid, fresh: [] };
       const fresh: NewMailCheck['fresh'] = [];
-      for await (const m of c.fetch(`${state.lastUid + 1}:*`, { uid: true, flags: true, envelope: true }, { uid: true })) {
-        if (m.uid <= state.lastUid || m.flags?.has('\\Seen')) continue;
+      // Auch schon gelesene Mails melden: Wer sie zwischen zwei Prüfungen woanders geöffnet hat, soll trotzdem davon erfahren.
+      for await (const m of c.fetch(`${state.lastUid + 1}:*`, { uid: true, envelope: true }, { uid: true })) {
+        if (m.uid <= state.lastUid) continue;
         fresh.push({ uid: m.uid, from: displayAddress(toAddress(m.envelope?.from?.[0])), subject: oneLine(m.envelope?.subject ?? '') });
       }
       return { uidValidity, maxUid, fresh: fresh.sort((a, b) => a.uid - b.uid) };
