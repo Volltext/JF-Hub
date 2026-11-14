@@ -282,8 +282,10 @@ Die Zugriffsregel entscheidet der Server am **Routenmuster** (`req.routeOptions.
 
 ## Release
 
-1. Versionen erhöhen: `app/package.json`, `app/android/app/build.gradle` (`versionCode` + `versionName`), `server/package.json`, beide `package-lock.json` (Zeile 3 und 9) und `VERSION` in `server/src/app.ts`; `CHANGELOG.md` ergänzen.
-2. Auf `main` mergen, dann den Tag auf dem Merge-Commit setzen: `git tag vX.Y.Z && git push --tags`.
-3. GitHub Actions baut das Docker-Image (`ghcr.io/volltext/jf-hub:X.Y.Z`, `:X.Y`, `:latest`) und die APK und legt sie ans Release.
+1. Version setzen: `node scripts/version.mjs X.Y.Z`. Das ändert `app/` und `server/` (je `package.json` und `package-lock.json`); alles andere leitet sich davon ab: die PWA beim Bauen, der Server zur Laufzeit (`VERSION` aus `server/package.json`), die APK in `app/android/app/build.gradle` (`versionName` = Version, `versionCode` = Major·1 000 000 + Minor·10 000 + Patch·100 + 99, Vorabversionen `-rc.N` mit N statt 99). `CHANGELOG.md` ergänzen.
+2. Auf `main` mergen, dann den Tag auf dem Merge-Commit setzen: `git tag vX.Y.Z && git push --tags`. **Der Tag muss zur Version passen:** Docker- und APK-Workflow brechen sonst ab (`node scripts/version.mjs --check vX.Y.Z`), die CI prüft bei jedem Push, dass App und Server dieselbe Version tragen.
+3. GitHub Actions baut das Docker-Image (`ghcr.io/volltext/jf-hub:X.Y.Z`, `:X.Y`, `:latest`) und die APK (`JF-Hub-X.Y.Z-release.apk`) und legt sie ans Release.
+
+**Download und Update-Hinweis** (`app/src/features/appVersion/`): Einstellungen › App & Version verlinkt in der PWA die APK genau zur Version des Servers (`…/releases/download/vX.Y.Z/JF-Hub-X.Y.Z-release.apk`). Die Android-App fragt `/api/status` (höchstens alle sechs Stunden und beim Zurückkehren in die App) und zeigt auf „Heute“ und in den Einstellungen einen Hinweis, wenn der Server neuer ist. Deshalb muss jedes Release die APK mit genau diesem Namen tragen. Forks setzen beim Bauen `VITE_RELEASES_URL` auf ihre eigene Releases-Seite.
 
 **Releases mit Datenumbau** (zum Beispiel 2.2.0, das Anhänge in eigene Einträge verschiebt, oder 3.0.0, das den Text auf Yjs umstellt): Jeder Push auf `main` baut `:latest`. Teste deshalb zuerst einen **Release-Kandidaten**: Tag `vX.Y.Z-rc.1` auf dem Branch. Er erzeugt das Image `X.Y.Z-rc.1` ohne `:latest` und ohne `:X.Y` und ein Release, das als Vorabversion markiert ist. Starte es mit einer Kopie der echten Datenbank (zweiter Start ändert nichts, Backup „vor Update“ ist da, die Geräte kommen klar), und merge erst dann nach `main`.

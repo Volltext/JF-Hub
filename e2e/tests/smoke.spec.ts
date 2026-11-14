@@ -81,6 +81,15 @@ test.describe.serial('JF Hub Rauchtest', () => {
       await expect(anna.page.getByText(TITLE)).toBeHidden({ timeout: 3_000 });
     }).toPass({ timeout: 40_000 });
 
+    // Einstellungen › App & Version: Der Download der Android-App passt genau zur Version, die der Server meldet.
+    const { version } = (await (await request.get('/api/health')).json()) as { version: string };
+    await anna.page.goto('/#/einstellungen/app');
+    await expect(anna.page.getByRole('heading', { name: 'App & Version' })).toBeVisible();
+    await expect(anna.page.getByRole('link', { name: `APK herunterladen (Version ${version})` })).toHaveAttribute(
+      'href',
+      `https://github.com/Volltext/JF-Hub/releases/download/v${version}/JF-Hub-${version}-release.apk`,
+    );
+
     await admin.context.close();
     await anna.context.close();
   });

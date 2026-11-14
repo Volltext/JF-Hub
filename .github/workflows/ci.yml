@@ -23,6 +23,8 @@ jobs:
           cache: npm
           cache-dependency-path: app/package-lock.json
       - run: npm ci --no-audit --no-fund
+      # App, Server und APK tragen dieselbe Version (scripts/version.mjs).
+      - run: node ../scripts/version.mjs --check
       - run: npm run typecheck
       - run: npm test
       - run: npm run build:web

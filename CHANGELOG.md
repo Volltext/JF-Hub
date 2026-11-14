@@ -6,6 +6,10 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/). Versionen 
 
 ### Neu
 
+- **Android-App herunterladen und aktuell halten:**
+  - In der App im Browser gibt es unter **Einstellungen › App & Version** den Knopf „APK herunterladen“, und zwar genau die Version, die zu deinem Server passt, mit kurzer Installationsanleitung.
+  - Die Android-App fragt ihren Server nach seiner Version. Ist er neuer, erscheint auf „Heute“ der Hinweis **„Neue App-Version“** mit Download-Knopf („Später“ blendet ihn bis zur nächsten Version aus), in den Einstellungen steht „Update“. Ein Protokoll, das die App nur lesen kann, führt mit „Zur neuen App-Version“ direkt dorthin.
+
 - **Dateien einbetten oder nur anhängen:** Bei „Datei anhängen (auch PDF)“ fragt die App bei Bildern und PDFs „Wie einfügen?“:
   - **Im Protokoll einbetten:** Bilddateien stehen als Bild im Text. Bei PDFs wird jede Seite zum Bild mit der Beschriftung „Datei · Seite 2 von 5“ (höchstens 20 Seiten), die PDF selbst bleibt als Datei-Karte dahinter. Eingebettetes erscheint auch im PDF-Export, funktioniert ohne Netz und ist bei allen Betreuern zu sehen, auch mit älteren App-Versionen.
   - **Nur als Anhang:** wie bisher als Datei-Karte zum Öffnen und Teilen, im PDF-Export nur mit Namen.
@@ -23,6 +27,7 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/). Versionen 
 
 ### Behoben
 
+- **Versionsnummern standen seit 3.2.1 still:** Die Releases 3.3.0 und 3.4.0 meldeten sich in App, Server und APK weiter als 3.2.1, die APK trug denselben `versionCode`. Es gibt jetzt eine einzige Quelle (`node scripts/version.mjs X.Y.Z`), Server und APK leiten ihre Version daraus ab, und die Workflows brechen ab, wenn ein Tag nicht zur Version im Code passt. Diese Version ist **3.5.0**.
 - **Protokolle am Tablet:** Die Wortzahl stand bei Touch-Geräten zwischen Kopf und Text statt darunter. Beim Tippen am Seitenende konnte die Zeile mit dem Cursor hinter der Werkzeugleiste verschwinden. Am Tablet hochkant passt die Werkzeugleiste jetzt ganz in eine Zeile.
 - **Kleidung: „Weiter: Name“ war ein leeres Kästchen.** Im Fenster einer Person nahm der Zurück-Pfeil die ganze Breite ein. Zurück ist jetzt ein fester Pfeil, „Weiter: Name“ nimmt den Rest.
 - **Abhaken ohne Rückgängig:** Auf „Heute“ und unter „Aufgaben“ verschwand eine erledigte Aufgabe sofort, und die nächste rutschte unter den Finger. Jetzt bleibt sie vier Sekunden durchgestrichen stehen, unten erscheint „Erledigt: … · Rückgängig“. Nochmal antippen holt sie ebenfalls zurück.

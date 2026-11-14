@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { ChevronLeft } from 'lucide-react';
+import { Capacitor } from '@capacitor/core';
 import { formatDate } from '@/core/domain/format';
 import { SyncBadge } from './SyncBadge';
 import type { Protokoll } from './model';
@@ -27,6 +28,14 @@ export function UnreadableProtokoll({ doc, backTo, message = UNKNOWN_ELEMENTS, o
       <p role="alert" className="proto-error">
         {message}
       </p>
+      {/* In der Android-App führt „Bitte die App aktualisieren“ gleich zum Download der passenden Version. */}
+      {Capacitor.isNativePlatform() && /App aktualisieren/.test(message) && (
+        <p>
+          <Link to="/einstellungen/app" className="btn">
+            Zur neuen App-Version
+          </Link>
+        </p>
+      )}
       {onRetry && (
         <p>
           <button type="button" className="btn" onClick={onRetry}>

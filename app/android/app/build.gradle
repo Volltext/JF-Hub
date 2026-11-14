@@ -1,5 +1,13 @@
 apply plugin: 'com.android.application'
 
+// Version aus app/package.json (eine Quelle für PWA, APK und Server, siehe scripts/version.mjs).
+// versionCode wächst mit jeder Version: 3.5.0 → 3050099, Vorabversion 3.5.0-rc.2 → 3050002 (liegt vor 3.5.0).
+def appVersion = new groovy.json.JsonSlurper().parse(file('../../package.json')).version as String
+def versionParts = (appVersion =~ /^(\d+)\.(\d+)\.(\d+)(?:-[A-Za-z]+\.?(\d+))?/)
+if (!versionParts.find()) throw new GradleException("Ungültige Version in package.json: ${appVersion}")
+def appVersionCode = versionParts.group(1).toInteger() * 1000000 + versionParts.group(2).toInteger() * 10000 +
+        versionParts.group(3).toInteger() * 100 + (versionParts.group(4) != null ? Math.min(versionParts.group(4).toInteger(), 98) : 99)
+
 // Release-Signatur: Zugangsdaten stehen in android/keystore.properties (nicht weitergeben, nicht einchecken).
 def keystoreProps = new Properties()
 def keystoreFile = rootProject.file('keystore.properties')
@@ -12,8 +20,8 @@ android {
         applicationId "de.jfhub.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 24
-        versionName "3.2.1"
+        versionCode appVersionCode
+        versionName appVersion
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

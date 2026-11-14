@@ -18,7 +18,7 @@ Die **App im Browser (PWA)** deckt fast alles ab. Die Android-App ist ein Zusatz
 | Handschrift | einfacher Editor | **Stiftdruck, niedrige Latenz, Handballen-Erkennung, Handschrift → Text** |
 | Bildschirm wach halten (Stoppuhr) | ✓ (wenn der Browser es kann) | ✓ |
 | PIN-Sperre | – | ✓ |
-| Updates | automatisch | neue APK installieren |
+| Updates | automatisch | neue APK installieren; die App meldet neue Versionen selbst |
 | Ohne Server nutzbar | – (Anmeldung nötig) | ✓ (lokal, ohne Abgleich) |
 
 > [!TIP]
@@ -26,7 +26,7 @@ Die **App im Browser (PWA)** deckt fast alles ab. Die Android-App ist ein Zusatz
 
 ## APK installieren
 
-1. Unter [Releases](https://github.com/Volltext/JF-Hub/releases) die neueste `JF-Hub-<Version>-release.apk` laden.
+1. In der App im Browser unter **Einstellungen › App & Version** auf „APK herunterladen“ tippen. Das ist genau die Version, die zu deinem Server passt. Alternativ unter [Releases](https://github.com/Volltext/JF-Hub/releases) die `JF-Hub-<Version>-release.apk` zur Version deines Servers laden.
 2. Datei öffnen. Android fragt einmalig nach „Installation aus unbekannten Quellen“ für den Browser bzw. Dateimanager.
 3. App öffnen → *Einstellungen → Server & Konto*: Adresse des Servers (`jfhub.deine-domain.de`), Benutzername und Passwort eintragen – oder **Einladung einlösen**.
 
@@ -34,7 +34,7 @@ Die App ist **nicht** im Play Store.
 
 ### Updates
 
-Neue APK einfach drüberinstallieren. Das klappt nur, wenn sie mit **demselben Schlüssel** signiert ist. Releases dieses Projekts sind immer mit dem Schlüssel des Projekts signiert. Selbst gebaute APKs tragen deine eigene Signatur und lassen sich nicht über die Release-APK installieren (und umgekehrt). Dann vorher die Daten sichern bzw. neu anmelden (sie liegen auf dem Server).
+Wird dein Server aktualisiert, zeigt die App auf „Heute“ den Hinweis **„Neue App-Version“** mit Download-Knopf (auch unter *Einstellungen › App & Version*). Die neue APK einfach drüberinstallieren. Das klappt nur, wenn sie mit **demselben Schlüssel** signiert ist. Releases dieses Projekts sind immer mit dem Schlüssel des Projekts signiert. Selbst gebaute APKs tragen deine eigene Signatur und lassen sich nicht über die Release-APK installieren (und umgekehrt). Dann vorher die Daten sichern bzw. neu anmelden (sie liegen auf dem Server).
 
 > [!IMPORTANT]
 > **Ab Version 3.0.0 gehört zu einem aktualisierten Server immer die neue APK.** Der Server schreibt den Text der Protokolle jetzt gemeinsam mit allen Geräten fort und lässt ältere Apps nicht mehr ran: Sie melden „Bitte die App aktualisieren“. Ihre Daten bleiben unberührt; ungesendete Änderungen aus der alten App legt die neue als Protokoll „… (lokale Fassung)“ an. Auf eine ältere APK zurückzugehen, ist nach dem Update nicht möglich: Die Datenbank der App wird nur vorwärts umgebaut.

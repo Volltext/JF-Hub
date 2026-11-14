@@ -55,7 +55,8 @@ import { exchange, type ExchangeRequest } from './collab/exchange.js';
 import { createPeers } from './collab/peers.js';
 import { collabStats, migrateYjs } from './collab/migrate.js';
 
-export const VERSION = '3.2.1';
+/** Version des Servers, aus server/package.json (gesetzt mit `node scripts/version.mjs`; liegt im Image neben dist/). */
+export const VERSION: string = (JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string }).version;
 /** Höchste Zahl von Einträgen in einer Austausch-Anfrage, die noch beantwortet wird. */
 const MAX_EXCHANGE_ENTRIES = 200;
 export { API_VERSION, MIN_SCHEMA };

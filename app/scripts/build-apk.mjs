@@ -37,7 +37,7 @@ if (!existsSync(built)) {
   console.error(`APK nicht gefunden: ${built}`);
   process.exit(1);
 }
-const version = /versionName "([^"]+)"/.exec(readFileSync('android/app/build.gradle', 'utf8'))?.[1] ?? '0';
+const { version } = JSON.parse(readFileSync('package.json', 'utf8'));
 mkdirSync('apk', { recursive: true });
 const target = join('apk', `JF-Hub-${version}-${variant}.apk`);
 copyFileSync(built, target);
