@@ -27,6 +27,7 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/). Versionen 
 
 ### Behoben
 
+- **Release-APK statt Debug-APK:** Releases bekommen jetzt immer eine signierte Release-APK mit dem festen Schlüssel des Projekts. Fehlt der Schlüssel, bricht der Bau ab, statt eine Debug-APK zu veröffentlichen (die war bei jedem Bau anders signiert und ließ sich nie als Update installieren). Der Fingerabdruck der Signatur steht in der Zusammenfassung jedes Laufs und in `docs/android-app.md`. **Einmalig:** Wer eine Debug-APK installiert hat, gleicht ab, deinstalliert sie und installiert die neue (Anleitung in `docs/android-app.md`).
 - **Versionsnummern standen seit 3.2.1 still:** Die Releases 3.3.0 und 3.4.0 meldeten sich in App, Server und APK weiter als 3.2.1, die APK trug denselben `versionCode`. Es gibt jetzt eine einzige Quelle (`node scripts/version.mjs X.Y.Z`), Server und APK leiten ihre Version daraus ab, und die Workflows brechen ab, wenn ein Tag nicht zur Version im Code passt. Diese Version ist **3.5.0**.
 - **Protokolle am Tablet:** Die Wortzahl stand bei Touch-Geräten zwischen Kopf und Text statt darunter. Beim Tippen am Seitenende konnte die Zeile mit dem Cursor hinter der Werkzeugleiste verschwinden. Am Tablet hochkant passt die Werkzeugleiste jetzt ganz in eine Zeile.
 - **Kleidung: „Weiter: Name“ war ein leeres Kästchen.** Im Fenster einer Person nahm der Zurück-Pfeil die ganze Breite ein. Zurück ist jetzt ein fester Pfeil, „Weiter: Name“ nimmt den Rest.
