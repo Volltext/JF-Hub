@@ -4,6 +4,12 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/). Versionen 
 
 ## [Unreleased]
 
+### Sicherheit
+
+- **Abhängigkeiten mit bekannten Sicherheitslücken aktualisiert** (`npm audit` für Server und App jetzt ohne Befund):
+  - **Server (im Docker-Image):** `fastify` 5.12.8 (Umgehung der Header-Prüfung, GHSA-389g-gv7q-r4x8), `@fastify/static` 10.1.11 mit `glob` 14.0.6 und `minimatch` 11.0.8 (GHSA-3g3m-2fjr-6pw4, GHSA-g3hv-75wg-m249), `fast-uri` 4.2.3/3.1.9 (URI-Schema- und Host-Verwechslung, GHSA-w74x-v6f9-j3xg, GHSA-xhq7-xmqj-769h, GHSA-wjr9-j795-jxcr, GHSA-333x-w4r6-6crp), `ip-address` 10.7.6 über `@fastify/rate-limit` 11.2.2 (DoS durch lange IPv6-Zonen-IDs, GHSA-rxp7-6hxx-x8q5).
+  - **Build-Werkzeuge (nicht im Image und nicht in der APK):** `vite` 8.3.8 (u. a. GHSA-9jrq-w75r-8gcw, GHSA-rq7h-c2jc-7f22), `@capacitor/cli`, `@capacitor/core` und `@capacitor/android` 8.6.2 (veraltetes `tar`/`rimraf`), `@capacitor/assets` 4.0.0 (ältere `tar`- und `sharp`/libvips-Versionen mit kritischen Lücken). `xcode` wird für `@trapezedev/project` per `overrides` auf 4.0.0 gehoben, das `uuid` nicht mehr braucht (GHSA-w5hq-g745-h8pq).
+
 ## [3.5.1] – 2026-11-14
 
 ### Neu
